@@ -1,0 +1,38 @@
+name: Build Dev Sandbox Image
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  push:
+    paths:
+      - 'Containerfile'
+      - 'configs/**'
+      - 'entrypoint.sh'
+  workflow_dispatch: {}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Build image
+        run: podman build -t ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest .
+
+      - name: Login to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Push image
+        run: podman push ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest
+
+      - name: Delete old image versions
+        run: |
+          gh api /users/michalvavrik/packages/container/ai-sandboxing%2Fdev-sandbox/versions \
+            --paginate --jq '.[].id' | tail -n +4 | while read -r id; do
+            gh api --method DELETE "/users/michalvavrik/packages/container/ai-sandboxing%2Fdev-sandbox/versions/$id" || true
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
