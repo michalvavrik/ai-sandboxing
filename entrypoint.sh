@@ -22,7 +22,7 @@ if [ -d /opt/m2-base ] && [ "$(ls -A /opt/m2-base 2>/dev/null)" ]; then
     chown dev:dev "$M2_UPPER" "$M2_WORK" "$M2_MERGED"
     if ! mountpoint -q "$M2_MERGED" 2>/dev/null; then
         fuse-overlayfs \
-            -o "lowerdir=/opt/m2-base,upperdir=${M2_UPPER},workdir=${M2_WORK}" \
+            -o "lowerdir=/opt/m2-base,upperdir=${M2_UPPER},workdir=${M2_WORK},allow_other,uid=1000,gid=1000" \
             "$M2_MERGED"
     fi
 fi
@@ -54,28 +54,27 @@ if [ -d /opt/project-src ] && [ "$(ls -A /opt/project-src 2>/dev/null)" ]; then
     chown dev:dev "$WS_UPPER" "$WS_WORK" /workspace
     if ! mountpoint -q /workspace 2>/dev/null; then
         fuse-overlayfs \
-            -o "lowerdir=/opt/project-src,upperdir=${WS_UPPER},workdir=${WS_WORK}" \
+            -o "lowerdir=/opt/project-src,upperdir=${WS_UPPER},workdir=${WS_WORK},allow_other,uid=1000,gid=1000" \
             /workspace
     fi
 
     # Remove host-specific files from the overlay (as root for whiteout permissions)
     rm -rf /workspace/.claude /workspace/.idea /workspace/.git/config 2>/dev/null || true
 
-    # Trust the fuse-overlayfs workspace
-    runuser -u dev -- git config --global --add safe.directory /workspace
-
-    # Set up clean git config with agent remotes
+    # Set up clean git config with agent remotes (as root, then chown)
     if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         _repo="${DEV_TEMPLATE_KEY#*/}"
         _org="${DEV_TEMPLATE_KEY%%/*}"
-        runuser -u dev -- bash -c "
-            cd /workspace
-            git init 2>/dev/null
-            git remote add origin git@github.com:michalvavrik-dev-automation/${_repo}.git 2>/dev/null || true
-            git remote add upstream git@github.com:${_org}/${_repo}.git 2>/dev/null || true
-            git checkout main 2>/dev/null || git checkout master 2>/dev/null || true
-        "
+        cd /workspace
+        git init 2>/dev/null
+        git remote add origin "git@github.com:michalvavrik-dev-automation/${_repo}.git" 2>/dev/null || true
+        git remote add upstream "git@github.com:${_org}/${_repo}.git" 2>/dev/null || true
+        git checkout main 2>/dev/null || git checkout master 2>/dev/null || true
+        chown -R dev:dev /workspace/.git
     fi
+
+    # Trust the fuse-overlayfs workspace (must be after .git setup)
+    runuser -u dev -- git config --global --add safe.directory /workspace
 
     # PR checkout and details (if DEV_PR_NUMBER is set)
     if [ -n "${DEV_PR_NUMBER:-}" ] && [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
