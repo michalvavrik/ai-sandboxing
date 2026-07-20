@@ -58,19 +58,21 @@ if [ -d /opt/project-src ] && [ "$(ls -A /opt/project-src 2>/dev/null)" ]; then
             /workspace
     fi
 
-    # Remove host-specific files from the overlay (upper layer only, host untouched)
-    rm -rf /workspace/.claude /workspace/.idea 2>/dev/null || true
+    # Remove host-specific files from the overlay (as root for whiteout permissions)
+    rm -rf /workspace/.claude /workspace/.idea /workspace/.git/config 2>/dev/null || true
 
-    # Replace host .git/config with a clean one (upper layer only, host untouched)
+    # Trust the fuse-overlayfs workspace
+    runuser -u dev -- git config --global --add safe.directory /workspace
+
+    # Set up clean git config with agent remotes
     if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         _repo="${DEV_TEMPLATE_KEY#*/}"
         _org="${DEV_TEMPLATE_KEY%%/*}"
         runuser -u dev -- bash -c "
             cd /workspace
-            rm -f .git/config
             git init 2>/dev/null
-            git remote add origin git@github.com:michalvavrik-dev-automation/${_repo}.git
-            git remote add upstream git@github.com:${_org}/${_repo}.git
+            git remote add origin git@github.com:michalvavrik-dev-automation/${_repo}.git 2>/dev/null || true
+            git remote add upstream git@github.com:${_org}/${_repo}.git 2>/dev/null || true
             git checkout main 2>/dev/null || git checkout master 2>/dev/null || true
         "
     fi
