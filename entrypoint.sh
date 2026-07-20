@@ -76,6 +76,23 @@ if [ -d /opt/project-src ] && [ "$(ls -A /opt/project-src 2>/dev/null)" ]; then
             git checkout main 2>/dev/null || git checkout master 2>/dev/null || true
         "
     fi
+
+    # PR checkout and details (if DEV_PR_NUMBER is set)
+    if [ -n "${DEV_PR_NUMBER:-}" ] && [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
+        echo "Checking out PR #${DEV_PR_NUMBER}..."
+        runuser -u dev -- bash -c \
+            "cd /workspace && gh pr checkout -f ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}" || true
+        runuser -u dev -- bash -c \
+            "gh pr view ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}" > /workspace/.pr 2>/dev/null || true
+        chown dev:dev /workspace/.pr 2>/dev/null || true
+    fi
+
+    # Issue details (if DEV_ISSUE_NUMBER is set)
+    if [ -n "${DEV_ISSUE_NUMBER:-}" ] && [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
+        runuser -u dev -- bash -c \
+            "gh issue view ${DEV_ISSUE_NUMBER} --repo ${DEV_TEMPLATE_KEY}" > /workspace/.issue 2>/dev/null || true
+        chown dev:dev /workspace/.issue 2>/dev/null || true
+    fi
 fi
 
 # ── Start sshd (for additional terminals via dev enter) ─────────────────────

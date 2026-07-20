@@ -216,6 +216,8 @@ _dev_create_container() {
         -e "ANTHROPIC_BASE_URL=http://host.internal:${_dev_port}" \
         -e "ANTHROPIC_API_KEY=not-used" \
         -e "DEV_TEMPLATE_KEY=${_dev_template_key}" \
+        ${DEV_PR_NUMBER:+-e "DEV_PR_NUMBER=${DEV_PR_NUMBER}"} \
+        ${DEV_ISSUE_NUMBER:+-e "DEV_ISSUE_NUMBER=${DEV_ISSUE_NUMBER}"} \
         -p "127.0.0.1::22" \
         "${_dev_volumes[@]}" \
         "$DEV_IMAGE"

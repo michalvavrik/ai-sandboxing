@@ -12,8 +12,7 @@ if [[ "$_devissue_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/(issues|pull)/([
     readonly _devissue_number="${BASH_REMATCH[4]}"
 else
     echo "Error: could not parse GitHub URL" >&2
-    echo "Expected: https://github.com/{org}/{repo}/issues/{number}" >&2
-    echo "      or: https://github.com/{org}/{repo}/pull/{number}" >&2
+    echo "Expected: https://github.com/{org}/{repo}/{issues|pull}/{number}" >&2
     exit 1
 fi
 
@@ -29,73 +28,21 @@ echo "Container: ${_devissue_name}"
 
 export DEV_LAST_CONTAINER="$_devissue_name"
 
-# ── Existing container ──────────────────────────────────────────────────────
+# Existing container — just re-enter
 if _dev_container_exists "$_devissue_name"; then
     _dev_ensure_proxy
-
-    if ! _dev_container_running "$_devissue_name"; then
-        podman start "$_devissue_name"
-        sleep 3
-    fi
-
-    # For PRs: re-checkout to pick up new commits
-    if [[ "$_devissue_type" == "pull" ]]; then
-        echo "Updating PR checkout..."
-        _dev_ssh_cmd "$_devissue_name" \
-            "cd /workspace && gh pr checkout -f ${_devissue_number} --repo ${_devissue_template_key}" || true
-    fi
-
-    _dev_ssh_cmd "$_devissue_name"
-    exit 0
+    echo "Starting existing container..."
+    exec podman start -ai "$_devissue_name"
 fi
 
-# ── New container ────────────────────────────────────────────────────────────
-
-# Fetch details before creating container (using host's gh CLI)
-_devissue_content=""
+# New container — pass PR/issue number via env, entrypoint handles checkout + details
 if [[ "$_devissue_type" == "pull" ]]; then
-    _devissue_body=$(gh pr view "$_devissue_number" \
-        --repo "${_devissue_template_key}" \
-        --json title,body,headRefName,changedFiles,additions,deletions \
-        --jq '"Title: " + .title + "\nBranch: " + .headRefName + "\nChanged files: " + (.changedFiles|tostring) + " (+" + (.additions|tostring) + " -" + (.deletions|tostring) + ")\n\n" + .body' \
-        2>/dev/null) || true
+    export DEV_PR_NUMBER="$_devissue_number"
 else
-    _devissue_body=$(gh issue view "$_devissue_number" \
-        --repo "${_devissue_template_key}" \
-        --json title,body --jq '"Title: " + .title + "\n\n" + .body' \
-        2>/dev/null) || true
-fi
-
-if [[ -n "$_devissue_body" ]]; then
-    _devissue_content=$(printf '%s: %s#%s\nURL: %s\n%s\n' \
-        "${_devissue_type^}" "$_devissue_template_key" "$_devissue_number" \
-        "$_devissue_url" "$_devissue_body")
+    export DEV_ISSUE_NUMBER="$_devissue_number"
 fi
 
 _dev_create_container "$_devissue_name" "$_devissue_template_key"
 
-# Start in background to inject content and checkout PR via SSH
-podman start "$_devissue_name"
-sleep 3
-
-# Save issue/PR details
-if [[ -n "$_devissue_content" ]]; then
-    if [[ "$_devissue_type" == "pull" ]]; then
-        echo "$_devissue_content" | _dev_ssh_cmd "$_devissue_name" 'cat > /workspace/.pr'
-        echo "PR details saved to /workspace/.pr"
-    else
-        echo "$_devissue_content" | _dev_ssh_cmd "$_devissue_name" 'cat > /workspace/.issue'
-        echo "Issue details saved to /workspace/.issue"
-    fi
-fi
-
-# For PRs: checkout the PR branch
-if [[ "$_devissue_type" == "pull" ]]; then
-    echo "Checking out PR #${_devissue_number}..."
-    _dev_ssh_cmd "$_devissue_name" \
-        "cd /workspace && gh pr checkout -f ${_devissue_number} --repo ${_devissue_template_key}"
-fi
-
-# Stop and reattach as primary shell
-podman stop "$_devissue_name" 2>/dev/null || true
+echo "Entering container '${_devissue_name}'..."
 exec podman start -ai "$_devissue_name"
