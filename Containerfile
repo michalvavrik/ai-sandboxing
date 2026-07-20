@@ -53,6 +53,7 @@ ENTRYPOINT ["/opt/dev/entrypoint.sh"]
 
 # ── Runtime defaults ─────────────────────────────────────────────────────────
 ENV ANTHROPIC_API_KEY=not-used
+ENV HISTFILE=/dev/null
 RUN mkdir -p /workspace && chown dev:dev /workspace
 WORKDIR /workspace
 CMD ["bash", "--login"]

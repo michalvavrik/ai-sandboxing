@@ -13,7 +13,7 @@ else
     echo "WARNING: iptables not available, skipping host firewall" >&2
 fi
 
-# ── Maven cache (fuse-overlayfs) ────────────────────────────────────────────
+# ── Maven cache (fuse-overlayfs as dev user) ────────────────────────────────
 if [ -d /opt/m2-base ] && [ "$(ls -A /opt/m2-base 2>/dev/null)" ]; then
     M2_UPPER="/tmp/m2-upper"
     M2_WORK="/tmp/m2-work"
@@ -21,8 +21,8 @@ if [ -d /opt/m2-base ] && [ "$(ls -A /opt/m2-base 2>/dev/null)" ]; then
     mkdir -p "$M2_UPPER" "$M2_WORK" "$M2_MERGED"
     chown dev:dev "$M2_UPPER" "$M2_WORK" "$M2_MERGED"
     if ! mountpoint -q "$M2_MERGED" 2>/dev/null; then
-        fuse-overlayfs \
-            -o "lowerdir=/opt/m2-base,upperdir=${M2_UPPER},workdir=${M2_WORK},allow_other,uid=1000,gid=1000" \
+        runuser -u dev -- fuse-overlayfs \
+            -o "lowerdir=/opt/m2-base,upperdir=${M2_UPPER},workdir=${M2_WORK},allow_root" \
             "$M2_MERGED"
     fi
 fi
@@ -46,22 +46,22 @@ if [ -d /opt/dev-keys ]; then
     fi
 fi
 
-# ── Project files (fuse-overlayfs over read-only mount) ─────────────────────
+# ── Project files (fuse-overlayfs as dev user) ──────────────────────────────
 if [ -d /opt/project-src ] && [ "$(ls -A /opt/project-src 2>/dev/null)" ]; then
     WS_UPPER="/tmp/ws-upper"
     WS_WORK="/tmp/ws-work"
     mkdir -p "$WS_UPPER" "$WS_WORK"
     chown dev:dev "$WS_UPPER" "$WS_WORK" /workspace
     if ! mountpoint -q /workspace 2>/dev/null; then
-        fuse-overlayfs \
-            -o "lowerdir=/opt/project-src,upperdir=${WS_UPPER},workdir=${WS_WORK},allow_other,uid=1000,gid=1000" \
+        runuser -u dev -- fuse-overlayfs \
+            -o "lowerdir=/opt/project-src,upperdir=${WS_UPPER},workdir=${WS_WORK},allow_root" \
             /workspace
     fi
 
-    # Remove host-specific files from the overlay (as root for whiteout permissions)
+    # Remove host-specific files (as root — allow_root lets us access the mount)
     rm -rf /workspace/.claude /workspace/.idea /workspace/.git/config 2>/dev/null || true
 
-    # Set up clean git config with agent remotes (as root, then chown)
+    # Set up clean git config
     if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         _repo="${DEV_TEMPLATE_KEY#*/}"
         _org="${DEV_TEMPLATE_KEY%%/*}"
@@ -73,10 +73,9 @@ if [ -d /opt/project-src ] && [ "$(ls -A /opt/project-src 2>/dev/null)" ]; then
         chown -R dev:dev /workspace/.git
     fi
 
-    # Trust the fuse-overlayfs workspace (must be after .git setup)
     runuser -u dev -- git config --global --add safe.directory /workspace
 
-    # PR checkout and details (if DEV_PR_NUMBER is set)
+    # PR checkout and details
     if [ -n "${DEV_PR_NUMBER:-}" ] && [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         echo "Checking out PR #${DEV_PR_NUMBER}..."
         runuser -u dev -- bash -c \
@@ -86,7 +85,7 @@ if [ -d /opt/project-src ] && [ "$(ls -A /opt/project-src 2>/dev/null)" ]; then
         chown dev:dev /workspace/.pr 2>/dev/null || true
     fi
 
-    # Issue details (if DEV_ISSUE_NUMBER is set)
+    # Issue details
     if [ -n "${DEV_ISSUE_NUMBER:-}" ] && [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         runuser -u dev -- bash -c \
             "gh issue view ${DEV_ISSUE_NUMBER} --repo ${DEV_TEMPLATE_KEY}" > /workspace/.issue 2>/dev/null || true
