@@ -5,9 +5,9 @@
       "Read(*)",
       "Write(*)",
       "Edit(*)",
+      "NotebookEdit(*)",
       "WebFetch(*)",
-      "WebSearch(*)",
-      "mcp__idea__*"
+      "WebSearch(*)"
     ]
   }
 }
