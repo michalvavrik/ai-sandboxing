@@ -43,14 +43,29 @@ dev delete fix-auth        # remove permanently
 dev see fix-auth           # push from container, pull to host, show diff
 dev list                   # show all dev containers
 
-# From a GitHub issue URL:
+# From a GitHub issue or PR URL:
 dev https://github.com/keycloak/keycloak/issues/50167
+dev https://github.com/keycloak/keycloak/pull/50801
 
 # Inside the container:
 claude                     # start Claude Code (connects via host proxy)
 ```
 
 Container name is remembered — after `dev new foo`, just `dev enter`, `dev see`, etc.
+
+## PR review workflow
+
+```bash
+dev https://github.com/keycloak/keycloak/pull/50801
+# → creates keycloak-pr-50801, checks out the PR branch, saves PR details to .pr
+# → you're inside the container
+
+claude
+# → give your prompt: "thoroughly analyze https://github.com/keycloak/keycloak/pull/50801 ..."
+
+# PR got updated? Just re-enter — it re-checkouts automatically:
+dev https://github.com/keycloak/keycloak/pull/50801
+```
 
 ## Projects
 
