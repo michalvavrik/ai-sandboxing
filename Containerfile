@@ -25,6 +25,9 @@ RUN passwd -l root \
 COPY configs/containers-storage.conf   /etc/containers/storage.conf
 COPY configs/containers-registries.conf /etc/containers/registries.conf
 
+# ── Allow non-root fuse-overlayfs with allow_root ────────────────────────────
+RUN echo "user_allow_other" >> /etc/fuse.conf
+
 # ── Claude Code (installed globally as root) ─────────────────────────────────
 RUN npm install -g @anthropic-ai/claude-code
 
