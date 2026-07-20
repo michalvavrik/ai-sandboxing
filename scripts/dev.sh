@@ -38,8 +38,8 @@ case "$_dev_cmd" in
     /home/mvavrik/sandboxing/scripts/dev-install.sh
     ;;
   http*|https*)
-    DEV_LAST_CONTAINER=""
     /home/mvavrik/sandboxing/scripts/dev-issue.sh "$_dev_cmd"
+    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     ;;
   help|*)
     echo "Usage: dev {new|delete|enter|stop|start|see|list|install|<github-url>}"

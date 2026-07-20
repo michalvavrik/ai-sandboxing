@@ -26,7 +26,7 @@ readonly _devissue_template_key="${_devissue_org}/${_devissue_repo}"
 echo "${_devissue_type^} #${_devissue_number} in ${_devissue_template_key}"
 echo "Container: ${_devissue_name}"
 
-export DEV_LAST_CONTAINER="$_devissue_name"
+echo "$_devissue_name" > "/run/user/$(id -u)/dev-last-container"
 
 # Existing container — just re-enter
 if _dev_container_exists "$_devissue_name"; then
