@@ -25,7 +25,7 @@ if [ -d /opt/m2-base ] && [ "$(ls -A /opt/m2-base 2>/dev/null)" ]; then
     chown dev:dev "$M2_UPPER" "$M2_WORK" "$M2_MERGED"
     if ! mountpoint -q "$M2_MERGED" 2>/dev/null; then
         runuser -u dev -- fuse-overlayfs \
-            -o "lowerdir=/opt/m2-base,upperdir=${M2_UPPER},workdir=${M2_WORK},allow_root" \
+            -o "lowerdir=/opt/m2-base,upperdir=${M2_UPPER},workdir=${M2_WORK}" \
             "$M2_MERGED"
     fi
 fi
@@ -57,26 +57,26 @@ if [ -d /opt/project-src ] && [ "$(ls -A /opt/project-src 2>/dev/null)" ]; then
     chown dev:dev "$WS_UPPER" "$WS_WORK" /workspace
     if ! mountpoint -q /workspace 2>/dev/null; then
         runuser -u dev -- fuse-overlayfs \
-            -o "lowerdir=/opt/project-src,upperdir=${WS_UPPER},workdir=${WS_WORK},allow_root" \
+            -o "lowerdir=/opt/project-src,upperdir=${WS_UPPER},workdir=${WS_WORK}" \
             /workspace
     fi
 
-    # Remove host-specific files (as root — allow_root lets us access the mount)
-    rm -rf /workspace/.claude /workspace/.idea /workspace/.git/config 2>/dev/null || true
+    # Clean up host-specific files and set up git (all as dev — owns the mount)
+    runuser -u dev -- git config --global --add safe.directory /workspace
 
-    # Set up clean git config
     if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         _repo="${DEV_TEMPLATE_KEY#*/}"
         _org="${DEV_TEMPLATE_KEY%%/*}"
-        cd /workspace
-        git init 2>/dev/null
-        git remote add origin "git@github.com:michalvavrik-dev-automation/${_repo}.git" 2>/dev/null || true
-        git remote add upstream "git@github.com:${_org}/${_repo}.git" 2>/dev/null || true
-        git checkout main 2>/dev/null || git checkout master 2>/dev/null || true
-        chown -R dev:dev /workspace/.git
+        runuser -u dev -- bash -c "
+            cd /workspace
+            rm -rf .claude .idea 2>/dev/null || true
+            rm -f .git/config 2>/dev/null || true
+            git init 2>/dev/null
+            git remote add origin git@github.com:michalvavrik-dev-automation/${_repo}.git 2>/dev/null || true
+            git remote add upstream git@github.com:${_org}/${_repo}.git 2>/dev/null || true
+            git checkout main 2>/dev/null || git checkout master 2>/dev/null || true
+        "
     fi
-
-    runuser -u dev -- git config --global --add safe.directory /workspace
 
     # PR checkout and details
     if [ -n "${DEV_PR_NUMBER:-}" ] && [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
@@ -84,15 +84,13 @@ if [ -d /opt/project-src ] && [ "$(ls -A /opt/project-src 2>/dev/null)" ]; then
         runuser -u dev -- bash -c \
             "cd /workspace && gh pr checkout -f ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}" || true
         runuser -u dev -- bash -c \
-            "gh pr view ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}" > /workspace/.pr 2>/dev/null || true
-        chown dev:dev /workspace/.pr 2>/dev/null || true
+            "gh pr view ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY} > /workspace/.pr 2>/dev/null" || true
     fi
 
     # Issue details
     if [ -n "${DEV_ISSUE_NUMBER:-}" ] && [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         runuser -u dev -- bash -c \
-            "gh issue view ${DEV_ISSUE_NUMBER} --repo ${DEV_TEMPLATE_KEY}" > /workspace/.issue 2>/dev/null || true
-        chown dev:dev /workspace/.issue 2>/dev/null || true
+            "gh issue view ${DEV_ISSUE_NUMBER} --repo ${DEV_TEMPLATE_KEY} > /workspace/.issue 2>/dev/null" || true
     fi
 fi
 
@@ -101,5 +99,4 @@ ssh-keygen -A 2>/dev/null || true
 /usr/sbin/sshd 2>/dev/null || true
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
-cd /workspace
-exec runuser -u dev -- ${*:-bash --login}
+exec runuser -u dev -- bash -c "cd /workspace && exec ${*:-bash --login}"
