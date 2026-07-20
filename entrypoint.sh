@@ -40,9 +40,9 @@ if [ -d /opt/dev-keys ]; then
     fi
 
     if [ -f /opt/dev-keys/gh-pat-container ]; then
-        runuser -u dev -- bash -c \
-            'gh auth login --with-token < /opt/dev-keys/gh-pat-container && gh auth setup-git' \
-            2>/dev/null || true
+        if ! cat /opt/dev-keys/gh-pat-container | runuser -u dev -- gh auth login --with-token; then
+            echo "ERROR: gh auth login failed — check gh-pat-container token" >&2
+        fi
     fi
 fi
 
