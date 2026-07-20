@@ -13,6 +13,9 @@ else
     echo "WARNING: iptables not available, skipping host firewall" >&2
 fi
 
+# ── Allow dev user to use FUSE ───────────────────────────────────────────────
+chmod 666 /dev/fuse 2>/dev/null || true
+
 # ── Maven cache (fuse-overlayfs as dev user) ────────────────────────────────
 if [ -d /opt/m2-base ] && [ "$(ls -A /opt/m2-base 2>/dev/null)" ]; then
     M2_UPPER="/tmp/m2-upper"
