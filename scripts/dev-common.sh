@@ -194,8 +194,10 @@ _dev_create_container() {
     if [[ -d "${HOME}/.m2/repository" ]]; then
         _dev_volumes+=(-v "${HOME}/.m2/repository:/opt/m2-base:ro")
     fi
-    if [[ -n "$_dev_source_dir" && -d "$_dev_source_dir" ]]; then
+    if [[ -n "$_dev_source_dir" && -d "$_dev_source_dir" && "$_dev_source_dir" == "${HOME}/sources/"* ]]; then
         _dev_volumes+=(-v "${_dev_source_dir}:/opt/project-src:ro")
+    elif [[ -n "$_dev_source_dir" ]]; then
+        echo "WARNING: source dir '${_dev_source_dir}' is not under ~/sources/, skipping mount" >&2
     fi
 
     echo "Creating container '${_dev_name}'..."
