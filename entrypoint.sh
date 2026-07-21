@@ -32,7 +32,7 @@ if [ -d /opt/m2-base ] && [ "$(ls -A /opt/m2-base 2>/dev/null)" ]; then
     M2_WORK="/tmp/m2-work"
     M2_MERGED="/home/dev/.m2/repository"
     mkdir -p "$M2_UPPER" "$M2_WORK" "$M2_MERGED"
-    chown dev:dev "$M2_UPPER" "$M2_WORK" "$M2_MERGED"
+    chown dev:dev /home/dev/.m2 "$M2_UPPER" "$M2_WORK" "$M2_MERGED"
     if ! mountpoint -q "$M2_MERGED" 2>/dev/null; then
         runuser -u dev -- fuse-overlayfs \
             -o "lowerdir=/opt/m2-base,upperdir=${M2_UPPER},workdir=${M2_WORK}" \
