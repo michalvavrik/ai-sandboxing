@@ -86,6 +86,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 - /opt/project-src — ${_org}/${_repo} (keycloak/quarkus) with full commit history (host mount). Use for \`git log\`, \`git blame\`, \`git show\`.
 - /opt/workspace/keycloak — latest keycloak main (shallow, for browsing source)
 - /opt/workspace/quarkus — latest quarkus main (shallow, for browsing source)
+- /tmp/workspace — additional documents copied in by the user (if any)
 CLAUDEMD
     fi
 
