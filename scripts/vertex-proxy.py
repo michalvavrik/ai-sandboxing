@@ -71,7 +71,8 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
 
         try:
             conn = http.client.HTTPSConnection(UPSTREAM_HOST)
-            conn.request("POST", self.path, body=raw_body, headers=upstream_headers)
+            upstream_path = self.path if self.path.startswith("/v1/") else f"/v1{self.path}"
+            conn.request("POST", upstream_path, body=raw_body, headers=upstream_headers)
             upstream_resp = conn.getresponse()
         except Exception as exc:
             log.error("Upstream connection failed: %s", exc)
@@ -105,7 +106,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(data)
 
         conn.close()
-        log.info("POST %s status=%d stream=%s", self.path[:80], status, is_stream)
+        log.info("POST %s status=%d stream=%s", self.path, status, is_stream)
 
     def log_message(self, fmt, *args):
         pass
