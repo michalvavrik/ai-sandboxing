@@ -51,6 +51,7 @@ RUN mkdir -p /home/dev/.ssh \
 COPY --chown=dev:dev configs/claude-settings.json /home/dev/.claude/settings.json
 
 # ── Pre-baked project repos (shallow clone — workspace-ready) ────────────────
+RUN mkdir -p /opt/workspace && chown dev:dev /opt/workspace
 USER dev
 RUN git clone --depth 1 --single-branch --branch main \
         https://github.com/keycloak/keycloak.git /opt/workspace/keycloak \
