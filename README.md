@@ -41,6 +41,8 @@ dev stop fix-auth          # stop (preserves state)
 dev start fix-auth         # resume stopped container
 dev delete fix-auth        # remove permanently
 dev see fix-auth           # push from container, pull to host, show diff
+dev cp ~/docs/analysis.md  # copy files into container's /workspace
+dev remember fix-auth      # set current container without entering
 dev list                   # show all dev containers
 
 # From a GitHub issue or PR URL:
@@ -51,7 +53,8 @@ dev https://github.com/keycloak/keycloak/pull/50801
 claude                     # start Claude Code (connects via host proxy)
 ```
 
-Container name is remembered — after `dev new foo`, just `dev enter`, `dev see`, etc.
+Container name is remembered — after `dev new foo`, just `dev enter`, `dev see`, `dev cp`, etc.
+Use `dev remember <name>` to set the current container from a different terminal.
 
 ## PR review workflow
 

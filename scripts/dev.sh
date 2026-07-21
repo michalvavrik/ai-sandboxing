@@ -31,6 +31,13 @@ case "$_dev_cmd" in
   see)
     /home/mvavrik/sandboxing/scripts/dev-see.sh "${1:-${DEV_LAST_CONTAINER:?'No container specified'}}"
     ;;
+  cp)
+    /home/mvavrik/sandboxing/scripts/dev-cp.sh "$@"
+    ;;
+  remember)
+    DEV_LAST_CONTAINER="${1:?'Usage: dev remember <name>'}"
+    echo "Remembered: ${DEV_LAST_CONTAINER}"
+    ;;
   list)
     /home/mvavrik/sandboxing/scripts/dev-list.sh
     ;;
@@ -50,6 +57,7 @@ case "$_dev_cmd" in
     echo "  stop [name]    Stop a container"
     echo "  start [name]   Start a stopped container"
     echo "  see [name]     Sync changes to host and show diff"
+    echo "  cp <path>      Copy file/dir into container's /workspace"
     echo "  list           List all dev containers"
     echo "  install        Install prerequisites and configure"
     echo "  <github-url>   Create/enter container for a GitHub issue"

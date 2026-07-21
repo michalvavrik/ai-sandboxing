@@ -64,9 +64,12 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
             "git@github.com:${_org}/${_repo}.git" 2>/dev/null || true
     fi
 
-    # Full history available read-only at /opt/project-src (host mount)
+    # Link host's full history as git alternates (avoids re-downloading objects)
     if [ -d /opt/project-src/.git ]; then
         runuser -u dev -- git config --global --add safe.directory /opt/project-src
+        runuser -u dev -- bash -c \
+            'mkdir -p /workspace/.git/objects/info && echo /opt/project-src/.git/objects >> /workspace/.git/objects/info/alternates' \
+            2>/dev/null || true
         runuser -u dev -- bash -c "cat > /workspace/CLAUDE.md" <<CLAUDEMD
 # Sandbox environment for ${_org}/${_repo}
 
@@ -103,8 +106,8 @@ CLAUDEMD
 fi
 
 # ── Start sshd (for additional terminals via dev enter) ─────────────────────
-ssh-keygen -A 2>/dev/null || true
-/usr/sbin/sshd 2>/dev/null || true
+ssh-keygen -A &>/dev/null || true
+/usr/sbin/sshd &>/dev/null || true
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
 exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; exec "$@"' _ "${@:-bash --login}"
