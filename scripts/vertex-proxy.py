@@ -153,7 +153,7 @@ def main():
     signal.signal(signal.SIGTERM, _shutdown_handler)
     signal.signal(signal.SIGINT, _shutdown_handler)
 
-    server = http.server.HTTPServer(("127.0.0.1", 0), _ProxyHandler)
+    server = http.server.HTTPServer(("0.0.0.0", 0), _ProxyHandler)
     port = server.server_address[1]
 
     _write_file(PID_FILE, str(os.getpid()))

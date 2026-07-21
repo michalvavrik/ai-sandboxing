@@ -13,6 +13,13 @@ else
     echo "WARNING: iptables not available, skipping host firewall" >&2
 fi
 
+# ── Persist container env vars for all sessions (main + SSH) ─────────────────
+cat > /etc/profile.d/dev-sandbox.sh <<DEVENV
+export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}"
+export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+export HISTFILE=/dev/null
+DEVENV
+
 # ── Allow dev user to use FUSE ───────────────────────────────────────────────
 chmod 666 /dev/fuse 2>/dev/null || true
 

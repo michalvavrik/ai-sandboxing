@@ -32,7 +32,7 @@ case "$_dev_cmd" in
     /home/mvavrik/sandboxing/scripts/dev-see.sh "${1:-${DEV_LAST_CONTAINER:?'No container specified'}}"
     ;;
   cp)
-    /home/mvavrik/sandboxing/scripts/dev-cp.sh "$@"
+    DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" /home/mvavrik/sandboxing/scripts/dev-cp.sh "$@"
     ;;
   use)
     DEV_LAST_CONTAINER="${1:?'Usage: dev use <name>'}"

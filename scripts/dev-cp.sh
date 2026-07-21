@@ -10,7 +10,7 @@ fi
 
 if [[ -z "${DEV_LAST_CONTAINER:-}" ]]; then
     echo "Error: no container selected." >&2
-    echo "Either use 'dev enter <name>' first, or: export DEV_LAST_CONTAINER=<name>" >&2
+    echo "Run 'dev use <name>' first." >&2
     exit 1
 fi
 readonly _devcp_name="$DEV_LAST_CONTAINER"
