@@ -15,8 +15,10 @@ fi
 
 # ── Persist container env vars for all sessions (main + SSH) ─────────────────
 cat > /etc/profile.d/dev-sandbox.sh <<DEVENV
-export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-}"
-export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}"
+export CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}"
+export ANTHROPIC_VERTEX_BASE_URL="${ANTHROPIC_VERTEX_BASE_URL:-}"
+export ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}"
+export CLOUD_ML_REGION="${CLOUD_ML_REGION:-}"
 export HISTFILE=/dev/null
 DEVENV
 

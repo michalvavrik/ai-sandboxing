@@ -184,7 +184,8 @@ _dev_create_container() {
     _dev_port=$(_dev_proxy_port)
 
     _dev_ensure_ghcr_auth
-    podman pull -q "$DEV_IMAGE" >/dev/null
+    echo "Checking for image updates..."
+    podman pull "$DEV_IMAGE"
 
     # Build volume mounts
     local _dev_volumes=(
@@ -212,8 +213,10 @@ _dev_create_container() {
         --label="dev-source-dir=${_dev_source_dir}" \
         --label="dev-template-key=${_dev_template_key}" \
         -e "PROXY_PORT=${_dev_port}" \
-        -e "ANTHROPIC_BASE_URL=http://host.internal:${_dev_port}" \
-        -e "ANTHROPIC_API_KEY=sk-ant-api03-proxy-placeholder" \
+        -e "CLAUDE_CODE_USE_VERTEX=1" \
+        -e "ANTHROPIC_VERTEX_BASE_URL=http://host.internal:${_dev_port}" \
+        -e "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}" \
+        -e "CLOUD_ML_REGION=${CLOUD_ML_REGION:-global}" \
         -e "DEV_TEMPLATE_KEY=${_dev_template_key}" \
         ${DEV_PR_NUMBER:+-e "DEV_PR_NUMBER=${DEV_PR_NUMBER}"} \
         ${DEV_ISSUE_NUMBER:+-e "DEV_ISSUE_NUMBER=${DEV_ISSUE_NUMBER}"} \

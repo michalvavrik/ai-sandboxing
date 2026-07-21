@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Proxy that translates Anthropic API requests to Google Vertex AI endpoints.
+"""Proxy that adds Google auth to Vertex AI requests from Claude Code.
 
-Listens on localhost on a dynamically assigned port and forwards
-POST /v1/messages requests to the Vertex AI rawPredict / streamRawPredict
-endpoint, injecting Google ADC credentials.
+Claude Code sends Vertex-formatted requests to ANTHROPIC_VERTEX_BASE_URL.
+This proxy adds the Google auth token and forwards to aiplatform.googleapis.com.
 """
 
 import atexit
@@ -13,6 +12,7 @@ import json
 import logging
 import os
 import signal
+import ssl
 import sys
 
 import google.auth
@@ -21,6 +21,8 @@ import google.auth.transport.requests
 REGION = os.environ.get("ANTHROPIC_VERTEX_REGION",
                         os.environ.get("CLOUD_ML_REGION", ""))
 PROJECT_ID = os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", "")
+PID_FILE = os.environ.get("DEV_PROXY_PID_FILE", "/run/user/1000/dev-proxy.pid")
+PORT_FILE = os.environ.get("DEV_PROXY_PORT_FILE", "/run/user/1000/dev-proxy.port")
 
 if not PROJECT_ID:
     print("Error: ANTHROPIC_VERTEX_PROJECT_ID must be set", file=sys.stderr)
@@ -28,8 +30,11 @@ if not PROJECT_ID:
 if not REGION:
     print("Error: CLOUD_ML_REGION or ANTHROPIC_VERTEX_REGION must be set", file=sys.stderr)
     sys.exit(1)
-PID_FILE = os.environ.get("DEV_PROXY_PID_FILE", "/run/user/1000/dev-proxy.pid")
-PORT_FILE = os.environ.get("DEV_PROXY_PORT_FILE", "/run/user/1000/dev-proxy.port")
+
+if REGION == "global":
+    UPSTREAM_HOST = "aiplatform.googleapis.com"
+else:
+    UPSTREAM_HOST = f"{REGION}-aiplatform.googleapis.com"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -38,30 +43,6 @@ logging.basicConfig(
 )
 log = logging.getLogger("vertex-proxy")
 
-MODEL_MAP = {
-    "claude-opus-4-20250514": "claude-opus-4-0@20250514",
-    "claude-opus-4-6-20250918": "claude-opus-4-6",
-    "claude-sonnet-4-20250514": "claude-sonnet-4-0@20250514",
-    "claude-sonnet-4-5-20250929": "claude-sonnet-4-5@20250929",
-    "claude-haiku-4-5-20251001": "claude-haiku-4-5@20251001",
-    "claude-sonnet-5": "claude-sonnet-4-5@20250929",
-}
-
-
-def _to_vertex_model(model):
-    """Map Anthropic API model name to Vertex AI model name.
-
-    Strips [1m] context suffix, then checks the explicit map,
-    then passes through as-is (many names work unchanged on Vertex).
-    """
-    model = model.split("[")[0]
-    if "@" in model:
-        return model
-    if model in MODEL_MAP:
-        return MODEL_MAP[model]
-    return model
-
-
 credentials, _ = google.auth.default(
     scopes=["https://www.googleapis.com/auth/cloud-platform"]
 )
@@ -69,7 +50,6 @@ _auth_request = google.auth.transport.requests.Request()
 
 
 def _get_token():
-    """Return a valid access token, refreshing if expired."""
     if not credentials.valid:
         credentials.refresh(_auth_request)
     return credentials.token
@@ -79,48 +59,19 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
     def do_POST(self):
-        if self.path != "/v1/messages":
-            self.send_error(404)
-            return
-
         content_length = int(self.headers.get("Content-Length", 0))
         raw_body = self.rfile.read(content_length)
-
-        try:
-            payload = json.loads(raw_body)
-        except (json.JSONDecodeError, ValueError):
-            self.send_error(400, "Invalid JSON body")
-            return
-
-        model = payload.get("model", "unknown")
-        vertex_model = _to_vertex_model(model)
-        is_stream = payload.get("stream", False)
-
-        payload["anthropic_version"] = "vertex-2023-10-16"
-        payload.pop("model", None)
-        raw_body = json.dumps(payload).encode()
-
-        endpoint = "streamRawPredict" if is_stream else "rawPredict"
-        if REGION == "global":
-            host = "aiplatform.googleapis.com"
-        else:
-            host = f"{REGION}-aiplatform.googleapis.com"
-        path = (
-            f"/v1/projects/{PROJECT_ID}/locations/{REGION}/"
-            f"publishers/anthropic/models/{vertex_model}:{endpoint}"
-        )
 
         token = _get_token()
         upstream_headers = {
             "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
+            "Content-Type": self.headers.get("Content-Type", "application/json"),
             "Content-Length": str(len(raw_body)),
         }
-        upstream_headers["anthropic-version"] = "vertex-2023-10-16"
 
         try:
-            conn = http.client.HTTPSConnection(host)
-            conn.request("POST", path, body=raw_body, headers=upstream_headers)
+            conn = http.client.HTTPSConnection(UPSTREAM_HOST)
+            conn.request("POST", self.path, body=raw_body, headers=upstream_headers)
             upstream_resp = conn.getresponse()
         except Exception as exc:
             log.error("Upstream connection failed: %s", exc)
@@ -133,10 +84,9 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Type", content_type)
 
+        is_stream = "streamRawPredict" in self.path
+
         if is_stream and 200 <= status < 300:
-            # Stream SSE bytes through as they arrive. Connection: close
-            # tells the client the response ends when the connection drops,
-            # avoiding the need for Content-Length or chunked framing.
             self.send_header("Connection", "close")
             self.end_headers()
             try:
@@ -155,13 +105,9 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(data)
 
         conn.close()
-        log.info(
-            "POST %s model=%s status=%d stream=%s",
-            self.path, model, status, is_stream,
-        )
+        log.info("POST %s status=%d stream=%s", self.path[:80], status, is_stream)
 
     def log_message(self, fmt, *args):
-        # Suppress the default per-request access log; we log our own.
         pass
 
 
@@ -199,8 +145,7 @@ def main():
     atexit.register(_remove_runtime_files)
 
     log.info("Listening on 0.0.0.0:%d", port)
-    log.info("PID file: %s  Port file: %s", PID_FILE, PORT_FILE)
-    log.info("Vertex AI: project=%s region=%s", PROJECT_ID, REGION)
+    log.info("Forwarding to %s", UPSTREAM_HOST)
 
     server.serve_forever()
 
