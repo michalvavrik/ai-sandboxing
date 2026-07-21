@@ -184,8 +184,7 @@ _dev_create_container() {
     _dev_port=$(_dev_proxy_port)
 
     _dev_ensure_ghcr_auth
-    echo "Checking for image updates..."
-    podman pull "$DEV_IMAGE"
+    podman pull --policy newer "$DEV_IMAGE"
 
     # Build volume mounts
     local _dev_volumes=(
