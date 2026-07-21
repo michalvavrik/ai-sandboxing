@@ -205,6 +205,7 @@ _dev_create_container() {
         --runtime="$DEV_RUNTIME" \
         --name="$_dev_name" \
         --privileged \
+        --userns=keep-id \
         --annotation "krun.ram_mib=${_dev_ram}" \
         --annotation "krun.cpus=${_dev_cpus}" \
         --add-host=host.internal:host-gateway \

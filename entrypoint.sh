@@ -49,37 +49,28 @@ if [ -d /opt/dev-keys ]; then
     fi
 fi
 
-# ── Project files (fuse-overlayfs as dev user) ──────────────────────────────
-if [ -d /opt/project-src ] && [ "$(ls -A /opt/project-src 2>/dev/null)" ]; then
-    WS_UPPER="/tmp/ws-upper"
-    WS_WORK="/tmp/ws-work"
-    mkdir -p "$WS_UPPER" "$WS_WORK"
-    chown dev:dev "$WS_UPPER" "$WS_WORK" /workspace
-    if ! mountpoint -q /workspace 2>/dev/null; then
-        runuser -u dev -- fuse-overlayfs \
-            -o "lowerdir=/opt/project-src,upperdir=${WS_UPPER},workdir=${WS_WORK}" \
-            /workspace
+# ── Project workspace (from baked-in shallow clone) ─────────────────────────
+if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
+    _repo="${DEV_TEMPLATE_KEY#*/}"
+    _org="${DEV_TEMPLATE_KEY%%/*}"
+    chown dev:dev /workspace
+
+    # Copy baked-in repo to workspace (local disk, fast)
+    if [ ! -d /workspace/.git ] && [ -d "/opt/workspace/${_repo}" ]; then
+        runuser -u dev -- cp -a "/opt/workspace/${_repo}/." /workspace/
+        runuser -u dev -- git -C /workspace remote set-url origin \
+            "git@github.com:michalvavrik-dev-automation/${_repo}.git"
+        runuser -u dev -- git -C /workspace remote add upstream \
+            "git@github.com:${_org}/${_repo}.git" 2>/dev/null || true
     fi
 
-    # Clean up host-specific files and set up git (all as dev — owns the mount)
-    runuser -u dev -- git config --global --add safe.directory /workspace
-
-    if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
-        _repo="${DEV_TEMPLATE_KEY#*/}"
-        _org="${DEV_TEMPLATE_KEY%%/*}"
-        runuser -u dev -- bash -c "
-            cd /workspace
-            rm -rf .claude .idea 2>/dev/null || true
-            rm -f .git/config 2>/dev/null || true
-            git init 2>/dev/null
-            git remote add origin git@github.com:michalvavrik-dev-automation/${_repo}.git 2>/dev/null || true
-            git remote add upstream git@github.com:${_org}/${_repo}.git 2>/dev/null || true
-            git checkout main 2>/dev/null || git checkout master 2>/dev/null || true
-        "
+    # Full history available read-only at /opt/project-src (host mount)
+    if [ -d /opt/project-src/.git ]; then
+        runuser -u dev -- git config --global --add safe.directory /opt/project-src
     fi
 
     # PR checkout and details
-    if [ -n "${DEV_PR_NUMBER:-}" ] && [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
+    if [ -n "${DEV_PR_NUMBER:-}" ]; then
         echo "Checking out PR #${DEV_PR_NUMBER}..."
         runuser -u dev -- bash -c \
             "cd /workspace && gh pr checkout -f ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}" || true
@@ -88,7 +79,7 @@ if [ -d /opt/project-src ] && [ "$(ls -A /opt/project-src 2>/dev/null)" ]; then
     fi
 
     # Issue details
-    if [ -n "${DEV_ISSUE_NUMBER:-}" ] && [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
+    if [ -n "${DEV_ISSUE_NUMBER:-}" ]; then
         runuser -u dev -- bash -c \
             "gh issue view ${DEV_ISSUE_NUMBER} --repo ${DEV_TEMPLATE_KEY} > /workspace/.issue 2>/dev/null" || true
     fi
@@ -99,4 +90,4 @@ ssh-keygen -A 2>/dev/null || true
 /usr/sbin/sshd 2>/dev/null || true
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
-exec runuser -u dev -- bash -c "cd /workspace && exec ${*:-bash --login}"
+exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; exec "$@"' _ "${@:-bash --login}"

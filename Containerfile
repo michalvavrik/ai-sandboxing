@@ -50,6 +50,14 @@ RUN mkdir -p /home/dev/.ssh \
 # ── Claude Code sandbox settings ─────────────────────────────────────────────
 COPY --chown=dev:dev configs/claude-settings.json /home/dev/.claude/settings.json
 
+# ── Pre-baked project repos (shallow clone — workspace-ready) ────────────────
+USER dev
+RUN git clone --depth 1 --single-branch --branch main \
+        https://github.com/keycloak/keycloak.git /opt/workspace/keycloak \
+    && git clone --depth 1 --single-branch --branch main \
+        https://github.com/quarkusio/quarkus.git /opt/workspace/quarkus
+USER root
+
 # ── Entrypoint ───────────────────────────────────────────────────────────────
 COPY --chmod=755 entrypoint.sh /opt/dev/entrypoint.sh
 ENTRYPOINT ["/opt/dev/entrypoint.sh"]
