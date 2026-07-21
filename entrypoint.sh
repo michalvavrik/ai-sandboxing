@@ -35,7 +35,7 @@ if [ -d /opt/m2-base ] && [ "$(ls -A /opt/m2-base 2>/dev/null)" ]; then
     chown dev:dev /home/dev/.m2 "$M2_UPPER" "$M2_WORK" "$M2_MERGED"
     if ! mountpoint -q "$M2_MERGED" 2>/dev/null; then
         runuser -u dev -- fuse-overlayfs \
-            -o "lowerdir=/opt/m2-base,upperdir=${M2_UPPER},workdir=${M2_WORK}" \
+            -o "lowerdir=/opt/m2-base,upperdir=${M2_UPPER},workdir=${M2_WORK},squash_to_uid=1000,squash_to_gid=1000" \
             "$M2_MERGED"
     fi
 fi
@@ -75,10 +75,16 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
     fi
 
     # Link host's full history as git alternates (avoids re-downloading objects)
+    # Overlay the objects dir so JGit/Nisse can write probe files without hitting the read-only mount
     if [ -d /opt/project-src/.git ]; then
         runuser -u dev -- git config --global --add safe.directory /opt/project-src
+        mkdir -p /tmp/git-obj-upper /tmp/git-obj-work /opt/project-src-objects
+        chown dev:dev /tmp/git-obj-upper /tmp/git-obj-work /opt/project-src-objects
+        runuser -u dev -- fuse-overlayfs \
+            -o "lowerdir=/opt/project-src/.git/objects,upperdir=/tmp/git-obj-upper,workdir=/tmp/git-obj-work,squash_to_uid=1000,squash_to_gid=1000" \
+            /opt/project-src-objects 2>/dev/null || true
         runuser -u dev -- bash -c \
-            'mkdir -p /workspace/.git/objects/info && echo /opt/project-src/.git/objects >> /workspace/.git/objects/info/alternates' \
+            'mkdir -p /workspace/.git/objects/info && echo /opt/project-src-objects >> /workspace/.git/objects/info/alternates' \
             2>/dev/null || true
         runuser -u dev -- bash -c "cat > /workspace/CLAUDE.md" <<CLAUDEMD
 # Sandbox environment for ${_org}/${_repo}
