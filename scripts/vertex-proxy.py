@@ -18,8 +18,16 @@ import sys
 import google.auth
 import google.auth.transport.requests
 
-REGION = os.environ.get("ANTHROPIC_VERTEX_REGION", "us-east5")
-PROJECT_ID = os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", "itpc-gcp-cp-pe-eng-claude")
+REGION = os.environ.get("ANTHROPIC_VERTEX_REGION",
+                        os.environ.get("CLOUD_ML_REGION", ""))
+PROJECT_ID = os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", "")
+
+if not PROJECT_ID:
+    print("Error: ANTHROPIC_VERTEX_PROJECT_ID must be set", file=sys.stderr)
+    sys.exit(1)
+if not REGION:
+    print("Error: CLOUD_ML_REGION or ANTHROPIC_VERTEX_REGION must be set", file=sys.stderr)
+    sys.exit(1)
 PID_FILE = os.environ.get("DEV_PROXY_PID_FILE", "/run/user/1000/dev-proxy.pid")
 PORT_FILE = os.environ.get("DEV_PROXY_PORT_FILE", "/run/user/1000/dev-proxy.port")
 
@@ -29,6 +37,30 @@ logging.basicConfig(
     stream=sys.stderr,
 )
 log = logging.getLogger("vertex-proxy")
+
+MODEL_MAP = {
+    "claude-opus-4-20250514": "claude-opus-4-0@20250514",
+    "claude-opus-4-6-20250918": "claude-opus-4-6",
+    "claude-sonnet-4-20250514": "claude-sonnet-4-0@20250514",
+    "claude-sonnet-4-5-20250929": "claude-sonnet-4-5@20250929",
+    "claude-haiku-4-5-20251001": "claude-haiku-4-5@20251001",
+    "claude-sonnet-5": "claude-sonnet-4-5@20250929",
+}
+
+
+def _to_vertex_model(model):
+    """Map Anthropic API model name to Vertex AI model name.
+
+    Strips [1m] context suffix, then checks the explicit map,
+    then passes through as-is (many names work unchanged on Vertex).
+    """
+    model = model.split("[")[0]
+    if "@" in model:
+        return model
+    if model in MODEL_MAP:
+        return MODEL_MAP[model]
+    return model
+
 
 credentials, _ = google.auth.default(
     scopes=["https://www.googleapis.com/auth/cloud-platform"]
@@ -61,13 +93,21 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             return
 
         model = payload.get("model", "unknown")
+        vertex_model = _to_vertex_model(model)
         is_stream = payload.get("stream", False)
 
+        payload["anthropic_version"] = "vertex-2023-10-16"
+        payload.pop("model", None)
+        raw_body = json.dumps(payload).encode()
+
         endpoint = "streamRawPredict" if is_stream else "rawPredict"
-        host = f"{REGION}-aiplatform.googleapis.com"
+        if REGION == "global":
+            host = "aiplatform.googleapis.com"
+        else:
+            host = f"{REGION}-aiplatform.googleapis.com"
         path = (
             f"/v1/projects/{PROJECT_ID}/locations/{REGION}/"
-            f"publishers/anthropic/models/{model}:{endpoint}"
+            f"publishers/anthropic/models/{vertex_model}:{endpoint}"
         )
 
         token = _get_token()
@@ -76,9 +116,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             "Content-Type": "application/json",
             "Content-Length": str(len(raw_body)),
         }
-        anthropic_version = self.headers.get("anthropic-version")
-        if anthropic_version:
-            upstream_headers["anthropic-version"] = anthropic_version
+        upstream_headers["anthropic-version"] = "vertex-2023-10-16"
 
         try:
             conn = http.client.HTTPSConnection(host)
@@ -160,7 +198,7 @@ def main():
     _write_file(PORT_FILE, str(port))
     atexit.register(_remove_runtime_files)
 
-    log.info("Listening on 127.0.0.1:%d", port)
+    log.info("Listening on 0.0.0.0:%d", port)
     log.info("PID file: %s  Port file: %s", PID_FILE, PORT_FILE)
     log.info("Vertex AI: project=%s region=%s", PROJECT_ID, REGION)
 

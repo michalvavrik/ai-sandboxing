@@ -184,8 +184,7 @@ _dev_create_container() {
     _dev_port=$(_dev_proxy_port)
 
     _dev_ensure_ghcr_auth
-    echo "Pulling latest dev image..."
-    podman pull "$DEV_IMAGE"
+    podman pull -q "$DEV_IMAGE" >/dev/null
 
     # Build volume mounts
     local _dev_volumes=(
@@ -205,7 +204,6 @@ _dev_create_container() {
         --runtime="$DEV_RUNTIME" \
         --name="$_dev_name" \
         --privileged \
-        --userns=keep-id \
         --annotation "krun.ram_mib=${_dev_ram}" \
         --annotation "krun.cpus=${_dev_cpus}" \
         --add-host=host.internal:host-gateway \
@@ -215,7 +213,7 @@ _dev_create_container() {
         --label="dev-template-key=${_dev_template_key}" \
         -e "PROXY_PORT=${_dev_port}" \
         -e "ANTHROPIC_BASE_URL=http://host.internal:${_dev_port}" \
-        -e "ANTHROPIC_API_KEY=not-used" \
+        -e "ANTHROPIC_API_KEY=sk-ant-api03-proxy-placeholder" \
         -e "DEV_TEMPLATE_KEY=${_dev_template_key}" \
         ${DEV_PR_NUMBER:+-e "DEV_PR_NUMBER=${DEV_PR_NUMBER}"} \
         ${DEV_ISSUE_NUMBER:+-e "DEV_ISSUE_NUMBER=${DEV_ISSUE_NUMBER}"} \
