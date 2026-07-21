@@ -67,6 +67,23 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
     # Full history available read-only at /opt/project-src (host mount)
     if [ -d /opt/project-src/.git ]; then
         runuser -u dev -- git config --global --add safe.directory /opt/project-src
+        runuser -u dev -- bash -c "cat > /workspace/CLAUDE.md" <<CLAUDEMD
+# Sandbox environment for ${_org}/${_repo}
+
+- /workspace is a shallow clone (depth 1). Work here.
+- /opt/project-src has the full git history of ${_org}/${_repo} (read-only). Use it for \`git log\`, \`git blame\`, \`git show\`:
+  \`\`\`
+  git -C /opt/project-src log --oneline -20
+  git -C /opt/project-src blame path/to/file
+  git -C /opt/project-src show <commit>:path/to/file
+  \`\`\`
+- Push to origin (michalvavrik-dev-automation/${_repo}), fetch from upstream (${_org}/${_repo}).
+
+## Reference codebases (read-only)
+- /opt/project-src — ${_org}/${_repo} (keycloak/quarkus) with full commit history (host mount). Use for \`git log\`, \`git blame\`, \`git show\`.
+- /opt/workspace/keycloak — latest keycloak main (shallow, for browsing source)
+- /opt/workspace/quarkus — latest quarkus main (shallow, for browsing source)
+CLAUDEMD
     fi
 
     # PR checkout and details
