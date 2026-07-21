@@ -16,6 +16,7 @@ fi
 # ── Persist container env vars for all sessions (main + SSH) ─────────────────
 cat > /etc/profile.d/dev-sandbox.sh <<DEVENV
 export CLAUDE_CODE_USE_VERTEX="${CLAUDE_CODE_USE_VERTEX:-}"
+export CLAUDE_CODE_SKIP_VERTEX_AUTH="${CLAUDE_CODE_SKIP_VERTEX_AUTH:-}"
 export ANTHROPIC_VERTEX_BASE_URL="${ANTHROPIC_VERTEX_BASE_URL:-}"
 export ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}"
 export CLOUD_ML_REGION="${CLOUD_ML_REGION:-}"

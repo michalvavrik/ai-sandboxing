@@ -214,6 +214,7 @@ _dev_create_container() {
         --label="dev-template-key=${_dev_template_key}" \
         -e "PROXY_PORT=${_dev_port}" \
         -e "CLAUDE_CODE_USE_VERTEX=1" \
+        -e "CLAUDE_CODE_SKIP_VERTEX_AUTH=1" \
         -e "ANTHROPIC_VERTEX_BASE_URL=http://host.internal:${_dev_port}" \
         -e "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}" \
         -e "CLOUD_ML_REGION=${CLOUD_ML_REGION:-global}" \
