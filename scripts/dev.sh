@@ -34,9 +34,9 @@ case "$_dev_cmd" in
   cp)
     /home/mvavrik/sandboxing/scripts/dev-cp.sh "$@"
     ;;
-  remember)
-    DEV_LAST_CONTAINER="${1:?'Usage: dev remember <name>'}"
-    echo "Remembered: ${DEV_LAST_CONTAINER}"
+  use)
+    DEV_LAST_CONTAINER="${1:?'Usage: dev use <name>'}"
+    echo "Using: ${DEV_LAST_CONTAINER}"
     ;;
   list)
     /home/mvavrik/sandboxing/scripts/dev-list.sh
@@ -49,7 +49,7 @@ case "$_dev_cmd" in
     DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     ;;
   help|*)
-    echo "Usage: dev {new|delete|enter|stop|start|see|list|install|<github-url>}"
+    echo "Usage: dev {new|enter|delete|stop|start|see|cp|use|list|install|<url>}"
     echo ""
     echo "  new <name>     Create and enter a new dev container"
     echo "  enter [name]   Enter an existing container"
