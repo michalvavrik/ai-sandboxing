@@ -49,7 +49,7 @@ RUN mkdir -p /home/dev/.ssh \
 
 # ── Claude Code sandbox settings ─────────────────────────────────────────────
 COPY --chown=dev:dev configs/claude-settings.json /home/dev/.claude/settings.json
-RUN echo '{"hasCompletedOnboarding":true,"hasAcceptedTerms":true,"hasSeenTasksHint":true,"numStartups":1,"autoUpdates":false,"projects":{"/workspace":{"allowedTools":[],"hasTrustDialogAccepted":true}}}' > /home/dev/.claude.json \
+RUN echo '{"hasCompletedOnboarding":true,"hasAcceptedTerms":true,"hasSeenTasksHint":true,"numStartups":1,"autoUpdates":false,"projects":{"/workspace":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/keycloak":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/quarkus":{"allowedTools":[],"hasTrustDialogAccepted":true}}}' > /home/dev/.claude.json \
     && chown dev:dev /home/dev/.claude.json
 
 # ── Pre-baked project repos (shallow clone — workspace-ready) ────────────────
