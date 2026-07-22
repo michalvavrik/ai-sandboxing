@@ -22,22 +22,29 @@ jobs:
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Promote yesterday's latest-next to latest
+      # Scheduled builds: rotate latest-next → latest, build new latest-next
+      - name: Promote latest-next to latest
+        if: github.event_name == 'schedule'
         run: |
           if podman pull ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next 2>/dev/null; then
             podman tag ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next \
                        ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest
             podman push ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest
-            echo "Promoted latest-next → latest"
-          else
-            echo "No latest-next to promote (first run or tag missing)"
           fi
 
-      - name: Build new image as latest-next
+      - name: Build image
         run: podman build -t ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next .
 
       - name: Push latest-next
         run: podman push ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next
+
+      # Push-triggered builds: also update latest immediately (you need the fix now)
+      - name: Push latest (code change)
+        if: github.event_name != 'schedule'
+        run: |
+          podman tag ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next \
+                     ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest
+          podman push ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest
 
       - name: Delete old image versions
         run: |
