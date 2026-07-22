@@ -267,7 +267,7 @@ Host ${_dev_name}
     HostName 127.0.0.1
     Port ${_dev_sport}
     User dev
-    IdentityFile ~/sandboxing/keys/id_ed25519_dev_automation
+    IdentityFile /home/mvavrik/sandboxing/keys/id_ed25519_dev_automation
     IdentitiesOnly yes
     AddKeysToAgent yes
     StrictHostKeyChecking no

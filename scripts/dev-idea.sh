@@ -9,7 +9,6 @@ if ! _dev_container_running "$_devidea_name"; then
     exit 1
 fi
 
-# Ensure SSH config is up to date for this container
 _dev_update_ssh_config "$_devidea_name"
 
 readonly _devidea_port=$(_dev_ssh_port "$_devidea_name")
@@ -20,6 +19,7 @@ if [[ ! -x "$_devidea_gateway" ]]; then
     exit 1
 fi
 
-"$_devidea_gateway" "jetbrains-gateway://connect#host=${_devidea_name}&port=${_devidea_port}&user=dev&type=ssh&deploy=false&projectPath=%2Fworkspace" &>/dev/null &
+echo "In Gateway: SSH → Host: ${_devidea_name}, User: dev, Password: (leave empty) → Project: /workspace"
+
+"$_devidea_gateway" &>/dev/null &
 disown
-echo "Opening Gateway → ${_devidea_name}:${_devidea_port} → /workspace"

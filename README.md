@@ -47,6 +47,7 @@ dev delete fix-auth        # remove permanently
 dev see fix-auth           # push from container, pull to host, show diff
 dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
 dev use fix-auth           # set current container without entering
+dev idea                   # open container in IntelliJ IDEA via Gateway
 dev list                   # show all dev containers
 
 # From a GitHub issue or PR URL:
@@ -73,6 +74,20 @@ claude
 # PR got updated? Just re-enter — it re-checkouts automatically:
 dev https://github.com/keycloak/keycloak/pull/50801
 ```
+
+## IntelliJ IDEA (via Gateway)
+
+If you need to just review changes in your IDEA, for now it is much easier and quicker just do "dev see" in your project and then open your IDE in that directory.
+However, if you require using MCP server or you want to connect your IDE to the container, you can follow this manual process:
+
+`dev idea` opens JetBrains Gateway and prints the SSH connection details. Gateway auto-connect via URL doesn't work reliably, so the first connection per container is manual:
+
+1. `dev idea` — opens Gateway, prints host name
+2. In Gateway: **SSH Connection** → enter the host name shown, user `dev`, leave password empty
+3. Select `/workspace` as the project directory
+4. Gateway installs the backend and opens IntelliJ
+
+Once connected, Claude Code inside the container auto-discovers the JetBrains MCP server.
 
 ## Projects
 
