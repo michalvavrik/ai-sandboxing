@@ -223,6 +223,7 @@ _dev_create_container() {
         -e "ANTHROPIC_VERTEX_BASE_URL=http://host.internal:${_dev_port}" \
         -e "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}" \
         -e "CLOUD_ML_REGION=${CLOUD_ML_REGION:-global}" \
+        -e "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-max}" \
         -e "DEV_TEMPLATE_KEY=${_dev_template_key}" \
         ${DEV_PR_NUMBER:+-e "DEV_PR_NUMBER=${DEV_PR_NUMBER}"} \
         ${DEV_ISSUE_NUMBER:+-e "DEV_ISSUE_NUMBER=${DEV_ISSUE_NUMBER}"} \
