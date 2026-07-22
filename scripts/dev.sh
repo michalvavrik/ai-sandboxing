@@ -16,6 +16,9 @@ case "$_dev_cmd" in
     ;;
   delete)
     /home/mvavrik/sandboxing/scripts/dev-delete.sh "${1:-$DEV_LAST_CONTAINER}"
+    if [[ "${1:-$DEV_LAST_CONTAINER}" == "${DEV_LAST_CONTAINER:-}" ]]; then
+      unset DEV_LAST_CONTAINER
+    fi
     ;;
   enter)
     DEV_LAST_CONTAINER="${1:-$DEV_LAST_CONTAINER}"
