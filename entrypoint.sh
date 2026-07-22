@@ -136,4 +136,4 @@ fi
 (ssh-keygen -A &>/dev/null && /usr/sbin/sshd &>/dev/null) &
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
-exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; exec "$@"' _ "${@:-bash --login}" 2> >(grep -v "ttyname" >&2)
+exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; exec "$@"' _ "${@:-bash --login}"

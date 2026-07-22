@@ -47,6 +47,9 @@ RUN mkdir -p /home/dev/.ssh \
     && ssh-keyscan github.com >> /home/dev/.ssh/known_hosts 2>/dev/null \
     && chown -R dev:dev /home/dev/.ssh
 
+# ── Fix tty error in krun (gnupg2.sh calls tty unconditionally) ──────────────
+RUN sed -i 's|export GPG_TTY=$(tty)|[ -t 0 ] \&\& export GPG_TTY=$(tty)|' /etc/profile.d/gnupg2.sh
+
 # ── Claude Code sandbox settings ─────────────────────────────────────────────
 COPY --chown=dev:dev configs/claude-settings.json /home/dev/.claude/settings.json
 RUN echo '{"hasCompletedOnboarding":true,"hasAcceptedTerms":true,"hasSeenTasksHint":true,"numStartups":1,"autoUpdates":false,"projects":{"/workspace":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/keycloak":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/quarkus":{"allowedTools":[],"hasTrustDialogAccepted":true}}}' > /home/dev/.claude.json \
