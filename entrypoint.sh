@@ -69,6 +69,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 
     # Symlink workspace to the baked-in repo (instant — container overlay handles writes)
     if [ ! -d /workspace/.git ] && [ -d "/opt/workspace/${_repo}" ]; then
+        cd /
         rm -rf /workspace
         ln -s "/opt/workspace/${_repo}" /workspace
         runuser -u dev -- git -C /workspace remote set-url origin \
