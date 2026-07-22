@@ -229,6 +229,8 @@ _dev_create_container() {
         -p "127.0.0.1::22" \
         "${_dev_volumes[@]}" \
         "$DEV_IMAGE"
+
+    _dev_update_ssh_config "$_dev_name"
 }
 
 _dev_ssh_port() {
@@ -245,8 +247,32 @@ _dev_ssh_cmd() {
         echo "Error: could not determine SSH port for '${_dev_name}'" >&2
         return 1
     fi
-    ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -p "$_dev_sport" dev-sandbox "$@"
+    ssh -q "$_dev_name" "$@"
+}
+
+_dev_update_ssh_config() {
+    local _dev_name="$1"
+    local _dev_sport
+    _dev_sport=$(_dev_ssh_port "$_dev_name") || return 1
+    local _dev_ssh_conf="${DEV_BASE_DIR}/ssh-config"
+
+    # Remove old entry for this container
+    sed -i "/^# dev-sandbox: ${_dev_name}$/,/^$/d" "$_dev_ssh_conf" 2>/dev/null || true
+
+    # Write new entry
+    cat >> "$_dev_ssh_conf" <<SSHENTRY
+# dev-sandbox: ${_dev_name}
+Host ${_dev_name}
+    HostName 127.0.0.1
+    Port ${_dev_sport}
+    User dev
+    IdentityFile ~/sandboxing/keys/id_ed25519_dev_automation
+    IdentitiesOnly yes
+    AddKeysToAgent yes
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+SSHENTRY
 }
 
 _dev_check_container_pat() {

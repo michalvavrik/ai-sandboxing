@@ -9,6 +9,9 @@ if ! _dev_container_running "$_devidea_name"; then
     exit 1
 fi
 
+# Ensure SSH config is up to date for this container
+_dev_update_ssh_config "$_devidea_name"
+
 readonly _devidea_port=$(_dev_ssh_port "$_devidea_name")
 readonly _devidea_gateway="${HOME}/.local/share/JetBrains/Toolbox/scripts/gateway"
 
@@ -17,7 +20,6 @@ if [[ ! -x "$_devidea_gateway" ]]; then
     exit 1
 fi
 
-"$_devidea_gateway" "jetbrains-gateway://connect#host=dev-sandbox&port=${_devidea_port}&user=dev&type=ssh&deploy=false&projectPath=%2Fworkspace" &>/dev/null &
+"$_devidea_gateway" "jetbrains-gateway://connect#host=${_devidea_name}&port=${_devidea_port}&user=dev&type=ssh&deploy=false&projectPath=%2Fworkspace" &>/dev/null &
 disown
-echo "Gateway opening → dev-sandbox:${_devidea_port} → /workspace"
-echo "If connection fails, enable 'Parse SSH config' in Gateway SSH settings."
+echo "Opening Gateway → ${_devidea_name}:${_devidea_port} → /workspace"

@@ -15,12 +15,8 @@ if ! _dev_container_running "$_devcp_name"; then
     exit 1
 fi
 
-readonly _devcp_port=$(_dev_ssh_port "$_devcp_name")
-
 _dev_ssh_cmd "$_devcp_name" 'mkdir -p /tmp/workspace'
 
-scp -q -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -P "$_devcp_port" \
-    "$@" "dev-sandbox:/tmp/workspace/"
+scp -q -r "$@" "${_devcp_name}:/tmp/workspace/"
 
 echo "Copied $# item(s) to /tmp/workspace/"

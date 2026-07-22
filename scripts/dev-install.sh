@@ -227,21 +227,13 @@ if ! grep -qF 'dev-sandbox:latest' "${HOME}/.bashrc" 2>/dev/null; then
 fi
 
 
-# SSH config for container access (Gateway, dev enter, dev see, dev cp)
-if ! grep -qF '# Dev sandbox containers' "${HOME}/.ssh/config" 2>/dev/null; then
-    cat >> "${HOME}/.ssh/config" <<'SSHCFG'
-
-# Dev sandbox containers (krun microVM)
-Host dev-sandbox
-    HostName 127.0.0.1
-    User dev
-    IdentityFile ~/sandboxing/keys/id_ed25519_dev_automation
-    IdentitiesOnly yes
-    AddKeysToAgent yes
-SSHCFG
-    echo "SSH config added for container access."
+# SSH config Include for container access (Gateway, dev enter, dev see, dev cp)
+touch "${_DEV_BASE_DIR}/ssh-config"
+if ! grep -qF 'Include ~/sandboxing/ssh-config' "${HOME}/.ssh/config" 2>/dev/null; then
+    sed -i '1i Include ~/sandboxing/ssh-config' "${HOME}/.ssh/config"
+    echo "SSH config Include added."
 else
-    echo "SSH config already present."
+    echo "SSH config Include already present."
 fi
 
 

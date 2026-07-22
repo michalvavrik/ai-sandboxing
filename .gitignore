@@ -3,3 +3,4 @@ plan/
 *.pid
 *.port
 __pycache__/
+ssh-config
