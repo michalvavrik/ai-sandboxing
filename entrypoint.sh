@@ -53,10 +53,11 @@ if [ -d /opt/dev-keys ]; then
         chmod 600 /home/dev/.ssh/authorized_keys
     fi
 
+    _gh_auth_pid=""
     if [ -f /opt/dev-keys/gh-pat-container ]; then
-        if ! cat /opt/dev-keys/gh-pat-container | runuser -u dev -- gh auth login --with-token; then
-            echo "ERROR: gh auth login failed — check gh-pat-container token" >&2
-        fi
+        (cat /opt/dev-keys/gh-pat-container | runuser -u dev -- gh auth login --with-token || \
+            echo "ERROR: gh auth login failed — check gh-pat-container token" >&2) &
+        _gh_auth_pid=$!
     fi
 fi
 
@@ -108,8 +109,9 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 CLAUDEMD
     fi
 
-    # PR checkout and details
+    # PR checkout and details (wait for gh auth if it's still running)
     if [ -n "${DEV_PR_NUMBER:-}" ]; then
+        [ -n "$_gh_auth_pid" ] && wait "$_gh_auth_pid" 2>/dev/null
         echo "Checking out PR #${DEV_PR_NUMBER}..."
         runuser -u dev -- bash -c \
             "cd /workspace && gh pr checkout -f ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}" || true
@@ -125,8 +127,7 @@ CLAUDEMD
 fi
 
 # ── Start sshd (for additional terminals via dev enter) ─────────────────────
-ssh-keygen -A &>/dev/null || true
-/usr/sbin/sshd &>/dev/null || true
+(ssh-keygen -A &>/dev/null && /usr/sbin/sshd &>/dev/null) &
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
 exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; exec "$@"' _ "${@:-bash --login}"
