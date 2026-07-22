@@ -23,8 +23,14 @@ _dev_port_file() {
 _dev_resolve_name() {
     local _dev_name="${1:-${DEV_LAST_CONTAINER:-}}"
     if [[ -z "$_dev_name" ]]; then
-        echo "Error: no container name specified" >&2
-        return 1
+        local _dev_running
+        _dev_running=$(podman ps --filter="label=${DEV_LABEL}" --format '{{.Names}}' 2>/dev/null)
+        if [[ $(echo "$_dev_running" | wc -l) -eq 1 && -n "$_dev_running" ]]; then
+            _dev_name="$_dev_running"
+        else
+            echo "Error: no container specified and multiple (or zero) running. Use 'dev use <name>' first." >&2
+            return 1
+        fi
     fi
     echo "$_dev_name"
 }

@@ -8,12 +8,7 @@ if [[ $# -eq 0 ]]; then
     exit 1
 fi
 
-if [[ -z "${DEV_LAST_CONTAINER:-}" ]]; then
-    echo "Error: no container selected." >&2
-    echo "Run 'dev use <name>' first." >&2
-    exit 1
-fi
-readonly _devcp_name="$DEV_LAST_CONTAINER"
+readonly _devcp_name=$(_dev_resolve_name "")
 
 if ! _dev_container_running "$_devcp_name"; then
     echo "Error: container '${_devcp_name}' is not running" >&2
