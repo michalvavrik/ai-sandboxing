@@ -228,9 +228,9 @@ fi
 
 
 # SSH config Include for container access (Gateway, dev enter, dev see, dev cp)
-touch "${_DEV_BASE_DIR}/ssh-config"
-if ! grep -qF 'Include ~/sandboxing/ssh-config' "${HOME}/.ssh/config" 2>/dev/null; then
-    sed -i '1i Include ~/sandboxing/ssh-config' "${HOME}/.ssh/config"
+# Uses wildcard in tmpfs — silently ignored when no containers exist, wiped on reboot
+if ! grep -qF 'dev-sandbox-ssh' "${HOME}/.ssh/config" 2>/dev/null; then
+    sed -i "1i Include /run/user/$(id -u)/dev-sandbox-ssh*.conf" "${HOME}/.ssh/config"
     echo "SSH config Include added."
 else
     echo "SSH config Include already present."

@@ -251,7 +251,7 @@ _dev_ssh_cmd() {
 
 _dev_remove_ssh_config() {
     local _dev_name="$1"
-    local _dev_ssh_conf="${DEV_BASE_DIR}/ssh-config"
+    local _dev_ssh_conf="/run/user/$(id -u)/dev-sandbox-ssh.conf"
     sed -i "/^# dev-sandbox: ${_dev_name}$/,/^$/d" "$_dev_ssh_conf" 2>/dev/null || true
 }
 
@@ -262,7 +262,7 @@ _dev_update_ssh_config() {
     if [[ -z "$_dev_sport" ]]; then
         return 1
     fi
-    local _dev_ssh_conf="${DEV_BASE_DIR}/ssh-config"
+    local _dev_ssh_conf="/run/user/$(id -u)/dev-sandbox-ssh.conf"
 
     _dev_remove_ssh_config "$_dev_name"
 
