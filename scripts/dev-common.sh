@@ -190,7 +190,8 @@ _dev_create_container() {
     _dev_port=$(_dev_proxy_port)
 
     _dev_ensure_ghcr_auth
-    podman pull --policy newer "$DEV_IMAGE"
+    CONTAINERS_CONF_OVERRIDE=<(printf '[engine]\nimage_parallel_copies = 1\n') \
+        podman pull --policy newer "$DEV_IMAGE"
 
     # Build volume mounts
     local _dev_volumes=(
