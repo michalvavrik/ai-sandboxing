@@ -232,7 +232,7 @@ _dev_completion() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=($(compgen -W "new enter delete stop start see cp use list install" -- "$cur"))
+        COMPREPLY=($(compgen -W "new enter delete stop start see cp use idea list install" -- "$cur"))
     elif [[ $COMP_CWORD -eq 2 && "$prev" =~ ^(enter|delete|stop|start|see|use|remember)$ ]]; then
         COMPREPLY=($(compgen -W "$(podman ps -a --filter=label=dev-sandbox --format '{{.Names}}' 2>/dev/null)" -- "$cur"))
     fi

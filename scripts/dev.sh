@@ -34,6 +34,9 @@ case "$_dev_cmd" in
   cp)
     DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" /home/mvavrik/sandboxing/scripts/dev-cp.sh "$@"
     ;;
+  idea)
+    /home/mvavrik/sandboxing/scripts/dev-idea.sh "${1:-$DEV_LAST_CONTAINER}"
+    ;;
   use)
     DEV_LAST_CONTAINER="${1:?'Usage: dev use <name>'}"
     echo "Using: ${DEV_LAST_CONTAINER}"
@@ -49,7 +52,7 @@ case "$_dev_cmd" in
     DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     ;;
   help|*)
-    echo "Usage: dev {new|enter|delete|stop|start|see|cp|use|list|install|<url>}"
+    echo "Usage: dev {new|enter|delete|stop|start|see|cp|use|idea|list|install|<url>}"
     echo ""
     echo "  new <name>     Create and enter a new dev container"
     echo "  enter [name]   Enter an existing container"
@@ -57,10 +60,12 @@ case "$_dev_cmd" in
     echo "  stop [name]    Stop a container"
     echo "  start [name]   Start a stopped container"
     echo "  see [name]     Sync changes to host and show diff"
-    echo "  cp <path>      Copy file/dir into container's /workspace"
+    echo "  cp <path>      Copy files/dirs into container's /tmp/workspace"
+    echo "  use <name>     Set current container without entering"
+    echo "  idea [name]    Open container in IntelliJ IDEA via Gateway"
     echo "  list           List all dev containers"
     echo "  install        Install prerequisites and configure"
-    echo "  <github-url>   Create/enter container for a GitHub issue"
+    echo "  <github-url>   Create/enter container for a GitHub issue/PR"
     ;;
 esac
 
