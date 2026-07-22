@@ -210,7 +210,7 @@ _dev_step_header 7 7 "Shell alias"
 
 readonly _DEV_ALIAS='alias dev="source /home/mvavrik/sandboxing/scripts/dev.sh"'
 
-readonly _DEV_BG_PULL='(flock -n /tmp/dev-pull.lock -c '\''{ podman login --get-login ghcr.io &>/dev/null || gh auth token | podman login ghcr.io -u michalvavrik --password-stdin &>/dev/null; podman pull ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest; }'\'' &>/dev/null &)'
+readonly _DEV_BG_PULL='(flock -n /tmp/dev-pull.lock -c '\''{ podman login --get-login ghcr.io &>/dev/null || gh auth token | podman login ghcr.io -u michalvavrik --password-stdin &>/dev/null; podman pull --policy newer ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest; podman pull --policy newer ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next; }'\'' &>/dev/null &)'
 
 if grep -qF 'alias dev=' "${HOME}/.bashrc" 2>/dev/null; then
     echo "Shell alias already present in ~/.bashrc."

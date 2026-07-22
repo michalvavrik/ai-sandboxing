@@ -19,19 +19,30 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
-      - name: Build image
-        run: podman build -t ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest .
-
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
 
-      - name: Push image
-        run: podman push ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest
+      - name: Promote yesterday's latest-next to latest
+        run: |
+          if podman pull ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next 2>/dev/null; then
+            podman tag ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next \
+                       ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest
+            podman push ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest
+            echo "Promoted latest-next → latest"
+          else
+            echo "No latest-next to promote (first run or tag missing)"
+          fi
+
+      - name: Build new image as latest-next
+        run: podman build -t ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next .
+
+      - name: Push latest-next
+        run: podman push ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next
 
       - name: Delete old image versions
         run: |
           gh api /users/michalvavrik/packages/container/ai-sandboxing%2Fdev-sandbox/versions \
-            --paginate --jq '.[].id' | tail -n +4 | while read -r id; do
+            --paginate --jq '.[].id' | tail -n +3 | while read -r id; do
             gh api --method DELETE "/users/michalvavrik/packages/container/ai-sandboxing%2Fdev-sandbox/versions/$id" || true
           done
         env:

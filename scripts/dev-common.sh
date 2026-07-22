@@ -189,6 +189,16 @@ _dev_create_container() {
     local _dev_port
     _dev_port=$(_dev_proxy_port)
 
+    # Warn if image is stale (>4 days old)
+    local _dev_img_date
+    _dev_img_date=$(podman image inspect "$DEV_IMAGE" --format '{{.Created}}' 2>/dev/null | cut -d' ' -f1) || true
+    if [[ -n "$_dev_img_date" ]]; then
+        local _dev_age=$(( ($(date +%s) - $(date -d "$_dev_img_date" +%s)) / 86400 ))
+        if (( _dev_age > 4 )); then
+            echo "WARNING: dev image is ${_dev_age} days old. Check if background pull is working." >&2
+        fi
+    fi
+
     _dev_ensure_ghcr_auth
     CONTAINERS_CONF_OVERRIDE=<(printf '[engine]\nimage_parallel_copies = 1\n') \
         podman pull --policy newer "$DEV_IMAGE"
