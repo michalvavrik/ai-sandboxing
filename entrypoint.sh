@@ -66,9 +66,10 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
     _org="${DEV_TEMPLATE_KEY%%/*}"
     chown dev:dev /workspace
 
-    # Copy baked-in repo to workspace (local disk, fast)
+    # Symlink workspace to the baked-in repo (instant — container overlay handles writes)
     if [ ! -d /workspace/.git ] && [ -d "/opt/workspace/${_repo}" ]; then
-        runuser -u dev -- cp -a "/opt/workspace/${_repo}/." /workspace/
+        rm -rf /workspace
+        ln -s "/opt/workspace/${_repo}" /workspace
         runuser -u dev -- git -C /workspace remote set-url origin \
             "git@github.com:michalvavrik-dev-automation/${_repo}.git"
         runuser -u dev -- git -C /workspace remote add upstream \
