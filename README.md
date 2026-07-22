@@ -19,6 +19,10 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 - **Fine-grained GitHub token** — full access on agent's own forks, read-only on public repos, cannot create issues/PRs/comments on upstream projects, rotated periodically
 - **Known limitation** — krun's minimal kernel has no firewall (iptables/nftables), so the container can reach host services (e.g., Proton Mail Bridge)
 
+## Prerequisities
+
+- features linked to Jetbrains only work if you have installed their Intellij Idea and Gateway apps, use Toolbox
+
 ## Setup
 
 ```bash

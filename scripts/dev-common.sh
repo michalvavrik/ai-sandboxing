@@ -246,8 +246,7 @@ _dev_ssh_cmd() {
         return 1
     fi
     ssh -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        -i "${DEV_KEYS_DIR}/id_ed25519_dev_automation" \
-        -p "$_dev_sport" dev@127.0.0.1 "$@"
+        -p "$_dev_sport" dev-sandbox "$@"
 }
 
 _dev_check_container_pat() {

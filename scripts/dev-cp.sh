@@ -16,12 +16,11 @@ if ! _dev_container_running "$_devcp_name"; then
 fi
 
 readonly _devcp_port=$(_dev_ssh_port "$_devcp_name")
-readonly _devcp_key="${DEV_KEYS_DIR}/id_ed25519_dev_automation"
 
 _dev_ssh_cmd "$_devcp_name" 'mkdir -p /tmp/workspace'
 
 scp -q -r -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-    -i "$_devcp_key" -P "$_devcp_port" \
-    "$@" "dev@127.0.0.1:/tmp/workspace/"
+    -P "$_devcp_port" \
+    "$@" "dev-sandbox:/tmp/workspace/"
 
 echo "Copied $# item(s) to /tmp/workspace/"

@@ -226,6 +226,22 @@ if ! grep -qF 'dev-sandbox:latest' "${HOME}/.bashrc" 2>/dev/null; then
     echo "Background image pull added to ~/.bashrc."
 fi
 
+# SSH config for container access (Gateway, dev enter, dev see, dev cp)
+if ! grep -qF '# Dev sandbox containers' "${HOME}/.ssh/config" 2>/dev/null; then
+    cat >> "${HOME}/.ssh/config" <<'SSHCFG'
+
+# Dev sandbox containers (krun microVM)
+Host dev-sandbox
+    HostName 127.0.0.1
+    User dev
+    IdentityFile ~/sandboxing/keys/id_ed25519_dev_automation
+    IdentitiesOnly yes
+SSHCFG
+    echo "SSH config added for container access."
+else
+    echo "SSH config already present."
+fi
+
 if ! grep -qF '_dev_completion' "${HOME}/.bashrc" 2>/dev/null; then
     cat >> "${HOME}/.bashrc" <<'COMP'
 _dev_completion() {
