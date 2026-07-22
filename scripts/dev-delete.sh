@@ -10,6 +10,7 @@ if ! _dev_container_exists "$_devdel_name"; then
 fi
 
 podman rm -f "$_devdel_name"
+_dev_remove_ssh_config "$_devdel_name"
 echo "Container '${_devdel_name}' deleted."
 
 _dev_maybe_stop_proxy

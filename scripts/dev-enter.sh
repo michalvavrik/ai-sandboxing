@@ -13,6 +13,7 @@ fi
 _dev_ensure_proxy
 
 if _dev_container_running "$_deventer_name"; then
+    _dev_update_ssh_config "$_deventer_name"
     _dev_ssh_cmd "$_deventer_name"
 else
     echo "Starting container '${_deventer_name}'..."

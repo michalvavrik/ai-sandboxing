@@ -15,6 +15,9 @@ if ! _dev_container_running "$_devsee_name"; then
     exit 1
 fi
 
+# Ensure SSH config is current
+_dev_update_ssh_config "$_devsee_name"
+
 # Push from container via SSH
 echo "Pushing changes from container..."
 _dev_ssh_cmd "$_devsee_name" \

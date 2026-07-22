@@ -230,8 +230,6 @@ _dev_create_container() {
         -p "127.0.0.1::22" \
         "${_dev_volumes[@]}" \
         "$DEV_IMAGE"
-
-    _dev_update_ssh_config "$_dev_name"
 }
 
 _dev_ssh_port() {
@@ -251,14 +249,22 @@ _dev_ssh_cmd() {
     ssh -q "$_dev_name" "$@"
 }
 
+_dev_remove_ssh_config() {
+    local _dev_name="$1"
+    local _dev_ssh_conf="${DEV_BASE_DIR}/ssh-config"
+    sed -i "/^# dev-sandbox: ${_dev_name}$/,/^$/d" "$_dev_ssh_conf" 2>/dev/null || true
+}
+
 _dev_update_ssh_config() {
     local _dev_name="$1"
     local _dev_sport
-    _dev_sport=$(_dev_ssh_port "$_dev_name") || return 1
+    _dev_sport=$(_dev_ssh_port "$_dev_name")
+    if [[ -z "$_dev_sport" ]]; then
+        return 1
+    fi
     local _dev_ssh_conf="${DEV_BASE_DIR}/ssh-config"
 
-    # Remove old entry for this container
-    sed -i "/^# dev-sandbox: ${_dev_name}$/,/^$/d" "$_dev_ssh_conf" 2>/dev/null || true
+    _dev_remove_ssh_config "$_dev_name"
 
     # Write new entry
     cat >> "$_dev_ssh_conf" <<SSHENTRY
