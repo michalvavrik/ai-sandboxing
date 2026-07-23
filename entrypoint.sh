@@ -113,10 +113,11 @@ CLAUDEMD
     # PR checkout and details (wait for gh auth if it's still running)
     if [ -n "${DEV_PR_NUMBER:-}" ]; then
         [ -n "$_gh_auth_pid" ] && wait "$_gh_auth_pid" 2>/dev/null
-        # Fetch recent history from host mount so git can negotiate efficiently with GitHub
+        # Copy host refs so git can negotiate efficiently with GitHub
         # Without this, the depth-1 clone sends 1 "have" and GitHub sends ~1M objects
-        if [ -d /opt/project-src/.git ]; then
-            runuser -u dev -- git -C /workspace fetch --quiet file:///opt/project-src main 2>/dev/null || true
+        # Objects are available via alternates; refs tell git what commits exist
+        if [ -f /opt/project-src/.git/packed-refs ]; then
+            cp /opt/project-src/.git/packed-refs /workspace/.git/packed-refs 2>/dev/null || true
         fi
         echo "Checking out PR #${DEV_PR_NUMBER}..."
         runuser -u dev -- bash -c \
