@@ -244,8 +244,15 @@ _dev_completion() {
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     if [[ $COMP_CWORD -eq 1 ]]; then
         COMPREPLY=($(compgen -W "new enter delete stop start see cp cpout use idea list install" -- "$cur"))
-    elif [[ $COMP_CWORD -eq 2 && "$prev" =~ ^(enter|delete|stop|start|see|use|remember)$ ]]; then
+    elif [[ $COMP_CWORD -eq 2 && "$prev" =~ ^(enter|delete|stop|start|see|use)$ ]]; then
         COMPREPLY=($(compgen -W "$(podman ps -a --filter=label=dev-sandbox --format '{{.Names}}' 2>/dev/null)" -- "$cur"))
+    elif [[ "$prev" == "cpout" ]]; then
+        local name="${DEV_LAST_CONTAINER:-}"
+        if [[ -n "$name" ]]; then
+            local prefix="/workspace/"
+            [[ "$cur" == /* ]] && prefix=""
+            COMPREPLY=($(ssh -q "$name" "ls -d ${prefix}${cur}* 2>/dev/null" | sed "s|^${prefix}||"))
+        fi
     fi
 }
 complete -F _dev_completion dev
