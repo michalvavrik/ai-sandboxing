@@ -4,3 +4,4 @@ plan/
 *.port
 __pycache__/
 ssh-config
+.idea/

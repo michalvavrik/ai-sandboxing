@@ -43,12 +43,9 @@ fi
 
 # ── Credentials (from mounted /opt/dev-keys) ────────────────────────────────
 if [ -d /opt/dev-keys ]; then
-    if [ -f /opt/dev-keys/id_ed25519_dev_automation ]; then
-        cp -f /opt/dev-keys/id_ed25519_dev_automation /home/dev/.ssh/id_ed25519
-        chown dev:dev /home/dev/.ssh/id_ed25519
-        chmod 600 /home/dev/.ssh/id_ed25519
-
-        cp -f /opt/dev-keys/id_ed25519_dev_automation.pub /home/dev/.ssh/authorized_keys
+    # Container SSH key (sshd access only — NOT the GitHub key)
+    if [ -f /opt/dev-keys/id_ed25519_container.pub ]; then
+        cp -f /opt/dev-keys/id_ed25519_container.pub /home/dev/.ssh/authorized_keys
         chown dev:dev /home/dev/.ssh/authorized_keys
         chmod 600 /home/dev/.ssh/authorized_keys
     fi
@@ -73,9 +70,9 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         rm -rf /workspace
         ln -s "/opt/workspace/${_repo}" /workspace
         runuser -u dev -- git -C /workspace remote set-url origin \
-            "git@github.com:michalvavrik-dev-automation/${_repo}.git"
+            "http://host.internal:${PROXY_PORT}/git/michalvavrik-dev-automation/${_repo}.git"
         runuser -u dev -- git -C /workspace remote add upstream \
-            "git@github.com:${_org}/${_repo}.git" 2>/dev/null || true
+            "https://github.com/${_org}/${_repo}.git" 2>/dev/null || true
     fi
 
     # Link host's full history as git alternates (avoids re-downloading objects)

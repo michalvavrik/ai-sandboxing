@@ -1,60 +1,61 @@
-# Sourced via: alias dev="source /home/mvavrik/sandboxing/scripts/dev.sh"
+# Sourced via: alias dev="source <path>/scripts/dev.sh"
+_dev_dir="$(dirname "${BASH_SOURCE[0]}")"
 _dev_cmd="${1:-help}"
 shift 2>/dev/null || true
 
 # Check token expiry on any container-related command (soft warning, non-blocking)
 case "$_dev_cmd" in
   new|enter|start|see|http*|https*)
-    (source /home/mvavrik/sandboxing/scripts/dev-common.sh; _dev_check_container_pat) || true
+    (source "${_dev_dir}/dev-common.sh"; _dev_check_container_pat) || true
     ;;
 esac
 
 case "$_dev_cmd" in
   new)
     DEV_LAST_CONTAINER="${1:?'Usage: dev new <name>'}"
-    /home/mvavrik/sandboxing/scripts/dev-new.sh "$@"
+    "${_dev_dir}/dev-new.sh" "$@"
     ;;
   delete)
-    /home/mvavrik/sandboxing/scripts/dev-delete.sh "${1:-$DEV_LAST_CONTAINER}"
+    "${_dev_dir}/dev-delete.sh" "${1:-$DEV_LAST_CONTAINER}"
     if [[ "${1:-$DEV_LAST_CONTAINER}" == "${DEV_LAST_CONTAINER:-}" ]]; then
       unset DEV_LAST_CONTAINER
     fi
     ;;
   enter)
     DEV_LAST_CONTAINER="${1:-$DEV_LAST_CONTAINER}"
-    /home/mvavrik/sandboxing/scripts/dev-enter.sh "${DEV_LAST_CONTAINER:?'No container specified. Use: dev enter <name>'}"
+    "${_dev_dir}/dev-enter.sh" "${DEV_LAST_CONTAINER:?'No container specified. Use: dev enter <name>'}"
     ;;
   stop)
-    /home/mvavrik/sandboxing/scripts/dev-stop.sh "${1:-${DEV_LAST_CONTAINER:?'No container specified'}}"
+    "${_dev_dir}/dev-stop.sh" "${1:-${DEV_LAST_CONTAINER:?'No container specified'}}"
     ;;
   start)
     DEV_LAST_CONTAINER="${1:-$DEV_LAST_CONTAINER}"
-    /home/mvavrik/sandboxing/scripts/dev-start.sh "${DEV_LAST_CONTAINER:?'No container specified'}"
+    "${_dev_dir}/dev-start.sh" "${DEV_LAST_CONTAINER:?'No container specified'}"
     ;;
   see)
-    /home/mvavrik/sandboxing/scripts/dev-see.sh "${1:-${DEV_LAST_CONTAINER:?'No container specified'}}"
+    "${_dev_dir}/dev-see.sh" "${1:-${DEV_LAST_CONTAINER:?'No container specified'}}"
     ;;
   cp)
-    DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" /home/mvavrik/sandboxing/scripts/dev-cp.sh "$@"
+    DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-cp.sh" "$@"
     ;;
   cpout)
-    DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" /home/mvavrik/sandboxing/scripts/dev-cpout.sh "$@"
+    DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-cpout.sh" "$@"
     ;;
   idea)
-    /home/mvavrik/sandboxing/scripts/dev-idea.sh "${1:-$DEV_LAST_CONTAINER}"
+    "${_dev_dir}/dev-idea.sh" "${1:-$DEV_LAST_CONTAINER}"
     ;;
   use)
     DEV_LAST_CONTAINER="${1:?'Usage: dev use <name>'}"
     echo "Using: ${DEV_LAST_CONTAINER}"
     ;;
   list)
-    /home/mvavrik/sandboxing/scripts/dev-list.sh
+    "${_dev_dir}/dev-list.sh"
     ;;
   install)
-    /home/mvavrik/sandboxing/scripts/dev-install.sh
+    "${_dev_dir}/dev-install.sh"
     ;;
   http*|https*)
-    /home/mvavrik/sandboxing/scripts/dev-issue.sh "$_dev_cmd"
+    "${_dev_dir}/dev-issue.sh" "$_dev_cmd"
     DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     ;;
   help|*)
@@ -76,4 +77,4 @@ case "$_dev_cmd" in
     ;;
 esac
 
-unset _dev_cmd 2>/dev/null
+unset _dev_cmd _dev_dir 2>/dev/null

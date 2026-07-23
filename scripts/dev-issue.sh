@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-source /home/mvavrik/sandboxing/scripts/dev-common.sh
+source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
 readonly _devissue_url="${1:?'Usage: dev-issue.sh <github-url>'}"
 

@@ -14,14 +14,16 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 
 - **krun microVM** — hardware-isolated guest kernel
 - **Non-root agent** — Claude runs as unprivileged `dev` user, cannot modify iptables or escalate
-- **Vertex AI proxy** — Google credentials stay on the host, only API responses cross the boundary
-- **Credential-free image** — SSH key and GitHub token injected at runtime, not baked in
-- **Fine-grained GitHub token** — full access on agent's own forks, read-only on public repos, cannot create issues/PRs/comments on upstream projects, rotated periodically
-- **Known limitation** — krun's minimal kernel has no firewall (iptables/nftables), so the container can reach host services (e.g., Proton Mail Bridge)
+- **Host-side proxy** — Google Vertex AI credentials and GitHub push credentials stay on the host, injected into requests by the proxy
+- **Credential-free image** — only a read-only GitHub token and a container-only SSH key (not authorized on GitHub) are injected at runtime
+- **No write credentials in container** — git push goes through the host proxy which adds auth; container has zero GitHub write access
+- **Read-only GitHub token** — for `gh` CLI rate limits on public repos; cannot write to any repo
+- **Known limitation** — krun's minimal kernel has no firewall (iptables/nftables), so the container can reach host services
 
-## Prerequisities
+## Prerequisites
 
-- features linked to Jetbrains only work if you have installed their Intellij Idea and Gateway apps, use Toolbox
+- Clone this repo to `~/sandboxing`: `git clone git@github.com:michalvavrik/ai-sandboxing.git ~/sandboxing`
+- JetBrains features require IntelliJ IDEA and Gateway installed via Toolbox
 
 ## Setup
 
@@ -103,9 +105,10 @@ cd ~/sources/quarkus && dev new my-fix      # → quarkus template (16GB RAM, 8 
 ## Keys
 
 `keys/` is `.gitignored`. Contains:
-- `id_ed25519_dev_automation` — SSH key for `michalvavrik-dev-automation`
+- `id_ed25519_dev_automation` — GitHub SSH key (host only, used by proxy for git push to agent's forks, never enters containers)
+- `id_ed25519_container` — container-only SSH key for sshd access (not authorized on GitHub)
 - `gh-pat` — classic PAT (used by `dev install` only, never enters containers)
-- `gh-pat-container` — fine-grained PAT (injected into containers, rotate periodically)
+- `gh-pat-container` — short-lived read-only fine-grained PAT for public repos (injected into containers for `gh` CLI rate limits)
 
 Token expiry warnings appear automatically when using `dev` commands.
 
@@ -113,8 +116,11 @@ Token expiry warnings appear automatically when using `dev` commands.
 
 ```
 Host                              krun MicroVM
-├── vertex-proxy.py ◄──────────── Claude Code (ANTHROPIC_BASE_URL)
-│   └── ADC stays here            ├── JDK 21 / Maven / Git
+├── vertex-proxy.py ◄──────────── Claude Code (Vertex AI requests)
+│   ├── ADC stays here            ├── JDK 21 / Maven / Git
+│   └── git push auth ◄────────── git push (via HTTP, no credentials in container)
 ├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (reads host, writes local)
-└── keys/ ──────────── injected── └── SSH key + gh auth (ephemeral)
+└── keys/                         └── read-only gh token + container SSH key
+    ├── id_ed25519_dev_automation    (host only — git push auth for agent's forks)
+    └── id_ed25519_container         (container sshd access)
 ```

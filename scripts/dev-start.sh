@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-source /home/mvavrik/sandboxing/scripts/dev-common.sh
+source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
 readonly _devstart_name="${1:?'Usage: dev-start.sh <name>'}"
 

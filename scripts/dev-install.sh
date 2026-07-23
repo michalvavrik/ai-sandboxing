@@ -1,8 +1,8 @@
 #!/bin/bash
 set -euo pipefail
 
-readonly _DEV_BASE_DIR="/home/mvavrik/sandboxing"
-readonly _DEV_KEYS_DIR="/home/mvavrik/sandboxing/keys"
+readonly _DEV_BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+readonly _DEV_KEYS_DIR="${_DEV_BASE_DIR}/keys"
 readonly _DEV_AUTOMATION_USER="michalvavrik-dev-automation"
 
 _dev_step_header() {
@@ -57,6 +57,15 @@ else
         echo "Fix this before continuing." >&2
         exit 1
     fi
+fi
+
+# Container-only SSH key (for sshd access, NOT on GitHub)
+readonly _DEV_CONTAINER_SSH_KEY="${_DEV_KEYS_DIR}/id_ed25519_container"
+if [[ -f "$_DEV_CONTAINER_SSH_KEY" ]]; then
+    echo "Container SSH key already exists."
+else
+    ssh-keygen -t ed25519 -C "dev-sandbox-container" -f "$_DEV_CONTAINER_SSH_KEY" -N ""
+    echo "Container SSH key generated (not for GitHub — sshd access only)."
 fi
 
 # --------------------------------------------------------------------------
@@ -119,12 +128,11 @@ else
     echo "  2. Go to: https://github.com/settings/personal-access-tokens/new"
     echo ""
     echo "  Settings:"
-    echo "    Name:              dev-container"
+    echo "    Name:              dev-container-readonly"
     echo "    Expiration:        30 days (rotate periodically)"
-    echo "    Repository access: All repositories"
+    echo "    Repository access: Public repositories (read-only)"
     echo "    Permissions:"
-    echo "      - Contents: Read and write"
-    echo "      (nothing else — no issues, no PRs, no comments)"
+    echo "      (none needed — public repo read is default)"
     echo ""
     read -rs -p "Paste the token here: " _dev_container_token
     echo ""
@@ -199,7 +207,7 @@ fi
 # --------------------------------------------------------------------------
 _dev_step_header 6 7 "GHCR authentication"
 
-source /home/mvavrik/sandboxing/scripts/dev-common.sh
+source "$(dirname "$0")/dev-common.sh"
 _dev_ensure_ghcr_auth
 echo "GHCR authentication OK."
 
@@ -208,7 +216,7 @@ echo "GHCR authentication OK."
 # --------------------------------------------------------------------------
 _dev_step_header 7 7 "Shell alias"
 
-readonly _DEV_ALIAS='alias dev="source /home/mvavrik/sandboxing/scripts/dev.sh"'
+readonly _DEV_ALIAS="alias dev=\"source ${_DEV_BASE_DIR}/scripts/dev.sh\""
 
 readonly _DEV_BG_PULL='(flock -n /tmp/dev-pull.lock -c '\''{ podman login --get-login ghcr.io &>/dev/null || gh auth token | podman login ghcr.io -u michalvavrik --password-stdin &>/dev/null; podman pull --policy newer ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest; podman pull --policy newer ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next; }'\'' &>/dev/null &)'
 

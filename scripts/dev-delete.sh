@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-source /home/mvavrik/sandboxing/scripts/dev-common.sh
+source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
 readonly _devdel_name="${1:?'Usage: dev-delete.sh <name>'}"
 
@@ -13,7 +13,8 @@ fi
 _devdel_template_key=$(podman inspect --format '{{index .Config.Labels "dev-template-key"}}' "$_devdel_name" 2>/dev/null) || true
 if [[ -n "$_devdel_template_key" ]]; then
     _devdel_repo="${_devdel_template_key#*/}"
-    git push "git@github.com:${DEV_AUTOMATION_USER}/${_devdel_repo}.git" \
+    GIT_SSH_COMMAND="ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" \
+        git push "git@github.com:${DEV_AUTOMATION_USER}/${_devdel_repo}.git" \
         --delete "dev-auto/${_devdel_name}" 2>/dev/null || true
 fi
 

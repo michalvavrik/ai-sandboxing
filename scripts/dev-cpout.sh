@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-source /home/mvavrik/sandboxing/scripts/dev-common.sh
+source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
 if [[ $# -eq 0 ]]; then
     echo "Usage: dev cpout <remote-path>..." >&2

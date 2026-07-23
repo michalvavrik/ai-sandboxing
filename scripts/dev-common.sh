@@ -2,10 +2,10 @@
 set -euo pipefail
 
 readonly DEV_AUTOMATION_USER="michalvavrik-dev-automation"
-readonly DEV_SCRIPTS_DIR="/home/mvavrik/sandboxing/scripts"
-readonly DEV_BASE_DIR="/home/mvavrik/sandboxing"
-readonly DEV_KEYS_DIR="/home/mvavrik/sandboxing/keys"
-readonly DEV_CONFIGS_DIR="/home/mvavrik/sandboxing/configs"
+readonly DEV_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly DEV_BASE_DIR="$(dirname "$DEV_SCRIPTS_DIR")"
+readonly DEV_KEYS_DIR="${DEV_BASE_DIR}/keys"
+readonly DEV_CONFIGS_DIR="${DEV_BASE_DIR}/configs"
 readonly DEV_IMAGE="ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest"
 readonly DEV_LABEL="dev-sandbox"
 readonly DEV_RUNTIME="krun"
@@ -284,7 +284,7 @@ Host ${_dev_name}
     HostName 127.0.0.1
     Port ${_dev_sport}
     User dev
-    IdentityFile /home/mvavrik/sandboxing/keys/id_ed25519_dev_automation
+    IdentityFile ${DEV_KEYS_DIR}/id_ed25519_container
     IdentitiesOnly yes
     AddKeysToAgent yes
     StrictHostKeyChecking no

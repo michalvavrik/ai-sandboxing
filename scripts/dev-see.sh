@@ -1,6 +1,6 @@
 #!/bin/bash
 set -euo pipefail
-source /home/mvavrik/sandboxing/scripts/dev-common.sh
+source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
 readonly _devsee_name="${1:?'Usage: dev-see.sh <name>'}"
 readonly _devsee_remote="dev-automation"

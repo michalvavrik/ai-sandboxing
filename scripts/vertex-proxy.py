@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Proxy that adds Google auth to Vertex AI requests from Claude Code.
+"""Dev sandbox proxy: Vertex AI auth + Git HTTP push auth.
 
-Claude Code sends Vertex-formatted requests to ANTHROPIC_VERTEX_BASE_URL.
-This proxy adds the Google auth token and forwards to aiplatform.googleapis.com.
+- Vertex AI: adds Google auth token to Claude Code's API requests
+- Git HTTP: adds GitHub PAT auth to git push operations from containers
 """
 
 import atexit
@@ -23,6 +23,7 @@ REGION = os.environ.get("ANTHROPIC_VERTEX_REGION",
 PROJECT_ID = os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", "")
 PID_FILE = os.environ.get("DEV_PROXY_PID_FILE", "/run/user/1000/dev-proxy.pid")
 PORT_FILE = os.environ.get("DEV_PROXY_PORT_FILE", "/run/user/1000/dev-proxy.port")
+GH_PAT_FILE = os.path.expanduser("~/sandboxing/keys/gh-pat-container")
 
 if not PROJECT_ID:
     print("Error: ANTHROPIC_VERTEX_PROJECT_ID must be set", file=sys.stderr)
@@ -55,10 +56,76 @@ def _get_token():
     return credentials.token
 
 
+def _get_gh_pat():
+    try:
+        with open(GH_PAT_FILE) as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return None
+
+
+def _is_git_request(path):
+    return path.startswith("/git/")
+
+
 class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def do_POST(self):
+    def _forward_git(self, method):
+        """Forward git HTTP requests to github.com with PAT auth."""
+        pat = _get_gh_pat()
+        if not pat:
+            self.send_error(503, "No GitHub PAT configured")
+            return
+
+        # /git/owner/repo.git/... → /owner/repo.git/...
+        github_path = self.path[len("/git"):]
+
+        content_length = int(self.headers.get("Content-Length", 0))
+        raw_body = self.rfile.read(content_length) if content_length > 0 else b""
+
+        import base64
+        auth = base64.b64encode(f"x-access-token:{pat}".encode()).decode()
+        upstream_headers = {
+            "Authorization": f"Basic {auth}",
+            "Host": "github.com",
+        }
+        if content_length > 0:
+            upstream_headers["Content-Type"] = self.headers.get("Content-Type", "")
+            upstream_headers["Content-Length"] = str(len(raw_body))
+
+        try:
+            conn = http.client.HTTPSConnection("github.com")
+            conn.request(method, github_path, body=raw_body if raw_body else None,
+                         headers=upstream_headers)
+            upstream_resp = conn.getresponse()
+        except Exception as exc:
+            log.error("GitHub connection failed: %s", exc)
+            self.send_error(502, f"GitHub error: {exc}")
+            return
+
+        status = upstream_resp.status
+        content_type = upstream_resp.getheader("Content-Type", "application/octet-stream")
+
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Connection", "close")
+        self.end_headers()
+        try:
+            while True:
+                chunk = upstream_resp.read1(65536)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+        conn.close()
+        log.info("GIT %s %s status=%d", method, github_path[:60], status)
+
+    def _forward_vertex(self):
+        """Forward Vertex AI requests with Google auth."""
         content_length = int(self.headers.get("Content-Length", 0))
         raw_body = self.rfile.read(content_length)
 
@@ -107,6 +174,18 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
 
         conn.close()
         log.info("POST %s status=%d stream=%s", self.path, status, is_stream)
+
+    def do_GET(self):
+        if _is_git_request(self.path):
+            self._forward_git("GET")
+        else:
+            self.send_error(404)
+
+    def do_POST(self):
+        if _is_git_request(self.path):
+            self._forward_git("POST")
+        else:
+            self._forward_vertex()
 
     def log_message(self, fmt, *args):
         pass
