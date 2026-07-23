@@ -46,6 +46,14 @@ jobs:
                      ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest
           podman push ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest
 
+      - name: Delete old workflow runs
+        run: |
+          gh run list --json databaseId --jq '.[].databaseId' | tail -n +6 | while read -r id; do
+            gh run delete "$id" || true
+          done
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Delete old image versions
         run: |
           gh api /users/michalvavrik/packages/container/ai-sandboxing%2Fdev-sandbox/versions \
