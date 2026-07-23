@@ -108,6 +108,9 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 - /opt/workspace/quarkus — latest quarkus main (shallow, for browsing source)
 - /tmp/workspace — additional documents copied in by the user (if any)
 CLAUDEMD
+        runuser -u dev -- git -C /workspace update-index --assume-unchanged CLAUDE.md 2>/dev/null || true
+        runuser -u dev -- git -C /workspace config core.untrackedCache true 2>/dev/null || true
+        runuser -u dev -- git -C /workspace status &>/dev/null &
     fi
 
     # PR checkout and details (wait for gh auth if it's still running)
