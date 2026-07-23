@@ -15,6 +15,7 @@ if ! _dev_container_running "$_devcp_name"; then
     exit 1
 fi
 
+_dev_update_ssh_config "$_devcp_name"
 _dev_ssh_cmd "$_devcp_name" 'mkdir -p /tmp/workspace'
 
 scp -q -r "$@" "${_devcp_name}:/tmp/workspace/"

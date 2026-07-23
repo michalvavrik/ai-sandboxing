@@ -37,6 +37,9 @@ case "$_dev_cmd" in
   cp)
     DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" /home/mvavrik/sandboxing/scripts/dev-cp.sh "$@"
     ;;
+  cpout)
+    DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" /home/mvavrik/sandboxing/scripts/dev-cpout.sh "$@"
+    ;;
   idea)
     /home/mvavrik/sandboxing/scripts/dev-idea.sh "${1:-$DEV_LAST_CONTAINER}"
     ;;
@@ -55,7 +58,7 @@ case "$_dev_cmd" in
     DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     ;;
   help|*)
-    echo "Usage: dev {new|enter|delete|stop|start|see|cp|use|idea|list|install|<url>}"
+    echo "Usage: dev {new|enter|delete|stop|start|see|cp|cpout|use|idea|list|install|<url>}"
     echo ""
     echo "  new <name>     Create and enter a new dev container"
     echo "  enter [name]   Enter an existing container"
@@ -64,6 +67,7 @@ case "$_dev_cmd" in
     echo "  start [name]   Start a stopped container"
     echo "  see [name]     Sync changes to host and show diff"
     echo "  cp <path>      Copy files/dirs into container's /tmp/workspace"
+    echo "  cpout <path>   Copy files/dirs from container to current dir"
     echo "  use <name>     Set current container without entering"
     echo "  idea [name]    Open container in IntelliJ IDEA via Gateway"
     echo "  list           List all dev containers"

@@ -46,6 +46,8 @@ dev start fix-auth         # resume stopped container
 dev delete fix-auth        # remove permanently
 dev see fix-auth           # push from container, pull to host, show diff
 dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
+dev cpout pom.xml          # copy from container (relative to /workspace)
+dev cpout /tmp/file.txt    # copy from container (absolute path)
 dev use fix-auth           # set current container without entering
 dev idea                   # open container in IntelliJ IDEA via Gateway
 dev list                   # show all dev containers
