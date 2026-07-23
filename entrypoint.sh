@@ -110,7 +110,8 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 CLAUDEMD
         runuser -u dev -- git -C /workspace update-index --assume-unchanged CLAUDE.md 2>/dev/null || true
         runuser -u dev -- git -C /workspace config core.untrackedCache true 2>/dev/null || true
-        runuser -u dev -- git -C /workspace status &>/dev/null &
+        # Warm virtio-fs dentry cache for workspace + Claude Code binary (async)
+        (runuser -u dev -- git -C /workspace status; cat /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe) &>/dev/null &
     fi
 
     # PR checkout and details (wait for gh auth if it's still running)
