@@ -9,6 +9,14 @@ if ! _dev_container_exists "$_devdel_name"; then
     exit 1
 fi
 
+# Delete remote branch if it was pushed
+_devdel_template_key=$(podman inspect --format '{{index .Config.Labels "dev-template-key"}}' "$_devdel_name" 2>/dev/null) || true
+if [[ -n "$_devdel_template_key" ]]; then
+    _devdel_repo="${_devdel_template_key#*/}"
+    git push "git@github.com:${DEV_AUTOMATION_USER}/${_devdel_repo}.git" \
+        --delete "dev-auto/${_devdel_name}" 2>/dev/null || true
+fi
+
 podman rm -f "$_devdel_name"
 _dev_remove_ssh_config "$_devdel_name"
 echo "Container '${_devdel_name}' deleted."

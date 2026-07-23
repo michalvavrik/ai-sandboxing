@@ -18,14 +18,11 @@ fi
 # Ensure SSH config is current
 _dev_update_ssh_config "$_devsee_name"
 
-# Push from container via SSH
-echo "Pushing changes from container..."
+# Push from container to a container-specific branch
+readonly _devsee_branch="dev-auto/${_devsee_name}"
+echo "Pushing changes to ${_devsee_branch}..."
 _dev_ssh_cmd "$_devsee_name" \
-    'cd /workspace && git add -A && git diff --cached --quiet || git commit -m "WIP sync" && git push origin HEAD'
-
-# Get branch name via SSH
-readonly _devsee_branch=$(_dev_ssh_cmd "$_devsee_name" \
-    'cd /workspace && git rev-parse --abbrev-ref HEAD')
+    "cd /workspace && git add -A && git reset HEAD -- CLAUDE.md 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devsee_branch}"
 echo "Branch: ${_devsee_branch}"
 
 # Get the remote URL from container labels
