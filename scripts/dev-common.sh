@@ -44,9 +44,9 @@ _dev_ensure_proxy() {
         return 0
     fi
 
-    echo "Starting vertex proxy..."
+    echo "Starting dev proxy..."
     DEV_PROXY_PID_FILE="$_dev_pf" DEV_PROXY_PORT_FILE="$_dev_ptf" \
-        python3 "${DEV_SCRIPTS_DIR}/vertex-proxy.py" 2>/dev/null &
+        python3 "${DEV_SCRIPTS_DIR}/dev-proxy.py" 2>/dev/null &
     disown
 
     local _dev_wait=0

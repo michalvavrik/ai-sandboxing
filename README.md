@@ -79,19 +79,21 @@ claude
 dev https://github.com/keycloak/keycloak/pull/50801
 ```
 
+## JetBrains MCP server
+
+If IntelliJ IDEA (or GoLand) is running on the host with the MCP server enabled (**Settings | Tools | MCP Server**), containers auto-discover the IDE tools through the host proxy — no Gateway required.
+The proxy reverse-proxies the MCP SSE connection, and the entrypoint injects the `mcpServers` config into the container's Claude Code settings at startup.
+
+This gives sandboxed Claude instances access to IDE tools like symbol search, refactoring, build, debug, and database operations — without exposing any IDE credentials or state inside the container.
+
 ## IntelliJ IDEA (via Gateway)
 
-If you need to just review changes in your IDEA, for now it is much easier and quicker just do "dev see" in your project and then open your IDE in that directory.
-However, if you require using MCP server or you want to connect your IDE to the container, you can follow this manual process:
-
-`dev idea` opens JetBrains Gateway and prints the SSH connection details. Gateway auto-connect via URL doesn't work reliably, so the first connection per container is manual:
+If you want to connect your IDE directly to a container (for interactive editing), `dev idea` opens JetBrains Gateway:
 
 1. `dev idea` — opens Gateway, prints host name
 2. In Gateway: **SSH Connection** → enter the host name shown, user `dev`, leave password empty
 3. Select `/workspace` as the project directory
 4. Gateway installs the backend and opens IntelliJ
-
-Once connected, Claude Code inside the container auto-discovers the JetBrains MCP server.
 
 ## Projects
 
@@ -115,9 +117,11 @@ Token expiry warnings appear automatically when using `dev` commands.
 
 ```
 Host                              krun MicroVM
-├── vertex-proxy.py ◄──────────── Claude Code (Vertex AI requests)
+├── dev-proxy.py ◄─────────────── Claude Code (Vertex AI requests)
 │   ├── ADC stays here            ├── JDK 21 / Maven / Git
-│   └── git push (HTTP→SSH) ◄──── git push (container HTTP, proxy bridges to GitHub SSH)
+│   ├── git push (HTTP→SSH) ◄──── git push (container HTTP, proxy bridges to GitHub SSH)
+│   └── MCP SSE relay ◄────────── Claude Code (IDE tools via MCP)
+│       └── JetBrains MCP server    (IntelliJ IDEA / GoLand on host)
 ├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (reads host, writes local)
 └── keys/                         └── read-only gh token + container SSH key
     ├── id_ed25519_dev_automation    (host only — git push auth for agent's forks)

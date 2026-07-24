@@ -134,6 +134,31 @@ CLAUDEMD
     fi
 fi
 
+# ── MCP server discovery (inject host IDE tools into container) ─────────────
+if [[ -n "$GATEWAY" ]]; then
+    _mcp_names=$(curl -sf --max-time 3 "http://${GATEWAY}:${PROXY_PORT}/mcp/config" 2>/dev/null) || true
+    if [[ -n "$_mcp_names" && "$_mcp_names" != "[]" ]]; then
+        _mcp_json=$(echo "$_mcp_names" | jq -r \
+            --arg gw "host.internal" --arg port "$PROXY_PORT" \
+            'reduce .[] as $name ({};
+                . + {($name): {type: "sse", url: "http://\($gw):\($port)/mcp/\($name)/sse"}}
+            )')
+
+        _claude_json="/home/dev/.claude.json"
+        jq --argjson mcp "$_mcp_json" '. + {mcpServers: $mcp}' "$_claude_json" \
+            > "${_claude_json}.tmp" && mv "${_claude_json}.tmp" "$_claude_json"
+        chown dev:dev "$_claude_json"
+
+        _settings="/home/dev/.claude/settings.json"
+        _perms=$(echo "$_mcp_names" | jq '[.[] | "mcp__\(.)__*(*)"]')
+        jq --argjson p "$_perms" '.permissions.allow += $p' "$_settings" \
+            > "${_settings}.tmp" && mv "${_settings}.tmp" "$_settings"
+        chown dev:dev "$_settings"
+
+        echo "MCP servers: $(echo "$_mcp_names" | jq -r 'join(", ")')"
+    fi
+fi
+
 # ── Start sshd (for additional terminals via dev enter) ─────────────────────
 (ssh-keygen -A &>/dev/null && /usr/sbin/sshd &>/dev/null) &
 

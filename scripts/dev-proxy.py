@@ -1,18 +1,22 @@
 #!/usr/bin/env python3
-"""Dev sandbox proxy: Vertex AI auth + Git SSH bridge.
+"""Dev sandbox proxy: Vertex AI auth + Git SSH bridge + MCP reverse proxy.
 
 - Vertex AI: adds Google auth token to Claude Code's API requests
 - Git: bridges HTTP smart protocol from containers to GitHub via SSH key
+- MCP: reverse-proxies host MCP SSE servers (e.g. JetBrains) into containers
 """
 
 import atexit
 import http.client
 import http.server
+import json
 import logging
 import os
 import signal
 import subprocess
 import sys
+from pathlib import Path
+from urllib.parse import urlparse
 
 import google.auth
 import google.auth.transport.requests
@@ -44,12 +48,29 @@ logging.basicConfig(
     format="%(asctime)s %(levelname)s %(message)s",
     stream=sys.stderr,
 )
-log = logging.getLogger("vertex-proxy")
+log = logging.getLogger("dev-proxy")
 
 credentials, _ = google.auth.default(
     scopes=["https://www.googleapis.com/auth/cloud-platform"]
 )
 _auth_request = google.auth.transport.requests.Request()
+
+
+MCP_SERVERS = {}
+
+
+def _load_mcp_servers():
+    claude_json = Path.home() / ".claude.json"
+    try:
+        with open(claude_json) as f:
+            config = json.load(f)
+        for name, server in config.get("mcpServers", {}).items():
+            if server.get("type") == "sse":
+                parsed = urlparse(server["url"])
+                MCP_SERVERS[name] = (parsed.hostname, parsed.port)
+                log.info("MCP server: %s -> %s:%d", name, parsed.hostname, parsed.port)
+    except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
+        log.warning("Could not load MCP servers from %s: %s", claude_json, exc)
 
 
 def _get_token():
@@ -227,15 +248,121 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         conn.close()
         log.info("POST %s status=%d stream=%s", self.path, status, is_stream)
 
+    def _relay_sse(self, name):
+        if name not in MCP_SERVERS:
+            self.send_error(404, f"Unknown MCP server: {name}")
+            return
+
+        host, port = MCP_SERVERS[name]
+        prefix = f"/mcp/{name}"
+
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=10)
+            conn.request("GET", "/sse")
+            upstream = conn.getresponse()
+        except Exception as exc:
+            log.error("MCP %s connect failed: %s", name, exc)
+            self.send_error(503, f"MCP server '{name}' unavailable")
+            return
+
+        if upstream.status != 200:
+            self.send_error(upstream.status)
+            conn.close()
+            return
+
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "keep-alive")
+        self.send_header("X-Accel-Buffering", "no")
+        self.end_headers()
+
+        try:
+            while True:
+                line = upstream.readline()
+                if not line:
+                    break
+                text = line.decode("utf-8", errors="replace")
+                if text.startswith("data: /"):
+                    text = f"data: {prefix}{text[6:]}"
+                    line = text.encode("utf-8")
+                self.wfile.write(line)
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
+        finally:
+            conn.close()
+            log.info("MCP %s SSE session ended", name)
+
+    def _forward_mcp_message(self, name, query):
+        if name not in MCP_SERVERS:
+            self.send_error(404, f"Unknown MCP server: {name}")
+            return
+
+        host, port = MCP_SERVERS[name]
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length) if content_length > 0 else b""
+
+        upstream_path = f"/message?{query}" if query else "/message"
+
+        try:
+            conn = http.client.HTTPConnection(host, port, timeout=30)
+            conn.request("POST", upstream_path, body=body, headers={
+                "Content-Type": self.headers.get("Content-Type", "application/json"),
+                "Content-Length": str(len(body)),
+            })
+            resp = conn.getresponse()
+        except Exception as exc:
+            log.error("MCP %s message failed: %s", name, exc)
+            self.send_error(503, f"MCP server '{name}' unavailable")
+            return
+
+        resp_body = resp.read()
+        self.send_response(resp.status)
+        ct = resp.getheader("Content-Type")
+        if ct:
+            self.send_header("Content-Type", ct)
+        self.send_header("Content-Length", str(len(resp_body)))
+        self.end_headers()
+        if resp_body:
+            self.wfile.write(resp_body)
+        conn.close()
+
+    def _serve_mcp_config(self):
+        body = json.dumps(list(MCP_SERVERS.keys())).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def do_GET(self):
         if self.path.startswith("/git/"):
             self._forward_git("GET")
+        elif self.path == "/mcp/config":
+            self._serve_mcp_config()
+        elif self.path.startswith("/mcp/"):
+            parts = self.path.split("/", 4)
+            if len(parts) >= 4 and parts[3].startswith("sse"):
+                self._relay_sse(parts[2])
+            else:
+                self.send_error(404)
         else:
             self.send_error(404)
 
     def do_POST(self):
         if self.path.startswith("/git/"):
             self._forward_git("POST")
+        elif self.path.startswith("/mcp/"):
+            path = self.path
+            query = ""
+            if "?" in path:
+                path, query = path.split("?", 1)
+            parts = path.split("/", 4)
+            if len(parts) >= 4 and parts[3] == "message":
+                self._forward_mcp_message(parts[2], query)
+            else:
+                self.send_error(404)
         else:
             self._forward_vertex()
 
@@ -269,7 +396,9 @@ def main():
     signal.signal(signal.SIGTERM, _shutdown_handler)
     signal.signal(signal.SIGINT, _shutdown_handler)
 
-    server = http.server.HTTPServer(("0.0.0.0", 0), _ProxyHandler)
+    _load_mcp_servers()
+
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", 0), _ProxyHandler)
     port = server.server_address[1]
 
     _write_file(PID_FILE, str(os.getpid()))
@@ -279,6 +408,7 @@ def main():
     log.info("Listening on 0.0.0.0:%d", port)
     log.info("Git SSH key: %s", SSH_KEY)
     log.info("Vertex AI: %s", UPSTREAM_HOST)
+    log.info("MCP servers: %s", list(MCP_SERVERS.keys()) or "none")
 
     server.serve_forever()
 
