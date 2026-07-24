@@ -57,19 +57,21 @@ credentials, _ = google.auth.default(
 _auth_request = google.auth.transport.requests.Request()
 
 
-MCP_WHITELIST = {"idea", "goland"}
+# Only read-only MCP servers that don't reveal host information may be whitelisted.
+MCP_WHITELIST = set()
 
 MCP_SERVERS = {}
 
 
 def _load_mcp_servers():
+    if not MCP_WHITELIST:
+        return
     claude_json = Path.home() / ".claude.json"
     try:
         with open(claude_json) as f:
             config = json.load(f)
         for name, server in config.get("mcpServers", {}).items():
             if name not in MCP_WHITELIST:
-                log.info("MCP server skipped (not whitelisted): %s", name)
                 continue
             if server.get("type") == "sse":
                 parsed = urlparse(server["url"])
@@ -345,9 +347,9 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/git/"):
             self._forward_git("GET")
-        elif self.path == "/mcp/config":
+        elif MCP_SERVERS and self.path == "/mcp/config":
             self._serve_mcp_config()
-        elif self.path.startswith("/mcp/"):
+        elif MCP_SERVERS and self.path.startswith("/mcp/"):
             parts = self.path.split("/", 4)
             if len(parts) >= 4 and parts[3].startswith("sse"):
                 self._relay_sse(parts[2])
@@ -359,7 +361,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path.startswith("/git/"):
             self._forward_git("POST")
-        elif self.path.startswith("/mcp/"):
+        elif MCP_SERVERS and self.path.startswith("/mcp/"):
             path = self.path
             query = ""
             if "?" in path:
