@@ -17,7 +17,7 @@ _dev_step_header() {
 # --------------------------------------------------------------------------
 # Step 1/6: SSH keys
 # --------------------------------------------------------------------------
-_dev_step_header 1 6 "SSH keys for ${_DEV_AUTOMATION_USER}"
+_dev_step_header 1 7 "SSH keys for ${_DEV_AUTOMATION_USER}"
 
 mkdir -p "$_DEV_KEYS_DIR"
 chmod 700 "$_DEV_KEYS_DIR"
@@ -71,7 +71,7 @@ fi
 # --------------------------------------------------------------------------
 # Step 2/6: Fine-grained PAT for containers
 # --------------------------------------------------------------------------
-_dev_step_header 2 6 "Fine-grained PAT for containers"
+_dev_step_header 2 7 "Fine-grained PAT for containers"
 
 readonly _DEV_CONTAINER_PAT_FILE="${_DEV_KEYS_DIR}/gh-pat-container"
 
@@ -109,7 +109,7 @@ echo "New containers will use the new token automatically."
 # --------------------------------------------------------------------------
 # Step 3/6: System packages
 # --------------------------------------------------------------------------
-_dev_step_header 3 6 "System packages"
+_dev_step_header 3 7 "System packages"
 
 _dev_pkgs_needed=()
 for _dev_pkg in libkrun crun-krun python3-google-auth python3-requests; do
@@ -126,9 +126,29 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 4/6: Register krun runtime
+# Step 4/7: Firewall — block proxy port from external network
 # --------------------------------------------------------------------------
-_dev_step_header 4 6 "Register krun runtime"
+_dev_step_header 4 7 "Firewall rule for proxy port"
+
+readonly _DEV_FW_RULE='rule priority="-1" family="ipv4" port port="9222" protocol="tcp" reject'
+
+if firewall-cmd --query-rich-rule="$_DEV_FW_RULE" --permanent &>/dev/null; then
+    echo "Firewall rule already configured."
+else
+    sudo firewall-cmd --add-rich-rule="$_DEV_FW_RULE" --permanent
+    sudo firewall-cmd --reload
+fi
+
+if ! firewall-cmd --query-rich-rule="$_DEV_FW_RULE" --permanent &>/dev/null; then
+    echo "Error: firewall rule not active. Proxy port 9222 is exposed to the local network." >&2
+    exit 1
+fi
+echo "Firewall rule verified."
+
+# --------------------------------------------------------------------------
+# Step 5/7: Register krun runtime
+# --------------------------------------------------------------------------
+_dev_step_header 5 7 "Register krun runtime"
 
 readonly _DEV_CONTAINERS_CONF="${HOME}/.config/containers/containers.conf"
 
@@ -161,7 +181,7 @@ fi
 # --------------------------------------------------------------------------
 # Step 5/6: GHCR auth
 # --------------------------------------------------------------------------
-_dev_step_header 5 6 "GHCR authentication"
+_dev_step_header 6 7 "GHCR authentication"
 
 source "$(dirname "$0")/dev-common.sh"
 _dev_ensure_ghcr_auth
@@ -170,7 +190,7 @@ echo "GHCR authentication OK."
 # --------------------------------------------------------------------------
 # Step 6/6: Shell alias
 # --------------------------------------------------------------------------
-_dev_step_header 6 6 "Shell alias"
+_dev_step_header 7 7 "Shell alias"
 
 readonly _DEV_ALIAS="alias dev=\"source ${_DEV_BASE_DIR}/scripts/dev.sh\""
 

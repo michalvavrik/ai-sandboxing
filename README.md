@@ -18,6 +18,7 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 - **Credential-free image** — only a read-only GitHub token and a container-only SSH key (not authorized on GitHub) are injected at runtime
 - **No write credentials in container** — git push goes through the host proxy which adds auth; container has zero GitHub write access
 - **Read-only GitHub token** — for `gh` CLI rate limits on public repos; cannot write to any repo
+- **Proxy firewall** — the host proxy binds to `0.0.0.0` (required by krun — `127.0.0.1` is unreachable from microVMs). A firewalld rule blocks external access to the proxy port (see Setup)
 - **Known limitation** — krun's minimal kernel has no firewall (iptables/nftables), so the container can reach host services
 
 ## Prerequisites
@@ -37,6 +38,8 @@ The install script walks you through each step. Two manual actions required (bro
 2. Create a short-lived fine-grained read-only PAT for public repos (used inside containers for `gh` CLI rate limits)
 
 IMPORTANT: must be a different GitHub account than you use for your own work
+
+The install script also configures a firewall rule to block external access to the proxy port (krun requires `0.0.0.0` binding — `127.0.0.1` is unreachable from microVMs).
 
 ## Usage
 

@@ -26,6 +26,7 @@ REGION = os.environ.get("ANTHROPIC_VERTEX_REGION",
 PROJECT_ID = os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", "")
 PID_FILE = os.environ.get("DEV_PROXY_PID_FILE", "/run/user/1000/dev-proxy.pid")
 PORT_FILE = os.environ.get("DEV_PROXY_PORT_FILE", "/run/user/1000/dev-proxy.port")
+LISTEN_PORT = int(os.environ.get("DEV_PROXY_PORT", "9222"))
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _KEYS_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "keys")
@@ -398,7 +399,7 @@ def main():
 
     _load_mcp_servers()
 
-    server = http.server.ThreadingHTTPServer(("0.0.0.0", 0), _ProxyHandler)
+    server = http.server.ThreadingHTTPServer(("0.0.0.0", LISTEN_PORT), _ProxyHandler)
     port = server.server_address[1]
 
     _write_file(PID_FILE, str(os.getpid()))
