@@ -48,7 +48,7 @@ RUN mkdir -p /home/dev/.ssh \
     && chown -R dev:dev /home/dev/.ssh
 
 # ── Fix tty error in krun (gnupg2.sh calls tty unconditionally) ──────────────
-RUN sed -i 's|export GPG_TTY=$(tty)|[ -t 0 ] \&\& export GPG_TTY=$(tty)|' /etc/profile.d/gnupg2.sh
+RUN sed -i 's|export GPG_TTY=$(tty)|export GPG_TTY=$(tty 2>/dev/null)|' /etc/profile.d/gnupg2.sh
 
 # ── Claude Code sandbox settings ─────────────────────────────────────────────
 COPY --chown=dev:dev configs/claude-settings.json /home/dev/.claude/settings.json
