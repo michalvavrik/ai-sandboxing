@@ -15,17 +15,14 @@ if ! _dev_container_running "$_devsee_name"; then
     exit 1
 fi
 
-# Ensure SSH config is current
 _dev_update_ssh_config "$_devsee_name"
 
-# Push from container to a container-specific branch
 readonly _devsee_branch="dev-auto/${_devsee_name}"
 echo "Pushing changes to ${_devsee_branch}..."
 _dev_ssh_cmd "$_devsee_name" \
     "cd /workspace && git add -A && git reset HEAD -- CLAUDE.md 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devsee_branch}"
 echo "Branch: ${_devsee_branch}"
 
-# Get the remote URL from container labels
 _devsee_template_key=$(podman inspect --format '{{index .Config.Labels "dev-template-key"}}' "$_devsee_name" 2>/dev/null) || true
 _devsee_repo="${_devsee_template_key#*/}"
 

@@ -1,18 +1,17 @@
 #!/usr/bin/env python3
-"""Dev sandbox proxy: Vertex AI auth + Git HTTP push auth.
+"""Dev sandbox proxy: Vertex AI auth + Git SSH bridge.
 
 - Vertex AI: adds Google auth token to Claude Code's API requests
-- Git HTTP: adds GitHub PAT auth to git push operations from containers
+- Git: bridges HTTP smart protocol from containers to GitHub via SSH key
 """
 
 import atexit
 import http.client
 import http.server
-import json
 import logging
 import os
 import signal
-import ssl
+import subprocess
 import sys
 
 import google.auth
@@ -23,7 +22,10 @@ REGION = os.environ.get("ANTHROPIC_VERTEX_REGION",
 PROJECT_ID = os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", "")
 PID_FILE = os.environ.get("DEV_PROXY_PID_FILE", "/run/user/1000/dev-proxy.pid")
 PORT_FILE = os.environ.get("DEV_PROXY_PORT_FILE", "/run/user/1000/dev-proxy.port")
-GH_PAT_FILE = os.path.expanduser("~/sandboxing/keys/gh-pat-container")
+
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_KEYS_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "keys")
+SSH_KEY = os.path.join(_KEYS_DIR, "id_ed25519_dev_automation")
 
 if not PROJECT_ID:
     print("Error: ANTHROPIC_VERTEX_PROJECT_ID must be set", file=sys.stderr)
@@ -56,73 +58,123 @@ def _get_token():
     return credentials.token
 
 
-def _get_gh_pat():
-    try:
-        with open(GH_PAT_FILE) as f:
-            return f.read().strip()
-    except FileNotFoundError:
+def _git_ssh_cmd():
+    return ["ssh", "-i", SSH_KEY, "-o", "IdentitiesOnly=yes",
+            "-o", "StrictHostKeyChecking=accept-new", "git@github.com"]
+
+
+def _read_pkt_lines(stream):
+    """Read pkt-line data until a flush packet (0000). Returns raw bytes."""
+    buf = bytearray()
+    while True:
+        pkt_len_hex = stream.read(4)
+        if len(pkt_len_hex) < 4:
+            break
+        buf.extend(pkt_len_hex)
+        pkt_len = int(pkt_len_hex, 16)
+        if pkt_len == 0:
+            break
+        remaining = pkt_len - 4
+        if remaining > 0:
+            buf.extend(stream.read(remaining))
+    return bytes(buf)
+
+
+def _parse_git_path(request_path):
+    """Parse /git/owner/repo.git/rest?query into (owner, repo.git, rest, query)."""
+    path = request_path
+    query = ""
+    if "?" in path:
+        path, query = path.split("?", 1)
+
+    trimmed = path[len("/git/"):]
+    git_idx = trimmed.find(".git/")
+    if git_idx == -1:
         return None
-
-
-def _is_git_request(path):
-    return path.startswith("/git/")
+    repo_part = trimmed[:git_idx + 4]
+    rest = trimmed[git_idx + 5:]
+    owner = repo_part.split("/")[0]
+    return owner, repo_part, rest, query
 
 
 class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def _forward_git(self, method):
-        """Forward git HTTP requests to github.com with PAT auth."""
-        pat = _get_gh_pat()
-        if not pat:
-            self.send_error(503, "No GitHub PAT configured")
-            return
+    def _handle_git_refs(self, repo_path, service):
+        """GET /info/refs?service=<service> — bridge to SSH."""
+        proc = subprocess.Popen(
+            [*_git_ssh_cmd(), f"{service} '{repo_path}'"],
+            stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
 
-        # /git/owner/repo.git/... → /owner/repo.git/...
-        github_path = self.path[len("/git"):]
+        ref_data = _read_pkt_lines(proc.stdout)
 
+        proc.stdin.close()
+        proc.terminate()
+
+        service_line = f"# service={service}\n"
+        service_pkt = f"{len(service_line) + 4:04x}{service_line}".encode()
+
+        body = service_pkt + b"0000" + ref_data
+        self.send_response(200)
+        self.send_header("Content-Type", f"application/x-{service}-advertisement")
+        self.send_header("Cache-Control", "no-cache")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _handle_git_pack(self, repo_path, service):
+        """POST /git-receive-pack or /git-upload-pack — bridge to SSH."""
         content_length = int(self.headers.get("Content-Length", 0))
         raw_body = self.rfile.read(content_length) if content_length > 0 else b""
 
-        import base64
-        auth = base64.b64encode(f"x-access-token:{pat}".encode()).decode()
-        upstream_headers = {
-            "Authorization": f"Basic {auth}",
-            "Host": "github.com",
-        }
-        if content_length > 0:
-            upstream_headers["Content-Type"] = self.headers.get("Content-Type", "")
-            upstream_headers["Content-Length"] = str(len(raw_body))
+        proc = subprocess.Popen(
+            [*_git_ssh_cmd(), f"{service} '{repo_path}'"],
+            stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE,
+        )
 
-        try:
-            conn = http.client.HTTPSConnection("github.com")
-            conn.request(method, github_path, body=raw_body if raw_body else None,
-                         headers=upstream_headers)
-            upstream_resp = conn.getresponse()
-        except Exception as exc:
-            log.error("GitHub connection failed: %s", exc)
-            self.send_error(502, f"GitHub error: {exc}")
+        _read_pkt_lines(proc.stdout)
+
+        proc.stdin.write(raw_body)
+        proc.stdin.close()
+
+        response_data = proc.stdout.read()
+        proc.wait()
+
+        self.send_response(200)
+        self.send_header("Content-Type", f"application/x-{service}-result")
+        self.send_header("Content-Length", str(len(response_data)))
+        self.end_headers()
+        self.wfile.write(response_data)
+        log.info("GIT %s %s exit=%d", service, repo_path, proc.returncode)
+
+    def _forward_git(self, method):
+        """Route git HTTP smart protocol requests to SSH."""
+        parsed = _parse_git_path(self.path)
+        if not parsed:
+            self.send_error(400, "Bad git path")
             return
 
-        status = upstream_resp.status
-        content_type = upstream_resp.getheader("Content-Type", "application/octet-stream")
+        _, repo_part, rest, query = parsed
+        repo_path = f"/{repo_part}"
 
-        self.send_response(status)
-        self.send_header("Content-Type", content_type)
-        self.send_header("Connection", "close")
-        self.end_headers()
         try:
-            while True:
-                chunk = upstream_resp.read1(65536)
-                if not chunk:
-                    break
-                self.wfile.write(chunk)
-                self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
-            pass
-
-        conn.close()
-        log.info("GIT %s %s status=%d", method, github_path[:60], status)
+            if rest == "info/refs":
+                service = ""
+                for param in query.split("&"):
+                    if param.startswith("service="):
+                        service = param[len("service="):]
+                if service in ("git-receive-pack", "git-upload-pack"):
+                    self._handle_git_refs(repo_path, service)
+                else:
+                    self.send_error(400, f"Unknown service: {service}")
+            elif rest in ("git-receive-pack", "git-upload-pack") and method == "POST":
+                self._handle_git_pack(repo_path, rest)
+            else:
+                self.send_error(404)
+        except Exception as exc:
+            log.error("Git SSH bridge failed: %s", exc)
+            self.send_error(502, f"Git SSH error: {exc}")
 
     def _forward_vertex(self):
         """Forward Vertex AI requests with Google auth."""
@@ -176,13 +228,13 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         log.info("POST %s status=%d stream=%s", self.path, status, is_stream)
 
     def do_GET(self):
-        if _is_git_request(self.path):
+        if self.path.startswith("/git/"):
             self._forward_git("GET")
         else:
             self.send_error(404)
 
     def do_POST(self):
-        if _is_git_request(self.path):
+        if self.path.startswith("/git/"):
             self._forward_git("POST")
         else:
             self._forward_vertex()
@@ -225,7 +277,8 @@ def main():
     atexit.register(_remove_runtime_files)
 
     log.info("Listening on 0.0.0.0:%d", port)
-    log.info("Forwarding to %s", UPSTREAM_HOST)
+    log.info("Git SSH key: %s", SSH_KEY)
+    log.info("Vertex AI: %s", UPSTREAM_HOST)
 
     server.serve_forever()
 
