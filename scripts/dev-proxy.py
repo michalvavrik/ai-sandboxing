@@ -57,6 +57,8 @@ credentials, _ = google.auth.default(
 _auth_request = google.auth.transport.requests.Request()
 
 
+MCP_WHITELIST = {"idea", "goland"}
+
 MCP_SERVERS = {}
 
 
@@ -66,6 +68,9 @@ def _load_mcp_servers():
         with open(claude_json) as f:
             config = json.load(f)
         for name, server in config.get("mcpServers", {}).items():
+            if name not in MCP_WHITELIST:
+                log.info("MCP server skipped (not whitelisted): %s", name)
+                continue
             if server.get("type") == "sse":
                 parsed = urlparse(server["url"])
                 MCP_SERVERS[name] = (parsed.hostname, parsed.port)

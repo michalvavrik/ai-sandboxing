@@ -18,7 +18,8 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 - **Credential-free image** — only a read-only GitHub token and a container-only SSH key (not authorized on GitHub) are injected at runtime
 - **No write credentials in container** — git push goes through the host proxy which adds auth; container has zero GitHub write access
 - **Read-only GitHub token** — for `gh` CLI rate limits on public repos; cannot write to any repo
-- **Proxy firewall** — the host proxy binds to `0.0.0.0` (required by krun — `127.0.0.1` is unreachable from microVMs). A firewalld rule blocks external access to the proxy port (see Setup)
+- **Proxy firewall** — the host proxy binds to `0.0.0.0` (required by krun — `127.0.0.1` is unreachable from microVMs). A firewalld rule blocks external access to the proxy port (configured by install script)
+- **MCP whitelist** — only explicitly whitelisted MCP servers are proxied into containers (see `MCP_WHITELIST` in `scripts/dev-proxy.py`)
 - **Known limitation** — krun's minimal kernel has no firewall (iptables/nftables), so the container can reach host services
 
 ## Prerequisites
@@ -82,12 +83,9 @@ claude
 dev https://github.com/keycloak/keycloak/pull/50801
 ```
 
-## JetBrains MCP server
+## MCP server proxy
 
-If IntelliJ IDEA (or GoLand) is running on the host with the MCP server enabled (**Settings | Tools | MCP Server**), containers auto-discover the IDE tools through the host proxy — no Gateway required.
-The proxy reverse-proxies the MCP SSE connection, and the entrypoint injects the `mcpServers` config into the container's Claude Code settings at startup.
-
-This gives sandboxed Claude instances access to IDE tools like symbol search, refactoring, build, debug, and database operations — without exposing any IDE credentials or state inside the container.
+The host proxy can reverse-proxy MCP SSE servers running on the host into containers. Only whitelisted servers are proxied (see `MCP_WHITELIST` in `scripts/dev-proxy.py`). The entrypoint auto-discovers available servers and injects the `mcpServers` config into the container's Claude Code settings at startup.
 
 ## IntelliJ IDEA (via Gateway)
 
@@ -123,8 +121,7 @@ Host                              krun MicroVM
 ├── dev-proxy.py ◄─────────────── Claude Code (Vertex AI requests)
 │   ├── ADC stays here            ├── JDK 21 / Maven / Git
 │   ├── git push (HTTP→SSH) ◄──── git push (container HTTP, proxy bridges to GitHub SSH)
-│   └── MCP SSE relay ◄────────── Claude Code (IDE tools via MCP)
-│       └── JetBrains MCP server    (IntelliJ IDEA / GoLand on host)
+│   └── MCP SSE relay ◄────────── Claude Code (whitelisted host MCP servers)
 ├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (reads host, writes local)
 └── keys/                         └── read-only gh token + container SSH key
     ├── id_ed25519_dev_automation    (host only — git push auth for agent's forks)
