@@ -15,9 +15,9 @@ _dev_step_header() {
 }
 
 # --------------------------------------------------------------------------
-# Step 1/6: SSH key (generate + manual add to GitHub)
+# Step 1/6: SSH keys
 # --------------------------------------------------------------------------
-_dev_step_header 1 6 "SSH key for ${_DEV_AUTOMATION_USER}"
+_dev_step_header 1 6 "SSH keys for ${_DEV_AUTOMATION_USER}"
 
 mkdir -p "$_DEV_KEYS_DIR"
 chmod 700 "$_DEV_KEYS_DIR"
@@ -69,53 +69,9 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 2/6: GitHub PAT
+# Step 2/6: Fine-grained PAT for containers
 # --------------------------------------------------------------------------
-_dev_step_header 2 6 "GitHub PAT for ${_DEV_AUTOMATION_USER}"
-
-readonly _DEV_PAT_FILE="${_DEV_KEYS_DIR}/gh-pat"
-
-if [[ -f "$_DEV_PAT_FILE" ]]; then
-    echo "GitHub PAT already stored: ${_DEV_PAT_FILE}"
-else
-    echo "Create a classic PAT in your browser:"
-    echo ""
-    echo "  1. Log in to GitHub as: ${_DEV_AUTOMATION_USER}"
-    echo "  2. Go to: https://github.com/settings/tokens/new"
-    echo ""
-    echo "  Settings:"
-    echo "    Note:       dev-sandbox"
-    echo "    Expiration: No expiration (or 1 year)"
-    echo "    Scopes:     repo"
-    echo ""
-    read -rs -p "Paste the token here: " _dev_token
-    echo ""
-
-    if [[ -z "$_dev_token" ]]; then
-        echo "Error: empty token" >&2
-        exit 1
-    fi
-
-    echo "$_dev_token" > "$_DEV_PAT_FILE"
-    chmod 600 "$_DEV_PAT_FILE"
-    echo "PAT saved."
-fi
-
-readonly _DEV_PAT=$(cat "$_DEV_PAT_FILE")
-
-echo "Validating PAT..."
-_dev_pat_user=$(GH_TOKEN="$_DEV_PAT" gh api /user --jq '.login' 2>/dev/null) || true
-if [[ "$_dev_pat_user" == "$_DEV_AUTOMATION_USER" ]]; then
-    echo "PAT is valid (authenticated as ${_dev_pat_user})."
-else
-    echo "WARNING: PAT does not authenticate as ${_DEV_AUTOMATION_USER} (got: '${_dev_pat_user}')."
-    echo "Make sure you created the token on the correct account."
-fi
-
-# --------------------------------------------------------------------------
-# Step 3/7: Fine-grained PAT for containers
-# --------------------------------------------------------------------------
-_dev_step_header 3 7 "Fine-grained PAT for containers"
+_dev_step_header 2 6 "Fine-grained PAT for containers"
 
 readonly _DEV_CONTAINER_PAT_FILE="${_DEV_KEYS_DIR}/gh-pat-container"
 
@@ -151,9 +107,9 @@ echo "To rotate: replace ${_DEV_CONTAINER_PAT_FILE} with a new token."
 echo "New containers will use the new token automatically."
 
 # --------------------------------------------------------------------------
-# Step 4/7: System packages
+# Step 3/6: System packages
 # --------------------------------------------------------------------------
-_dev_step_header 4 7 "System packages"
+_dev_step_header 3 6 "System packages"
 
 _dev_pkgs_needed=()
 for _dev_pkg in libkrun crun-krun python3-google-auth python3-requests; do
@@ -172,7 +128,7 @@ fi
 # --------------------------------------------------------------------------
 # Step 4/6: Register krun runtime
 # --------------------------------------------------------------------------
-_dev_step_header 5 7 "Register krun runtime"
+_dev_step_header 4 6 "Register krun runtime"
 
 readonly _DEV_CONTAINERS_CONF="${HOME}/.config/containers/containers.conf"
 
@@ -205,7 +161,7 @@ fi
 # --------------------------------------------------------------------------
 # Step 5/6: GHCR auth
 # --------------------------------------------------------------------------
-_dev_step_header 6 7 "GHCR authentication"
+_dev_step_header 5 6 "GHCR authentication"
 
 source "$(dirname "$0")/dev-common.sh"
 _dev_ensure_ghcr_auth
@@ -214,7 +170,7 @@ echo "GHCR authentication OK."
 # --------------------------------------------------------------------------
 # Step 6/6: Shell alias
 # --------------------------------------------------------------------------
-_dev_step_header 7 7 "Shell alias"
+_dev_step_header 6 6 "Shell alias"
 
 readonly _DEV_ALIAS="alias dev=\"source ${_DEV_BASE_DIR}/scripts/dev.sh\""
 

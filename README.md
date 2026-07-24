@@ -14,7 +14,7 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 
 - **krun microVM** — hardware-isolated guest kernel
 - **Non-root agent** — Claude runs as unprivileged `dev` user, cannot modify iptables or escalate
-- **Host-side proxy** — Google Vertex AI credentials and GitHub push credentials stay on the host, injected into requests by the proxy
+- **Host-side proxy** — Google Vertex AI credentials stay on the host; git push is bridged from container HTTP to GitHub SSH using the host's SSH key
 - **Credential-free image** — only a read-only GitHub token and a container-only SSH key (not authorized on GitHub) are injected at runtime
 - **No write credentials in container** — git push goes through the host proxy which adds auth; container has zero GitHub write access
 - **Read-only GitHub token** — for `gh` CLI rate limits on public repos; cannot write to any repo
@@ -34,7 +34,7 @@ source ~/.bashrc
 
 The install script walks you through each step. Two manual actions required (browser):
 1. Add SSH key to GitHub
-2. Create two PATs (classic for install, fine-grained for containers)
+2. Create a short-lived fine-grained read-only PAT for public repos (used inside containers for `gh` CLI rate limits)
 
 IMPORTANT: must be a different GitHub account than you use for your own work
 
@@ -107,7 +107,6 @@ cd ~/sources/quarkus && dev new my-fix      # → quarkus template (16GB RAM, 8 
 `keys/` is `.gitignored`. Contains:
 - `id_ed25519_dev_automation` — GitHub SSH key (host only, used by proxy for git push to agent's forks, never enters containers)
 - `id_ed25519_container` — container-only SSH key for sshd access (not authorized on GitHub)
-- `gh-pat` — classic PAT (used by `dev install` only, never enters containers)
 - `gh-pat-container` — short-lived read-only fine-grained PAT for public repos (injected into containers for `gh` CLI rate limits)
 
 Token expiry warnings appear automatically when using `dev` commands.
@@ -118,7 +117,7 @@ Token expiry warnings appear automatically when using `dev` commands.
 Host                              krun MicroVM
 ├── vertex-proxy.py ◄──────────── Claude Code (Vertex AI requests)
 │   ├── ADC stays here            ├── JDK 21 / Maven / Git
-│   └── git push auth ◄────────── git push (via HTTP, no credentials in container)
+│   └── git push (HTTP→SSH) ◄──── git push (container HTTP, proxy bridges to GitHub SSH)
 ├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (reads host, writes local)
 └── keys/                         └── read-only gh token + container SSH key
     ├── id_ed25519_dev_automation    (host only — git push auth for agent's forks)
