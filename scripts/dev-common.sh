@@ -205,10 +205,16 @@ _dev_create_container() {
 
     # Build volume mounts (only specific key files — never the whole keys/ dir)
     local _dev_volumes=()
-    for _dev_keyfile in id_ed25519_container.pub gh-pat-container ibm_bob_shell_api.key; do
+    for _dev_keyfile in id_ed25519_container.pub gh-pat-container; do
         [[ -f "${DEV_KEYS_DIR}/${_dev_keyfile}" ]] && \
             _dev_volumes+=(-v "${DEV_KEYS_DIR}/${_dev_keyfile}:/opt/dev-keys/${_dev_keyfile}:ro")
     done
+
+    # Bob Shell API key via podman secret (never mounted as a file)
+    local _dev_bob_secret=()
+    if podman secret inspect bob-api-key &>/dev/null; then
+        _dev_bob_secret=(--secret bob-api-key,mode=0400)
+    fi
     if [[ -d "${HOME}/.m2/repository" ]]; then
         _dev_volumes+=(-v "${HOME}/.m2/repository:/opt/m2-base:ro")
     fi
@@ -242,6 +248,7 @@ _dev_create_container() {
         ${DEV_ISSUE_NUMBER:+-e "DEV_ISSUE_NUMBER=${DEV_ISSUE_NUMBER}"} \
         -p "127.0.0.1::22" \
         "${_dev_volumes[@]}" \
+        "${_dev_bob_secret[@]}" \
         "$DEV_IMAGE"
 }
 

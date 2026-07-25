@@ -17,7 +17,7 @@ _dev_step_header() {
 # --------------------------------------------------------------------------
 # Step 1/6: SSH keys
 # --------------------------------------------------------------------------
-_dev_step_header 1 7 "SSH keys for ${_DEV_AUTOMATION_USER}"
+_dev_step_header 1 8 "SSH keys for ${_DEV_AUTOMATION_USER}"
 
 mkdir -p "$_DEV_KEYS_DIR"
 chmod 700 "$_DEV_KEYS_DIR"
@@ -71,7 +71,7 @@ fi
 # --------------------------------------------------------------------------
 # Step 2/6: Fine-grained PAT for containers
 # --------------------------------------------------------------------------
-_dev_step_header 2 7 "Fine-grained PAT for containers"
+_dev_step_header 2 8 "Fine-grained PAT for containers"
 
 readonly _DEV_CONTAINER_PAT_FILE="${_DEV_KEYS_DIR}/gh-pat-container"
 
@@ -107,9 +107,48 @@ echo "To rotate: replace ${_DEV_CONTAINER_PAT_FILE} with a new token."
 echo "New containers will use the new token automatically."
 
 # --------------------------------------------------------------------------
-# Step 3/6: System packages
+# Step 3/8: Bob Shell API key
 # --------------------------------------------------------------------------
-_dev_step_header 3 7 "System packages"
+_dev_step_header 3 8 "Bob Shell API key"
+
+readonly _DEV_BOB_KEY_FILE="${_DEV_KEYS_DIR}/ibm_bob_shell_api.key"
+
+if podman secret inspect bob-api-key &>/dev/null; then
+    echo "Podman secret 'bob-api-key' already exists."
+    echo "To rotate: podman secret rm bob-api-key, replace ${_DEV_BOB_KEY_FILE}, re-run install."
+else
+    if [[ -f "$_DEV_BOB_KEY_FILE" ]]; then
+        echo "Found existing key file: ${_DEV_BOB_KEY_FILE}"
+    else
+        echo "Create a Bob Shell API key:"
+        echo ""
+        echo "  1. Go to: https://bob.ibm.com"
+        echo "  2. Open your subscription instance"
+        echo "  3. Create an API key with scope: Inference"
+        echo "  4. Copy the key value (you won't see it again)"
+        echo ""
+        read -rs -p "Paste the API key here: " _dev_bob_key
+        echo ""
+
+        if [[ -z "$_dev_bob_key" ]]; then
+            echo "Error: empty key" >&2
+            exit 1
+        fi
+
+        echo "$_dev_bob_key" > "$_DEV_BOB_KEY_FILE"
+        sudo chown root:root "$_DEV_BOB_KEY_FILE"
+        sudo chmod 600 "$_DEV_BOB_KEY_FILE"
+        echo "Key saved to ${_DEV_BOB_KEY_FILE} (root-only)."
+    fi
+
+    sudo cat "$_DEV_BOB_KEY_FILE" | podman secret create bob-api-key -
+    echo "Podman secret 'bob-api-key' created."
+fi
+
+# --------------------------------------------------------------------------
+# Step 4/8: System packages
+# --------------------------------------------------------------------------
+_dev_step_header 4 8 "System packages"
 
 _dev_pkgs_needed=()
 for _dev_pkg in libkrun crun-krun python3-google-auth python3-requests; do
@@ -128,7 +167,7 @@ fi
 # --------------------------------------------------------------------------
 # Step 4/7: Firewall — block proxy port from external network
 # --------------------------------------------------------------------------
-_dev_step_header 4 7 "Firewall rule for proxy port"
+_dev_step_header 5 8 "Firewall rule for proxy port"
 
 readonly _DEV_FW_RULE='rule priority="-1" family="ipv4" port port="9222" protocol="tcp" reject'
 
@@ -148,7 +187,7 @@ echo "Firewall rule verified."
 # --------------------------------------------------------------------------
 # Step 5/7: Register krun runtime
 # --------------------------------------------------------------------------
-_dev_step_header 5 7 "Register krun runtime"
+_dev_step_header 6 8 "Register krun runtime"
 
 readonly _DEV_CONTAINERS_CONF="${HOME}/.config/containers/containers.conf"
 
@@ -181,7 +220,7 @@ fi
 # --------------------------------------------------------------------------
 # Step 5/6: GHCR auth
 # --------------------------------------------------------------------------
-_dev_step_header 6 7 "GHCR authentication"
+_dev_step_header 7 8 "GHCR authentication"
 
 source "$(dirname "$0")/dev-common.sh"
 _dev_ensure_ghcr_auth
@@ -190,7 +229,7 @@ echo "GHCR authentication OK."
 # --------------------------------------------------------------------------
 # Step 6/6: Shell alias
 # --------------------------------------------------------------------------
-_dev_step_header 7 7 "Shell alias"
+_dev_step_header 8 8 "Shell alias"
 
 readonly _DEV_ALIAS="alias dev=\"source ${_DEV_BASE_DIR}/scripts/dev.sh\""
 

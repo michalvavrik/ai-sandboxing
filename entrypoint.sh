@@ -57,10 +57,10 @@ if [ -d /opt/dev-keys ]; then
         _gh_auth_pid=$!
     fi
 
-    # Bob Shell API key (readable only by bobrunner)
-    if [ -f /opt/dev-keys/ibm_bob_shell_api.key ]; then
+    # Bob Shell API key (injected via podman secret, readable only by bobrunner)
+    if [ -f /run/secrets/bob-api-key ]; then
         mkdir -p /run/bob-secrets
-        cp -f /opt/dev-keys/ibm_bob_shell_api.key /run/bob-secrets/api.key
+        cp -f /run/secrets/bob-api-key /run/bob-secrets/api.key
         chown bobrunner:bobrunner /run/bob-secrets/api.key
         chmod 400 /run/bob-secrets/api.key
     fi

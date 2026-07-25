@@ -114,11 +114,19 @@ cd ~/sources/quarkus && dev new my-fix      # → quarkus template (16GB RAM, 8 
 - `id_ed25519_dev_automation` — GitHub SSH key (host only, used by proxy for git push to agent's forks, **never enters containers**)
 - `id_ed25519_container` — container-only SSH key for sshd access (not authorized on GitHub; only the `.pub` is mounted)
 - `gh-pat-container` — short-lived read-only fine-grained PAT for public repos (injected into containers for `gh` CLI rate limits)
-- `ibm_bob_shell_api.key` — IBM Bob Shell API key (mounted read-only, readable only by `bobrunner` user inside containers via setuid launcher)
+- `ibm_bob_shell_api.key` — IBM Bob Shell API key (injected via podman secret, never volume-mounted; readable only by `bobrunner` user inside containers)
 
 Token expiry warnings appear automatically when using `dev` commands.
 
-The Bob Shell API key file must be readable by your host user for podman to mount it. If owned by root, add an ACL: `sudo setfacl -m u:$(whoami):r keys/ibm_bob_shell_api.key`
+### Bob Shell API key setup
+
+The Bob API key is injected via `podman secret` (never as a volume mount). One-time setup:
+
+```bash
+sudo cat keys/ibm_bob_shell_api.key | podman secret create bob-api-key -
+```
+
+To rotate: `podman secret rm bob-api-key` then re-create.
 
 ## How it works
 
