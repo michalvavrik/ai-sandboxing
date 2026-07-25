@@ -13,7 +13,7 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 ## Security model
 
 - **krun microVM** — hardware-isolated guest kernel
-- **Non-root agent** — Claude runs as unprivileged `dev` user, cannot modify iptables or escalate
+- **Non-root agent** — Claude Code and Bob Shell run as unprivileged `dev` user, cannot modify iptables or escalate
 - **Host-side proxy** — Google Vertex AI credentials stay on the host; git push is bridged from container HTTP to GitHub SSH using the host's SSH key
 - **Credential-free image** — only a read-only GitHub token, a container-only SSH key, and a Bob Shell API key are injected at runtime
 - **No write credentials in container** — git push goes through the host proxy which adds auth; container has zero GitHub write access
@@ -21,7 +21,7 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 - **Bob Shell API key isolation** — the API key is never in the `dev` user's environment; a setuid launcher reads it from a protected file, `LD_PRELOAD` strips it from subprocess environments, and `PR_SET_DUMPABLE=0` blocks `/proc` inspection
 - **Proxy firewall** — the host proxy binds to `0.0.0.0` (required by krun — `127.0.0.1` is unreachable from microVMs). A firewalld rule blocks external access to the proxy port (configured by install script)
 - **MCP whitelist** — only explicitly whitelisted MCP servers are proxied into containers (see `MCP_WHITELIST` in `scripts/dev-proxy.py`)
-- **Selective key mounting** — only specific key files are mounted into containers (container SSH pubkey, read-only GitHub PAT, Bob API key); host-only keys like `id_ed25519_dev_automation` never enter containers
+- **Selective key mounting** — only specific key files are mounted into containers (container SSH pubkey, read-only GitHub PAT); host-only keys like `id_ed25519_dev_automation` never enter containers. The Bob API key is injected via `podman secret` (never volume-mounted)
 - **Known limitation** — krun's minimal kernel has no firewall (iptables/nftables), so the container can reach host services
 
 ## Prerequisites
@@ -36,11 +36,10 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 source ~/.bashrc
 ```
 
-The install script walks you through each step. Two manual actions required (browser):
-1. Add SSH key to GitHub
+The install script walks you through each step. Manual actions required (browser):
+1. Add SSH key to GitHub (must be a different GitHub account than you use for your own work)
 2. Create a short-lived fine-grained read-only PAT for public repos (used inside containers for `gh` CLI rate limits)
-
-IMPORTANT: must be a different GitHub account than you use for your own work
+3. Create a Bob Shell API key at [bob.ibm.com](https://bob.ibm.com) with scope: Inference
 
 The install script also configures a firewall rule to block external access to the proxy port (krun requires `0.0.0.0` binding — `127.0.0.1` is unreachable from microVMs).
 
@@ -120,13 +119,9 @@ Token expiry warnings appear automatically when using `dev` commands.
 
 ### Bob Shell API key setup
 
-The Bob API key is injected via `podman secret` (never as a volume mount). One-time setup:
+The Bob API key is injected via `podman secret` (never as a volume mount). Handled automatically by `dev install`.
 
-```bash
-sudo cat keys/ibm_bob_shell_api.key | podman secret create bob-api-key -
-```
-
-To rotate: `podman secret rm bob-api-key` then re-create.
+To rotate: `podman secret rm bob-api-key`, replace `keys/ibm_bob_shell_api.key`, re-run `dev install`.
 
 ## How it works
 
@@ -137,11 +132,11 @@ Host                              krun MicroVM
 │   ├── git push (HTTP→SSH) ◄──── git push (container HTTP, proxy bridges to GitHub SSH)
 │   └── MCP SSE relay ◄────────── Claude Code (whitelisted host MCP servers)
 ├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (reads host, writes local)
-└── keys/ (individual files)      └── credentials (mounted per-file, not whole dir)
-    ├── id_ed25519_dev_automation    (host only — NEVER enters containers)
-    ├── id_ed25519_container.pub     (container sshd authorized_keys)
-    ├── gh-pat-container             (read-only gh token)
-    └── ibm_bob_shell_api.key        (Bob API key — setuid + LD_PRELOAD protected)
+└── keys/ (individual files)      ├── credentials (mounted per-file, not whole dir)
+    ├── id_ed25519_dev_automation │   ├── id_ed25519_container.pub  (sshd authorized_keys)
+    ├── id_ed25519_container      │   └── gh-pat-container          (read-only gh token)
+    ├── gh-pat-container          └── podman secret
+    └── ibm_bob_shell_api.key         └── bob-api-key → /run/bob-secrets/api.key (bobrunner:400)
 ```
 
 ### Bob Shell credential isolation
@@ -152,8 +147,8 @@ dev runs: bob
   → reads /run/bob-secrets/api.key (bobrunner:400)
   → sets BOBSHELL_API_KEY + LD_PRELOAD in process memory
   → drops back to dev (setresuid)
-  → prctl(PR_SET_DUMPABLE, 0)
   → exec bob-real
+  → LD_PRELOAD constructor restores PR_SET_DUMPABLE=0 (kernel resets it during exec)
 
 Result:
   ├── Bob process runs as dev (full workspace access)

@@ -31,15 +31,9 @@ COPY configs/containers-registries.conf /etc/containers/registries.conf
 RUN echo "user_allow_other" >> /etc/fuse.conf
 
 # ── Claude Code (via official dnf repo) ──────────────────────────────────────
-RUN tee /etc/yum.repos.d/claude-code.repo <<'REPO'
-[claude-code]
-name=Claude Code
-baseurl=https://downloads.claude.ai/claude-code/rpm/stable
-enabled=1
-gpgcheck=1
-gpgkey=https://downloads.claude.ai/keys/claude-code.asc
-REPO
-RUN dnf install -y claude-code && dnf clean all
+RUN printf '[claude-code]\nname=Claude Code\nbaseurl=https://downloads.claude.ai/claude-code/rpm/stable\nenabled=1\ngpgcheck=1\ngpgkey=https://downloads.claude.ai/keys/claude-code.asc\n' \
+        > /etc/yum.repos.d/claude-code.repo \
+    && dnf install -y claude-code && dnf clean all
 
 # ── Bob Shell (npm — no dnf package available) ───────────────────────────────
 RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash -s -- --pm npm
