@@ -8,6 +8,7 @@ on:
       - 'Containerfile'
       - 'configs/**'
       - 'entrypoint.sh'
+      - '*.c'
   workflow_dispatch: {}
 
 jobs:

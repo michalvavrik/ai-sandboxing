@@ -51,8 +51,18 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    argv[0] = BOB_PATH;
-    execv(BOB_PATH, argv);
+    char **new_argv = malloc((argc + 2) * sizeof(char *));
+    if (!new_argv) {
+        fprintf(stderr, "bob-run: malloc failed\n");
+        return 1;
+    }
+    new_argv[0] = BOB_PATH;
+    new_argv[1] = "--accept-license";
+    for (int i = 1; i < argc; i++)
+        new_argv[i + 1] = argv[i];
+    new_argv[argc + 1] = NULL;
+
+    execv(BOB_PATH, new_argv);
 
     fprintf(stderr, "bob-run: exec: %s\n", strerror(errno));
     return 1;
