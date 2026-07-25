@@ -30,9 +30,19 @@ COPY configs/containers-registries.conf /etc/containers/registries.conf
 # ── Allow non-root fuse-overlayfs with allow_root ────────────────────────────
 RUN echo "user_allow_other" >> /etc/fuse.conf
 
-# ── Claude Code + Bob Shell (installed globally as root) ─────────────────────
-RUN npm install -g @anthropic-ai/claude-code \
-    && curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash -s -- --pm npm
+# ── Claude Code (via official dnf repo) ──────────────────────────────────────
+RUN tee /etc/yum.repos.d/claude-code.repo <<'REPO'
+[claude-code]
+name=Claude Code
+baseurl=https://downloads.claude.ai/claude-code/rpm/stable
+enabled=1
+gpgcheck=1
+gpgkey=https://downloads.claude.ai/keys/claude-code.asc
+REPO
+RUN dnf install -y claude-code && dnf clean all
+
+# ── Bob Shell (npm — no dnf package available) ───────────────────────────────
+RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash -s -- --pm npm
 
 # ── Bob Shell secure launcher ────────────────────────────────────────────────
 COPY bob-env-filter.c bob-run.c /tmp/build/
