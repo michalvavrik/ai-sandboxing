@@ -203,10 +203,12 @@ _dev_create_container() {
     CONTAINERS_CONF_OVERRIDE=<(printf '[engine]\nimage_parallel_copies = 1\n') \
         podman pull --policy newer "$DEV_IMAGE"
 
-    # Build volume mounts
-    local _dev_volumes=(
-        -v "${DEV_KEYS_DIR}:/opt/dev-keys:ro"
-    )
+    # Build volume mounts (only specific key files — never the whole keys/ dir)
+    local _dev_volumes=()
+    for _dev_keyfile in id_ed25519_container.pub gh-pat-container ibm_bob_shell_api.key; do
+        [[ -f "${DEV_KEYS_DIR}/${_dev_keyfile}" ]] && \
+            _dev_volumes+=(-v "${DEV_KEYS_DIR}/${_dev_keyfile}:/opt/dev-keys/${_dev_keyfile}:ro")
+    done
     if [[ -d "${HOME}/.m2/repository" ]]; then
         _dev_volumes+=(-v "${HOME}/.m2/repository:/opt/m2-base:ro")
     fi

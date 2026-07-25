@@ -7,8 +7,9 @@ RUN dnf install -y \
         podman fuse-overlayfs maven nodejs npm gh \
     && dnf clean all
 
-# ── Non-root user with rootless-Podman support ───────────────────────────────
+# ── Non-root users with rootless-Podman support ──────────────────────────────
 RUN useradd -m -u 1000 -s /bin/bash dev \
+    && useradd -r -s /usr/sbin/nologin bobrunner \
     && echo "dev:100000:65536" >> /etc/subuid \
     && echo "dev:100000:65536" >> /etc/subgid
 
@@ -19,6 +20,7 @@ RUN passwd -l root \
     && dnf remove -y sudo 2>/dev/null || true \
     && find / -xdev -perm /6000 -type f \
          ! -name newuidmap ! -name newgidmap ! -name fusermount3 \
+         ! -name bob-run \
          -exec chmod ug-s {} + 2>/dev/null || true
 
 # ── Inner Podman configuration ───────────────────────────────────────────────
@@ -28,8 +30,25 @@ COPY configs/containers-registries.conf /etc/containers/registries.conf
 # ── Allow non-root fuse-overlayfs with allow_root ────────────────────────────
 RUN echo "user_allow_other" >> /etc/fuse.conf
 
-# ── Claude Code (installed globally as root) ─────────────────────────────────
-RUN npm install -g @anthropic-ai/claude-code
+# ── Claude Code + Bob Shell (installed globally as root) ─────────────────────
+RUN npm install -g @anthropic-ai/claude-code \
+    && curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash -s -- --pm npm
+
+# ── Bob Shell secure launcher ────────────────────────────────────────────────
+COPY bob-env-filter.c bob-run.c /tmp/build/
+RUN dnf install -y gcc && \
+    gcc -shared -fPIC -O2 -o /usr/local/lib/bob-env-filter.so /tmp/build/bob-env-filter.c -ldl \
+    && gcc -O2 -o /usr/local/bin/bob-run /tmp/build/bob-run.c \
+    && chown bobrunner:bobrunner /usr/local/bin/bob-run \
+    && chmod 4711 /usr/local/bin/bob-run \
+    && rm -rf /tmp/build \
+    && dnf remove -y gcc && dnf clean all \
+    && mv /usr/local/bin/bob /usr/local/bin/bob-real \
+    && ln -s /usr/local/bin/bob-run /usr/local/bin/bob
+
+# ── Bob Shell settings for dev ────────────────────────────────────────────────
+COPY --chown=dev:dev configs/bob-settings.json /home/dev/.bob/settings.json
+COPY --chown=dev:dev configs/bob-trusted-folders.json /home/dev/.bob/trustedFolders.json
 
 # ── SDKMAN + JDK 21 Temurin (installed as dev) ──────────────────────────────
 USER dev

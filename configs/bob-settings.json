@@ -1,0 +1,20 @@
+{
+  "general": {
+    "disableAutoUpdate": true,
+    "disableUpdateNag": true
+  },
+  "context": {
+    "fileName": "AGENTS.md"
+  },
+  "tools": {
+    "allowed": [
+      "read_file(*)",
+      "write_file(*)",
+      "list_directory(*)",
+      "run_shell_command(*)"
+    ]
+  },
+  "privacy": {
+    "usageStatisticsEnabled": false
+  }
+}

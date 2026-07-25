@@ -56,6 +56,14 @@ if [ -d /opt/dev-keys ]; then
             echo "ERROR: gh auth login failed — check gh-pat-container token" >&2) &
         _gh_auth_pid=$!
     fi
+
+    # Bob Shell API key (readable only by bobrunner)
+    if [ -f /opt/dev-keys/ibm_bob_shell_api.key ]; then
+        mkdir -p /run/bob-secrets
+        cp -f /opt/dev-keys/ibm_bob_shell_api.key /run/bob-secrets/api.key
+        chown bobrunner:bobrunner /run/bob-secrets/api.key
+        chmod 400 /run/bob-secrets/api.key
+    fi
 fi
 
 # ── Project workspace (from baked-in shallow clone) ─────────────────────────

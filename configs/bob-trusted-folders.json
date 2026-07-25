@@ -1,0 +1,5 @@
+{
+  "/workspace": "TRUST_FOLDER",
+  "/opt/workspace/keycloak": "TRUST_FOLDER",
+  "/opt/workspace/quarkus": "TRUST_FOLDER"
+}
