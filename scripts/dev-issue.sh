@@ -28,11 +28,25 @@ echo "Container: ${_devissue_name}"
 
 echo "$_devissue_name" > "/run/user/$(id -u)/dev-last-container"
 
-# Existing container — just re-enter
+# Existing container — refresh PR and re-enter
 if _dev_container_exists "$_devissue_name"; then
     _dev_ensure_proxy
-    echo "Starting existing container..."
-    exec podman start -ai "$_devissue_name"
+
+    if ! _dev_container_running "$_devissue_name"; then
+        podman start "$_devissue_name"
+        sleep 3
+    fi
+
+    _dev_update_ssh_config "$_devissue_name"
+
+    if [[ "$_devissue_type" == "pull" ]]; then
+        echo "Refreshing PR #${_devissue_number}..."
+        _dev_ssh_cmd "$_devissue_name" \
+            "cd /workspace && gh pr checkout -f ${_devissue_number} --repo ${_devissue_template_key} && _pr=\$(git branch --show-current) && git checkout -B 'dev-auto/${_devissue_name}' && [ \"\$_pr\" != 'dev-auto/${_devissue_name}' ] && git branch -D \"\$_pr\" 2>/dev/null; true"
+    fi
+
+    _dev_ssh_cmd "$_devissue_name"
+    exit 0
 fi
 
 # New container — pass PR/issue number via env, entrypoint handles checkout + details

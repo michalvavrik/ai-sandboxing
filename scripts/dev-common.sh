@@ -266,7 +266,11 @@ _dev_ssh_cmd() {
         echo "Error: could not determine SSH port for '${_dev_name}'" >&2
         return 1
     fi
-    ssh -qt "$_dev_name" "cd /workspace 2>/dev/null; exec \$SHELL -l"
+    if [[ $# -eq 0 ]]; then
+        ssh -qt "$_dev_name" "cd /workspace 2>/dev/null; exec \$SHELL -l"
+    else
+        ssh -q "$_dev_name" "$@"
+    fi
 }
 
 _dev_remove_ssh_config() {

@@ -119,26 +119,37 @@ CLAUDEMD
         (runuser -u dev -- git -C /workspace status; cat /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe) &>/dev/null &
     fi
 
-    # PR checkout and details (wait for gh auth if it's still running)
+    _target_branch="dev-auto/$(hostname)"
+
+    # PR checkout and details (first run only — subsequent starts reuse the working branch)
     if [ -n "${DEV_PR_NUMBER:-}" ]; then
-        [ -n "$_gh_auth_pid" ] && wait "$_gh_auth_pid" 2>/dev/null
-        # Copy host refs so git can negotiate efficiently with GitHub
-        # Without this, the depth-1 clone sends 1 "have" and GitHub sends ~1M objects
-        # Objects are available via alternates; refs tell git what commits exist
-        if [ -f /opt/project-src/.git/packed-refs ]; then
-            cp /opt/project-src/.git/packed-refs /workspace/.git/packed-refs 2>/dev/null || true
+        if ! runuser -u dev -- git -C /workspace rev-parse --verify "$_target_branch" &>/dev/null 2>&1; then
+            [ -n "$_gh_auth_pid" ] && wait "$_gh_auth_pid" 2>/dev/null
+            # Copy host refs so git can negotiate efficiently with GitHub
+            # Without this, the depth-1 clone sends 1 "have" and GitHub sends ~1M objects
+            # Objects are available via alternates; refs tell git what commits exist
+            if [ -f /opt/project-src/.git/packed-refs ]; then
+                cp /opt/project-src/.git/packed-refs /workspace/.git/packed-refs 2>/dev/null || true
+            fi
+            echo "Checking out PR #${DEV_PR_NUMBER}..."
+            runuser -u dev -- bash -c \
+                "cd /workspace && gh pr checkout -f ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}" || true
+            runuser -u dev -- bash -c \
+                "gh pr view ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY} > /workspace/.pr 2>/dev/null" || true
         fi
-        echo "Checking out PR #${DEV_PR_NUMBER}..."
-        runuser -u dev -- bash -c \
-            "cd /workspace && gh pr checkout -f ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}" || true
-        runuser -u dev -- bash -c \
-            "gh pr view ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY} > /workspace/.pr 2>/dev/null" || true
     fi
 
-    # Issue details
+    # Issue details (first run only)
     if [ -n "${DEV_ISSUE_NUMBER:-}" ]; then
-        runuser -u dev -- bash -c \
-            "gh issue view ${DEV_ISSUE_NUMBER} --repo ${DEV_TEMPLATE_KEY} > /workspace/.issue 2>/dev/null" || true
+        if ! [ -f /workspace/.issue ]; then
+            runuser -u dev -- bash -c \
+                "gh issue view ${DEV_ISSUE_NUMBER} --repo ${DEV_TEMPLATE_KEY} > /workspace/.issue 2>/dev/null" || true
+        fi
+    fi
+
+    # Set up working branch (first run only — rename whatever PR/main branch to dev-auto/...)
+    if ! runuser -u dev -- git -C /workspace rev-parse --verify "$_target_branch" &>/dev/null 2>&1; then
+        runuser -u dev -- git -C /workspace branch -m "$_target_branch" 2>/dev/null || true
     fi
 fi
 
