@@ -269,6 +269,9 @@ _dev_completion() {
         COMPREPLY=($(compgen -W "new enter delete stop start see cp cpout use idea list install" -- "$cur"))
     elif [[ $COMP_CWORD -eq 2 && "$prev" =~ ^(enter|delete|stop|start|see|use)$ ]]; then
         COMPREPLY=($(compgen -W "$(podman ps -a --filter=label=dev-sandbox --format '{{.Names}}' 2>/dev/null)" -- "$cur"))
+    elif [[ ${COMP_WORDS[1]} == "cp" && $COMP_CWORD -ge 2 ]]; then
+        compopt -o filenames
+        COMPREPLY=($(compgen -f -- "$cur"))
     elif [[ "$prev" == "cpout" ]]; then
         local name="${DEV_LAST_CONTAINER:-}"
         if [[ -n "$name" ]]; then
