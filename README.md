@@ -19,10 +19,10 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 - **No write credentials in container** — git push goes through the host proxy which adds auth; container has zero GitHub write access
 - **Read-only GitHub token** — for `gh` CLI rate limits on public repos; cannot write to any repo
 - **Bob Shell API key isolation** — the API key is never in the `dev` user's environment; a setuid launcher reads it from a protected file, `LD_PRELOAD` strips it from subprocess environments, and `PR_SET_DUMPABLE=0` blocks `/proc` inspection
-- **Proxy firewall** — the host proxy binds to `0.0.0.0` (required by krun — `127.0.0.1` is unreachable from microVMs). A firewalld rule blocks external access to the proxy port (configured by install script)
+- **Guest firewall** — nftables rules restrict outbound traffic to DNS, the auth proxy, and HTTPS (port 443). All other outbound is dropped. Loopback is fully open for test servers
+- **Proxy firewall** — the host proxy binds to `0.0.0.0` (required — `127.0.0.1` is unreachable from krun/passt microVMs). A firewalld rule blocks external access to the proxy port (configured by install script)
 - **MCP whitelist** — only explicitly whitelisted MCP servers are proxied into containers (see `MCP_WHITELIST` in `scripts/dev-proxy.py`)
 - **Selective key mounting** — only specific key files are mounted into containers (container SSH pubkey, read-only GitHub PAT); host-only keys like `id_ed25519_dev_automation` never enter containers. The Bob API key is injected via `podman secret` (never volume-mounted)
-- **Known limitation** — krun's minimal kernel has no firewall (iptables/nftables), so the container can reach host services
 
 ## Prerequisites
 
@@ -41,7 +41,7 @@ The install script walks you through each step. Manual actions required (browser
 2. Create a short-lived fine-grained read-only PAT for public repos (used inside containers for `gh` CLI rate limits)
 3. Create a Bob Shell API key at [bob.ibm.com](https://bob.ibm.com) with scope: Inference
 
-The install script also configures a firewall rule to block external access to the proxy port (krun requires `0.0.0.0` binding — `127.0.0.1` is unreachable from microVMs).
+The install script also configures a firewall rule to block external access to the proxy port (`0.0.0.0` binding is required — `127.0.0.1` is unreachable from krun/passt microVMs due to crun passing `--no-map-gw` to passt).
 
 ## Usage
 

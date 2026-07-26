@@ -151,7 +151,7 @@ fi
 _dev_step_header 4 8 "System packages"
 
 _dev_pkgs_needed=()
-for _dev_pkg in libkrun crun-krun python3-google-auth python3-requests; do
+for _dev_pkg in libkrun crun-krun python3-google-auth python3-requests passt; do
     if ! rpm -q "$_dev_pkg" &>/dev/null; then
         _dev_pkgs_needed+=("$_dev_pkg")
     fi

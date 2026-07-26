@@ -231,6 +231,7 @@ _dev_create_container() {
         --privileged \
         --annotation "krun.ram_mib=${_dev_ram}" \
         --annotation "krun.cpus=${_dev_cpus}" \
+        --annotation "krun.use_passt=1" \
         --add-host=host.internal:host-gateway \
         --hostname="$_dev_name" \
         --label="$DEV_LABEL" \

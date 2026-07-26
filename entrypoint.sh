@@ -1,16 +1,21 @@
 #!/bin/bash
 set -euo pipefail
 
-# ── Firewall (krun kernel may not support iptables) ─────────────────────────
-GATEWAY=$(getent hosts host.internal | awk '{print $1}')
-GATEWAY="${GATEWAY:-$(getent hosts host.containers.internal | awk '{print $1}')}"
+# ── Guest firewall (nft — kernel has NF_TABLES but not XTABLES) ─────────────
+HOST_IP=$(getent hosts host.internal | awk '{print $1}')
+HOST_IP="${HOST_IP:-$(getent hosts host.containers.internal | awk '{print $1}')}"
 PROXY_PORT="${PROXY_PORT:-9222}"
 
-if [[ -n "$GATEWAY" ]] && iptables -L -n &>/dev/null; then
-    iptables -A OUTPUT -d "$GATEWAY" -p tcp --dport "$PROXY_PORT" -j ACCEPT
-    iptables -A OUTPUT -d "$GATEWAY" -j DROP
+if [[ -n "$HOST_IP" ]] && nft list ruleset &>/dev/null; then
+    nft add table inet filter
+    nft add chain inet filter output '{ type filter hook output priority 0; policy drop; }'
+    nft add rule inet filter output oifname "lo" accept
+    nft add rule inet filter output ip daddr "$HOST_IP" tcp dport "$PROXY_PORT" accept
+    nft add rule inet filter output udp dport 53 accept
+    nft add rule inet filter output tcp dport 443 accept
+    nft add rule inet filter output ct state established,related accept
 else
-    echo "WARNING: iptables not available, skipping host firewall" >&2
+    echo "WARNING: nft not available or host IP unknown, skipping guest firewall" >&2
 fi
 
 # ── Persist container env vars for all sessions (main + SSH) ─────────────────
@@ -154,8 +159,8 @@ CLAUDEMD
 fi
 
 # ── MCP server discovery (inject host IDE tools into container) ─────────────
-if [[ -n "$GATEWAY" ]]; then
-    _mcp_names=$(curl -sf --max-time 3 "http://${GATEWAY}:${PROXY_PORT}/mcp/config" 2>/dev/null) || true
+if [[ -n "$HOST_IP" ]]; then
+    _mcp_names=$(curl -sf --max-time 3 "http://${HOST_IP}:${PROXY_PORT}/mcp/config" 2>/dev/null) || true
     if [[ -n "$_mcp_names" && "$_mcp_names" != "[]" ]]; then
         _mcp_json=$(echo "$_mcp_names" | jq -r \
             --arg gw "host.internal" --arg port "$PROXY_PORT" \
