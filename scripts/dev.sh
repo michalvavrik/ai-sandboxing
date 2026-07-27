@@ -3,6 +3,10 @@ _dev_dir="$(dirname "${BASH_SOURCE[0]}")"
 _dev_cmd="${1:-help}"
 shift 2>/dev/null || true
 
+if [[ -n "${DEV_LAST_CONTAINER:-}" ]] && ! podman container exists "$DEV_LAST_CONTAINER" 2>/dev/null; then
+    unset DEV_LAST_CONTAINER
+fi
+
 # Check token expiry on any container-related command (soft warning, non-blocking)
 case "$_dev_cmd" in
   new|enter|start|see|http*|https*)
@@ -16,8 +20,8 @@ case "$_dev_cmd" in
     "${_dev_dir}/dev-new.sh" "$@"
     ;;
   delete)
-    "${_dev_dir}/dev-delete.sh" "${1:-$DEV_LAST_CONTAINER}"
-    if [[ "${1:-$DEV_LAST_CONTAINER}" == "${DEV_LAST_CONTAINER:-}" ]]; then
+    "${_dev_dir}/dev-delete.sh" "${1:-${DEV_LAST_CONTAINER:-}}"
+    if [[ "${1:-${DEV_LAST_CONTAINER:-}}" == "${DEV_LAST_CONTAINER:-}" ]]; then
       unset DEV_LAST_CONTAINER
     fi
     ;;

@@ -2,7 +2,8 @@
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
-readonly _devdel_name="${1:?'Usage: dev-delete.sh <name>'}"
+_devdel_name=$(_dev_resolve_name "${1:-}")
+readonly _devdel_name
 
 if ! _dev_container_exists "$_devdel_name"; then
     echo "Error: container '${_devdel_name}' does not exist" >&2
