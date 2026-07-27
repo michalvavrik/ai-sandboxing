@@ -2,7 +2,8 @@
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
-readonly _devsee_name="${1:?'Usage: dev-see.sh <name>'}"
+_devsee_name=$(_dev_resolve_name "${1:-}")
+readonly _devsee_name
 readonly _devsee_remote="dev-automation"
 
 if ! _dev_container_exists "$_devsee_name"; then

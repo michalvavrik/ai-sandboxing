@@ -2,7 +2,8 @@
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
-readonly _deventer_name="${1:?'Usage: dev-enter.sh <name>'}"
+_deventer_name=$(_dev_resolve_name "${1:-}")
+readonly _deventer_name
 
 if ! _dev_container_exists "$_deventer_name"; then
     echo "Error: container '${_deventer_name}' does not exist" >&2

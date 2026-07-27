@@ -22,18 +22,18 @@ case "$_dev_cmd" in
     fi
     ;;
   enter)
-    DEV_LAST_CONTAINER="${1:-$DEV_LAST_CONTAINER}"
-    "${_dev_dir}/dev-enter.sh" "${DEV_LAST_CONTAINER:?'No container specified. Use: dev enter <name>'}"
+    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
+    "${_dev_dir}/dev-enter.sh" "$DEV_LAST_CONTAINER"
     ;;
   stop)
-    "${_dev_dir}/dev-stop.sh" "${1:-${DEV_LAST_CONTAINER:?'No container specified'}}"
+    "${_dev_dir}/dev-stop.sh" "${1:-${DEV_LAST_CONTAINER:-}}"
     ;;
   start)
-    DEV_LAST_CONTAINER="${1:-$DEV_LAST_CONTAINER}"
-    "${_dev_dir}/dev-start.sh" "${DEV_LAST_CONTAINER:?'No container specified'}"
+    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
+    "${_dev_dir}/dev-start.sh" "$DEV_LAST_CONTAINER"
     ;;
   see)
-    "${_dev_dir}/dev-see.sh" "${1:-${DEV_LAST_CONTAINER:?'No container specified'}}"
+    "${_dev_dir}/dev-see.sh" "${1:-${DEV_LAST_CONTAINER:-}}"
     ;;
   cp)
     DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-cp.sh" "$@"

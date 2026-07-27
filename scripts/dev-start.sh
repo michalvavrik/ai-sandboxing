@@ -2,7 +2,8 @@
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
-readonly _devstart_name="${1:?'Usage: dev-start.sh <name>'}"
+_devstart_name=$(_dev_resolve_name "${1:-}")
+readonly _devstart_name
 
 # Ensure proxy is running before starting the container
 _dev_ensure_proxy
