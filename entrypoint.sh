@@ -117,6 +117,10 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 - /opt/workspace/keycloak — latest keycloak main (shallow, for browsing source)
 - /opt/workspace/quarkus — latest quarkus main (shallow, for browsing source)
 - /tmp/workspace — additional documents copied in by the user (if any)
+
+## Task context
+- .pr — PR details (\`gh pr view\` output), present when working on a pull request
+- .issue — issue details (\`gh issue view\` output), present when working on an issue
 CLAUDEMD
         runuser -u dev -- git -C /workspace update-index --assume-unchanged CLAUDE.md 2>/dev/null || true
         runuser -u dev -- git -C /workspace config core.untrackedCache true 2>/dev/null || true
