@@ -169,20 +169,21 @@ fi
 # --------------------------------------------------------------------------
 _dev_step_header 5 8 "Firewall rule for proxy port"
 
-readonly _DEV_FW_RULE='rule priority="-1" family="ipv4" port port="9222" protocol="tcp" reject'
+readonly _DEV_FW_RULE_V4='rule priority="-1" family="ipv4" port port="9222" protocol="tcp" reject'
+readonly _DEV_FW_RULE_V6='rule priority="-1" family="ipv6" port port="9222" protocol="tcp" reject'
 
-if firewall-cmd --query-rich-rule="$_DEV_FW_RULE" --permanent &>/dev/null; then
-    echo "Firewall rule already configured."
-else
-    sudo firewall-cmd --add-rich-rule="$_DEV_FW_RULE" --permanent
-    sudo firewall-cmd --reload
-fi
+for _dev_fw_rule in "$_DEV_FW_RULE_V4" "$_DEV_FW_RULE_V6"; do
+    if ! firewall-cmd --query-rich-rule="$_dev_fw_rule" --permanent &>/dev/null; then
+        sudo firewall-cmd --add-rich-rule="$_dev_fw_rule" --permanent
+    fi
+done
+sudo firewall-cmd --reload
 
-if ! firewall-cmd --query-rich-rule="$_DEV_FW_RULE" --permanent &>/dev/null; then
+if ! firewall-cmd --query-rich-rule="$_DEV_FW_RULE_V4" --permanent &>/dev/null; then
     echo "Error: firewall rule not active. Proxy port 9222 is exposed to the local network." >&2
     exit 1
 fi
-echo "Firewall rule verified."
+echo "Firewall rules verified (IPv4 + IPv6)."
 
 # --------------------------------------------------------------------------
 # Step 5/7: Register krun runtime

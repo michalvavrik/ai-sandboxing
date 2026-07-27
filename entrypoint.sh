@@ -184,7 +184,9 @@ if [[ -n "$HOST_IP" ]]; then
 fi
 
 # ── Start sshd (for additional terminals via dev enter) ─────────────────────
-(ssh-keygen -A &>/dev/null && /usr/sbin/sshd &>/dev/null) &
+# Port 2222: passt runs unprivileged and cannot bind ports below 1024,
+# so sshd must use a non-privileged port for port forwarding to work.
+(ssh-keygen -A &>/dev/null && /usr/sbin/sshd -p 2222 &>/dev/null) &
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
 exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; exec "$@"' _ "${@:-bash --login}"
