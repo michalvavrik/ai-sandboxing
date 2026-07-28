@@ -1,6 +1,11 @@
 #!/bin/bash
 set -euo pipefail
 
+ulimit -Hn 65536
+ulimit -Sn 32768
+echo "* soft nofile 32768" > /etc/security/limits.d/90-nofile.conf
+echo "* hard nofile 65536" >> /etc/security/limits.d/90-nofile.conf
+
 # ── Guest firewall (nft — kernel has NF_TABLES but not XTABLES) ─────────────
 HOST_IP=$(getent hosts host.internal | awk '{print $1}')
 HOST_IP="${HOST_IP:-$(getent hosts host.containers.internal | awk '{print $1}')}"
