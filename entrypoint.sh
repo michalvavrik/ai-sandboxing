@@ -146,13 +146,13 @@ if [ -d /opt/dev-keys ]; then
     fi
 fi
 
-# ── Project workspace (from baked-in shallow clone) ─────────────────────────
+# ── Project workspace ────────────────────────────────────────────────────────
 if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
     _repo="${DEV_TEMPLATE_KEY#*/}"
     _org="${DEV_TEMPLATE_KEY%%/*}"
     chown dev:dev /workspace
 
-    # Set up workspace from the baked-in repo
+    # Set up workspace from the baked-in repo (pre-baked in the image)
     if [ ! -d /workspace/.git ] && [ -d "/opt/workspace/${_repo}" ]; then
         cd /
         rm -rf /workspace
@@ -166,6 +166,41 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
                 /workspace
         else
             ln -s "/opt/workspace/${_repo}" /workspace
+        fi
+        runuser -u dev -- git -C /workspace remote set-url origin \
+            "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git"
+        runuser -u dev -- git -C /workspace remote add upstream \
+            "https://github.com/${_org}/${_repo}.git" 2>/dev/null || true
+
+    # Set up workspace from host source or GitHub (no pre-baked repo available)
+    elif [ ! -d /workspace/.git ]; then
+        cd /
+        rm -rf /workspace
+        mkdir -p /workspace
+        chown dev:dev /workspace
+
+        _clone_base="/mnt/bounded/repo-base"
+        if [[ -d /mnt/bounded ]]; then
+            if [ -d /opt/project-src/.git ]; then
+                echo "Cloning workspace from host source (shallow)..."
+                runuser -u dev -- git clone --depth 1 file:///opt/project-src "$_clone_base"
+            else
+                echo "No host source mounted, cloning from GitHub (shallow)..."
+                runuser -u dev -- git clone --depth 1 \
+                    "https://github.com/${_org}/${_repo}.git" "$_clone_base"
+            fi
+            mkdir -p /mnt/bounded/ws-upper /mnt/bounded/ws-work
+            chown dev:dev /mnt/bounded/ws-upper /mnt/bounded/ws-work
+            runuser -u dev -- fuse-overlayfs \
+                -o "lowerdir=${_clone_base},upperdir=/mnt/bounded/ws-upper,workdir=/mnt/bounded/ws-work,squash_to_uid=1000,squash_to_gid=1000" \
+                /workspace
+        else
+            if [ -d /opt/project-src/.git ]; then
+                runuser -u dev -- git clone --depth 1 file:///opt/project-src /workspace
+            else
+                runuser -u dev -- git clone --depth 1 \
+                    "https://github.com/${_org}/${_repo}.git" /workspace
+            fi
         fi
         runuser -u dev -- git -C /workspace remote set-url origin \
             "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git"
@@ -185,10 +220,19 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         runuser -u dev -- bash -c \
             'mkdir -p /workspace/.git/objects/info && echo /opt/project-src-objects >> /workspace/.git/objects/info/alternates' \
             2>/dev/null || true
+        _ref_repos=""
+        for _ref_dir in /opt/workspace/*/; do
+            [ -d "$_ref_dir" ] || continue
+            _ref_name=$(basename "$_ref_dir")
+            [[ "$_ref_name" == "$_repo" ]] && continue
+            _ref_repos="${_ref_repos}
+- /opt/workspace/${_ref_name} — latest ${_ref_name} main (shallow, for browsing source)"
+        done
+
         runuser -u dev -- bash -c "cat > /workspace/CLAUDE.md" <<CLAUDEMD
 # Sandbox environment for ${_org}/${_repo}
 
-- /workspace is a shallow clone (depth 1). Work here.
+- /workspace is a shallow clone (1 commit). Work here.
 - /opt/project-src has the full git history of ${_org}/${_repo} (read-only). Use it for \`git log\`, \`git blame\`, \`git show\`:
   \`\`\`
   git -C /opt/project-src log --oneline -20
@@ -198,9 +242,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 - Push to origin (${DEV_AUTOMATION_USER:-dev-automation}/${_repo}), fetch from upstream (${_org}/${_repo}).
 
 ## Reference codebases (read-only)
-- /opt/project-src — ${_org}/${_repo} (keycloak/quarkus) with full commit history (host mount). Use for \`git log\`, \`git blame\`, \`git show\`.
-- /opt/workspace/keycloak — latest keycloak main (shallow, for browsing source)
-- /opt/workspace/quarkus — latest quarkus main (shallow, for browsing source)
+- /opt/project-src — ${_org}/${_repo} with full commit history (host mount). Use for \`git log\`, \`git blame\`, \`git show\`.${_ref_repos}
 - /tmp/workspace — additional documents copied in by the user (if any)
 
 ## Task context

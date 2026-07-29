@@ -117,12 +117,20 @@ If you want to connect your IDE directly to a container (for interactive editing
 
 ## Projects
 
-`configs/project-templates.conf` maps repos to source dirs, resources, and disk caps. Auto-detected from your current directory:
+`configs/project-templates.conf` maps `org/repo` to source dir, resources, and disk caps. Template detection (first match wins):
+
+1. **GitHub URL** — `dev https://github.com/keycloak/keycloak-client/pull/42` → exact `org/repo` from URL
+2. **cwd** — `cd ~/sources/keycloak-client && dev new fix` → matches template whose `source_dir` contains the cwd
+3. **Name heuristic** — `dev new keycloak-client-fix` → longest repo name matching the container name or its prefix
+4. **DEFAULT** — fallback when nothing matches
 
 ```bash
-cd ~/sources/keycloak && dev new fix-auth   # → keycloak template (12GB RAM, 6 CPUs, 20GB disk)
-cd ~/sources/quarkus && dev new my-fix      # → quarkus template (16GB RAM, 8 CPUs, 30GB disk)
+dev new keycloak-client              # → keycloak-client template (name heuristic)
+dev new keycloak-client-my-feature   # → keycloak-client template (prefix match, beats shorter "keycloak")
+cd ~/sources/quarkus && dev new foo  # → quarkus template (cwd detection)
 ```
+
+Projects pre-baked into the image (keycloak, quarkus) start instantly. Other templates clone from the host source (`~/sources/<source_dir>`) on first start, falling back to GitHub if no local source exists.
 
 ## Keys
 
