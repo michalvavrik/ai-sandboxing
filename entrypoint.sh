@@ -101,7 +101,7 @@ runroot = "/mnt/podman/run"
 STCONF
     chown dev:dev /home/dev/.config/containers/storage.conf
 
-    runuser -u dev -- bash -c 'XDG_RUNTIME_DIR=/run/user/1000 podman system service --time=0 &'
+    runuser -u dev -- bash -c 'cd /run/user/1000 && XDG_RUNTIME_DIR=/run/user/1000 podman system service --time=0 &'
 fi
 
 # ── Maven cache (fuse-overlayfs as dev user) ────────────────────────────────
