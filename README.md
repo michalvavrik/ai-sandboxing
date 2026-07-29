@@ -19,6 +19,8 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 - **No write credentials in container** — git push goes through the host proxy which adds auth; container has zero GitHub write access
 - **Read-only GitHub token** — for `gh` CLI rate limits on public repos; cannot write to any repo
 - **Bob Shell API key isolation** — the API key is never in the `dev` user's environment; a setuid launcher reads it from a protected file, `LD_PRELOAD` strips it from subprocess environments, and `PR_SET_DUMPABLE=0` blocks `/proc` inspection
+- **Per-container disk caps** — each container gets two bounded ext4 loopback files on the host: one for workspace/builds (default 15–30 GiB), one for inner Testcontainers images (6 GiB). Both are locked (`root:600`) inside the VM so the agent can't extend them. Filling one doesn't corrupt the other. Cleaned up automatically by `dev delete`; orphans from raw `podman rm` are pruned on the next delete. **Caveats:** (1) caps cover `/workspace`, `/home/dev`, `/tmp`, and inner podman storage — writes to system paths (`/var`, `/etc`, `/opt`) go to the host overlay uncapped (normal workflows don't write large files there, but a malicious agent could); (2) caps rely on the agent not escalating to real VM root — the attack surface is three setuid binaries (`newuidmap`, `newgidmap`, `fusermount3`); a CVE in any would let the agent unlock the files. Even then, the KVM boundary still contains the agent
+- **Rootless inner Podman** — Testcontainers runs via rootless Podman inside the VM. User-namespace isolation prevents the agent from reading root-owned files, modifying nftables, or escalating privileges — even with `--privileged --net=host` on inner containers
 - **Guest firewall** — nftables rules restrict outbound traffic to DNS, the auth proxy, and HTTPS (port 443). All other outbound is dropped. Loopback is fully open for test servers
 - **Proxy firewall** — the host proxy binds to `0.0.0.0` (required — `127.0.0.1` is unreachable from krun/passt microVMs). A firewalld rule blocks external access to the proxy port (configured by install script)
 - **MCP whitelist** — only explicitly whitelisted MCP servers are proxied into containers (see `MCP_WHITELIST` in `scripts/dev-proxy.py`)
@@ -100,11 +102,11 @@ If you want to connect your IDE directly to a container (for interactive editing
 
 ## Projects
 
-`configs/project-templates.conf` maps repos to source dirs and resources. Auto-detected from your current directory:
+`configs/project-templates.conf` maps repos to source dirs, resources, and disk caps. Auto-detected from your current directory:
 
 ```bash
-cd ~/sources/keycloak && dev new fix-auth   # → keycloak template (12GB RAM, 6 CPUs)
-cd ~/sources/quarkus && dev new my-fix      # → quarkus template (16GB RAM, 8 CPUs)
+cd ~/sources/keycloak && dev new fix-auth   # → keycloak template (12GB RAM, 6 CPUs, 20GB disk)
+cd ~/sources/quarkus && dev new my-fix      # → quarkus template (16GB RAM, 8 CPUs, 30GB disk)
 ```
 
 ## Keys
@@ -132,11 +134,14 @@ Host                              krun MicroVM
 │   ├── git push (HTTP→SSH) ◄──── git push (container HTTP, proxy bridges to GitHub SSH)
 │   └── MCP SSE relay ◄────────── Claude Code (whitelisted host MCP servers)
 ├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (reads host, writes local)
-└── keys/ (individual files)      ├── credentials (mounted per-file, not whole dir)
-    ├── id_ed25519_dev_automation │   ├── id_ed25519_container.pub  (sshd authorized_keys)
-    ├── id_ed25519_container      │   └── gh-pat-container          (read-only gh token)
-    ├── gh-pat-container          └── podman secret
-    └── ibm_bob_shell_api.key         └── bob-api-key → /run/bob-secrets/api.key (bobrunner:400)
+├── keys/ (individual files)      ├── credentials (mounted per-file, not whole dir)
+│   ├── id_ed25519_dev_automation │   ├── id_ed25519_container.pub  (sshd authorized_keys)
+│   ├── id_ed25519_container      │   └── gh-pat-container          (read-only gh token)
+│   ├── gh-pat-container          ├── podman secret
+│   └── ibm_bob_shell_api.key    │   └── bob-api-key → /run/bob-secrets/api.key (bobrunner:400)
+└── dev-sandbox-disks/            └── bounded loopback disks (ext4, root:600 inside VM)
+    ├── <name>.img (workspace)        ├── /mnt/bounded → /workspace, /home/dev, /tmp
+    └── <name>-podman.img (images)    └── /mnt/podman  → rootless Podman storage (Testcontainers)
 ```
 
 ### Bob Shell credential isolation

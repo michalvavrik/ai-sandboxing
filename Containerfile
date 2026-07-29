@@ -4,7 +4,7 @@ FROM registry.fedoraproject.org/fedora:44
 RUN dnf install -y \
         git git-lfs curl wget jq zip unzip findutils procps-ng hostname \
         diffutils less iproute iptables openssh-server \
-        podman fuse-overlayfs maven nodejs npm gh \
+        podman fuse-overlayfs e2fsprogs maven nodejs npm gh \
     && dnf clean all
 
 # ── Non-root users with rootless-Podman support ──────────────────────────────
@@ -21,7 +21,8 @@ RUN passwd -l root \
     && find / -xdev -perm /6000 -type f \
          ! -name newuidmap ! -name newgidmap ! -name fusermount3 \
          ! -name bob-run \
-         -exec chmod ug-s {} + 2>/dev/null || true
+         -exec chmod ug-s {} + 2>/dev/null || true \
+    && chmod u+s /usr/bin/newuidmap /usr/bin/newgidmap
 
 # ── Inner Podman configuration ───────────────────────────────────────────────
 COPY configs/containers-storage.conf   /etc/containers/storage.conf

@@ -11,6 +11,9 @@ readonly DEV_LABEL="dev-sandbox"
 readonly DEV_RUNTIME="krun"
 readonly DEV_DEFAULT_RAM=8192
 readonly DEV_DEFAULT_CPUS=4
+readonly DEV_DEFAULT_DISK_GIB=15
+readonly DEV_PODMAN_STORAGE_GIB=6
+readonly DEV_DISK_DIR="${HOME}/.local/share/dev-sandbox-disks"
 
 _dev_pid_file() {
     echo "/run/user/$(id -u)/dev-proxy.pid"
@@ -168,21 +171,24 @@ _dev_create_container() {
     fi
 
     local _dev_source_dir="" _dev_ram="$DEV_DEFAULT_RAM" _dev_cpus="$DEV_DEFAULT_CPUS"
+    local _dev_disk_gib="$DEV_DEFAULT_DISK_GIB"
 
     if [[ -n "$_dev_template_key" ]]; then
         local _dev_tmpl
         _dev_tmpl=$(_dev_lookup_template "$_dev_template_key") || true
         if [[ -n "$_dev_tmpl" ]]; then
-            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus <<< "$_dev_tmpl"
-            echo "Matched template: ${_dev_template_key} (RAM=${_dev_ram}MiB, CPUs=${_dev_cpus})"
+            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus _dev_disk_gib <<< "$_dev_tmpl"
+            _dev_disk_gib="${_dev_disk_gib:-$DEV_DEFAULT_DISK_GIB}"
+            echo "Matched template: ${_dev_template_key} (RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
         fi
     else
         local _dev_tmpl
         _dev_tmpl=$(_dev_lookup_template "DEFAULT") || true
         if [[ -n "$_dev_tmpl" ]]; then
-            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus <<< "$_dev_tmpl"
+            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus _dev_disk_gib <<< "$_dev_tmpl"
+            _dev_disk_gib="${_dev_disk_gib:-$DEV_DEFAULT_DISK_GIB}"
         fi
-        echo "Using default template (RAM=${_dev_ram}MiB, CPUs=${_dev_cpus})"
+        echo "Using default template (RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
     fi
 
     _dev_ensure_proxy
@@ -224,6 +230,23 @@ _dev_create_container() {
         echo "WARNING: source dir '${_dev_source_dir}' is not under ~/sources/, skipping mount" >&2
     fi
 
+    # Create per-container disk images (sparse ext4 loopbacks, cap host disk usage)
+    local _dev_disk_img="${DEV_DISK_DIR}/${_dev_name}.img"
+    local _dev_podman_img="${DEV_DISK_DIR}/${_dev_name}-podman.img"
+    mkdir -p "$DEV_DISK_DIR"
+    if [[ -f "$_dev_disk_img" ]]; then
+        echo "Reusing existing bounded disk for '${_dev_name}' (${_dev_disk_gib}GiB cap)."
+    else
+        truncate -s "${_dev_disk_gib}G" "$_dev_disk_img"
+        echo "Created bounded disk: ${_dev_disk_gib}GiB cap."
+    fi
+    if [[ ! -f "$_dev_podman_img" ]]; then
+        truncate -s "${DEV_PODMAN_STORAGE_GIB}G" "$_dev_podman_img"
+        echo "Created podman storage disk: ${DEV_PODMAN_STORAGE_GIB}GiB cap."
+    fi
+    _dev_volumes+=(-v "${_dev_disk_img}:/opt/bounded-disk.img:rw")
+    _dev_volumes+=(-v "${_dev_podman_img}:/opt/podman-disk.img:rw")
+
     echo "Creating container '${_dev_name}'..."
     podman create -it \
         --runtime="$DEV_RUNTIME" \
@@ -245,6 +268,7 @@ _dev_create_container() {
         -e "CLOUD_ML_REGION=${CLOUD_ML_REGION:-global}" \
         -e "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-max}" \
         -e "DEV_TEMPLATE_KEY=${_dev_template_key}" \
+        -e "DEV_PODMAN_STORAGE_GIB=${DEV_PODMAN_STORAGE_GIB}" \
         ${DEV_PR_NUMBER:+-e "DEV_PR_NUMBER=${DEV_PR_NUMBER}"} \
         ${DEV_ISSUE_NUMBER:+-e "DEV_ISSUE_NUMBER=${DEV_ISSUE_NUMBER}"} \
         -p "127.0.0.1::2222" \

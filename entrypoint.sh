@@ -31,11 +31,72 @@ export ANTHROPIC_VERTEX_BASE_URL="${ANTHROPIC_VERTEX_BASE_URL:-}"
 export ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}"
 export CLOUD_ML_REGION="${CLOUD_ML_REGION:-}"
 export CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL:-max}"
+export XDG_RUNTIME_DIR=/run/user/1000
+export DOCKER_HOST=unix:///run/user/1000/podman/podman.sock
 export HISTFILE=/dev/null
 DEVENV
 
 # ── Allow dev user to use FUSE ───────────────────────────────────────────────
 chmod 666 /dev/fuse 2>/dev/null || true
+
+# ── Bounded disk (caps host disk usage per container) ───────────────────────
+if [[ -f /opt/bounded-disk.img ]]; then
+    if ! blkid /opt/bounded-disk.img 2>/dev/null | grep -q ext4; then
+        mkfs.ext4 -m 0 -q /opt/bounded-disk.img
+    fi
+    mkdir -p /mnt/bounded
+    mount -o loop /opt/bounded-disk.img /mnt/bounded
+
+    chown root:root /opt/bounded-disk.img
+    chmod 600 /opt/bounded-disk.img
+
+    mkdir -p /mnt/bounded/home-upper /mnt/bounded/home-work /mnt/bounded/tmp-data
+    chown dev:dev /mnt/bounded/home-upper /mnt/bounded/home-work /mnt/bounded/tmp-data
+
+    fuse-overlayfs \
+        -o "lowerdir=/home/dev,upperdir=/mnt/bounded/home-upper,workdir=/mnt/bounded/home-work,squash_to_uid=1000,squash_to_gid=1000" \
+        /home/dev
+
+    mount --bind /mnt/bounded/tmp-data /tmp
+    chmod 1777 /tmp
+
+fi
+
+# ── Inner podman storage (separate loopback, independent of bounded disk) ───
+if [[ -f /opt/podman-disk.img ]]; then
+    if ! blkid /opt/podman-disk.img 2>/dev/null | grep -q ext4; then
+        mkfs.ext4 -m 0 -q /opt/podman-disk.img
+    fi
+    mkdir -p /mnt/podman
+    mount -o loop /opt/podman-disk.img /mnt/podman
+    chown root:root /opt/podman-disk.img
+    chmod 600 /opt/podman-disk.img
+    mkdir -p /mnt/podman/storage /mnt/podman/run
+    chown dev:dev /mnt/podman/storage /mnt/podman/run
+fi
+
+# ── Rootless podman (for Testcontainers) ────────────────────────────────────
+chmod u+s /usr/bin/newuidmap /usr/bin/newgidmap 2>/dev/null || true
+
+mkdir -p /dev/net
+mknod /dev/net/tun c 10 200 2>/dev/null || true
+chmod 666 /dev/net/tun
+
+mkdir -p /run/user/1000
+chown dev:dev /run/user/1000
+
+if [[ -d /mnt/podman ]]; then
+    runuser -u dev -- mkdir -p /home/dev/.config/containers
+    cat > /home/dev/.config/containers/storage.conf <<STCONF
+[storage]
+driver = "overlay"
+graphroot = "/mnt/podman/storage"
+runroot = "/mnt/podman/run"
+STCONF
+    chown dev:dev /home/dev/.config/containers/storage.conf
+
+    runuser -u dev -- bash -c 'XDG_RUNTIME_DIR=/run/user/1000 podman system service --time=0 &'
+fi
 
 # ── Maven cache (fuse-overlayfs as dev user) ────────────────────────────────
 if [ -d /opt/m2-base ] && [ "$(ls -A /opt/m2-base 2>/dev/null)" ]; then
@@ -82,11 +143,21 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
     _org="${DEV_TEMPLATE_KEY%%/*}"
     chown dev:dev /workspace
 
-    # Symlink workspace to the baked-in repo (instant — container overlay handles writes)
+    # Set up workspace from the baked-in repo
     if [ ! -d /workspace/.git ] && [ -d "/opt/workspace/${_repo}" ]; then
         cd /
         rm -rf /workspace
-        ln -s "/opt/workspace/${_repo}" /workspace
+        mkdir -p /workspace
+        chown dev:dev /workspace
+        if [[ -d /mnt/bounded ]]; then
+            mkdir -p /mnt/bounded/ws-upper /mnt/bounded/ws-work
+            chown dev:dev /mnt/bounded/ws-upper /mnt/bounded/ws-work
+            runuser -u dev -- fuse-overlayfs \
+                -o "lowerdir=/opt/workspace/${_repo},upperdir=/mnt/bounded/ws-upper,workdir=/mnt/bounded/ws-work,squash_to_uid=1000,squash_to_gid=1000" \
+                /workspace
+        else
+            ln -s "/opt/workspace/${_repo}" /workspace
+        fi
         runuser -u dev -- git -C /workspace remote set-url origin \
             "http://host.internal:${PROXY_PORT}/git/michalvavrik-dev-automation/${_repo}.git"
         runuser -u dev -- git -C /workspace remote add upstream \

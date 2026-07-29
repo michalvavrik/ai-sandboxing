@@ -23,6 +23,23 @@ podman rm -f "$_devdel_name"
 _dev_remove_ssh_config "$_devdel_name"
 echo "Container '${_devdel_name}' deleted."
 
+# Remove bounded disk files
+for _devdel_disk in "${DEV_DISK_DIR}/${_devdel_name}.img" "${DEV_DISK_DIR}/${_devdel_name}-podman.img"; do
+    [[ -f "$_devdel_disk" ]] && rm -f "$_devdel_disk"
+done
+echo "Bounded disks removed."
+
+# Clean orphaned disk files (no matching container)
+for _devdel_img in "${DEV_DISK_DIR}/"*.img; do
+    [[ -f "$_devdel_img" ]] || continue
+    _devdel_cname="$(basename "$_devdel_img" .img)"
+    _devdel_cname="${_devdel_cname%-podman}"
+    if ! _dev_container_exists "$_devdel_cname"; then
+        rm -f "$_devdel_img"
+        echo "Cleaned orphaned disk: $(basename "$_devdel_img")"
+    fi
+done
+
 podman image prune -f &>/dev/null &
 _dev_maybe_stop_proxy
 
