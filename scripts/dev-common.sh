@@ -1,12 +1,19 @@
 #!/bin/bash
 set -euo pipefail
 
-readonly DEV_AUTOMATION_USER="michalvavrik-dev-automation"
 readonly DEV_SCRIPTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly DEV_BASE_DIR="$(dirname "$DEV_SCRIPTS_DIR")"
 readonly DEV_KEYS_DIR="${DEV_BASE_DIR}/keys"
 readonly DEV_CONFIGS_DIR="${DEV_BASE_DIR}/configs"
-readonly DEV_IMAGE="ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest"
+
+if [[ ! -f "${DEV_BASE_DIR}/config.local" ]]; then
+    echo "Error: ${DEV_BASE_DIR}/config.local not found. Run 'dev install' first." >&2
+    exit 1
+fi
+source "${DEV_BASE_DIR}/config.local"
+
+readonly DEV_AUTOMATION_USER DEV_AUTOMATION_EMAIL DEV_AUTOMATION_NAME
+readonly DEV_GHCR_USER DEV_IMAGE DEV_SOURCES_DIR
 readonly DEV_LABEL="dev-sandbox"
 readonly DEV_RUNTIME="krun"
 readonly DEV_DEFAULT_RAM=8192
@@ -191,6 +198,10 @@ _dev_create_container() {
         echo "Using default template (RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
     fi
 
+    if [[ -n "$_dev_source_dir" && "$_dev_source_dir" != /* ]]; then
+        _dev_source_dir="${DEV_SOURCES_DIR}/${_dev_source_dir}"
+    fi
+
     _dev_ensure_proxy
     local _dev_port
     _dev_port=$(_dev_proxy_port)
@@ -224,10 +235,10 @@ _dev_create_container() {
     if [[ -d "${HOME}/.m2/repository" ]]; then
         _dev_volumes+=(-v "${HOME}/.m2/repository:/opt/m2-base:ro")
     fi
-    if [[ -n "$_dev_source_dir" && -d "$_dev_source_dir" && "$_dev_source_dir" == "${HOME}/sources/"* ]]; then
+    if [[ -n "$_dev_source_dir" && -d "$_dev_source_dir" && "$_dev_source_dir" == "${DEV_SOURCES_DIR}/"* ]]; then
         _dev_volumes+=(-v "${_dev_source_dir}:/opt/project-src:ro")
     elif [[ -n "$_dev_source_dir" ]]; then
-        echo "WARNING: source dir '${_dev_source_dir}' is not under ~/sources/, skipping mount" >&2
+        echo "WARNING: source dir '${_dev_source_dir}' is not under ${DEV_SOURCES_DIR}/, skipping mount" >&2
     fi
 
     # Create per-container disk images (sparse ext4 loopbacks, cap host disk usage)
@@ -267,6 +278,9 @@ _dev_create_container() {
         -e "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}" \
         -e "CLOUD_ML_REGION=${CLOUD_ML_REGION:-global}" \
         -e "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-max}" \
+        -e "DEV_AUTOMATION_USER=${DEV_AUTOMATION_USER}" \
+        -e "DEV_AUTOMATION_EMAIL=${DEV_AUTOMATION_EMAIL}" \
+        -e "DEV_AUTOMATION_NAME=${DEV_AUTOMATION_NAME}" \
         -e "DEV_TEMPLATE_KEY=${_dev_template_key}" \
         -e "DEV_PODMAN_STORAGE_GIB=${DEV_PODMAN_STORAGE_GIB}" \
         ${DEV_PR_NUMBER:+-e "DEV_PR_NUMBER=${DEV_PR_NUMBER}"} \
@@ -365,7 +379,7 @@ _dev_check_container_pat() {
 _dev_ensure_ghcr_auth() {
     if ! podman login --get-login ghcr.io &>/dev/null; then
         echo "Re-authenticating to GHCR..."
-        gh auth token | podman login ghcr.io -u michalvavrik --password-stdin
+        gh auth token | podman login ghcr.io -u "$DEV_GHCR_USER" --password-stdin
     fi
 }
 
@@ -378,6 +392,9 @@ _dev_detect_template_from_cwd() {
         [[ "$_dev_line" =~ ^[[:space:]]*# || -z "$_dev_line" ]] && continue
         [[ "$_dev_line" =~ ^DEFAULT\| ]] && continue
         _dev_src_dir=$(echo "$_dev_line" | cut -d'|' -f2)
+        if [[ -n "$_dev_src_dir" && "$_dev_src_dir" != /* ]]; then
+            _dev_src_dir="${DEV_SOURCES_DIR}/${_dev_src_dir}"
+        fi
         if [[ -n "$_dev_src_dir" && "$_dev_cwd" == "$_dev_src_dir"* ]]; then
             echo "${_dev_line%%|*}"
             return 0

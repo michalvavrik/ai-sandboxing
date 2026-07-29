@@ -61,10 +61,6 @@ RUN curl -s "https://get.sdkman.io" | bash \
     && bash -c "source /home/dev/.sdkman/bin/sdkman-init.sh && sdk install java 21-tem"
 USER root
 
-# ── Git identity for dev ─────────────────────────────────────────────────────
-RUN git config --system user.email "dev-automation@michalvavrik.net" \
-    && git config --system user.name  "Michal Vavřík Dev Automation"
-
 # ── SSH directory (keys injected at runtime, NEVER baked in) ─────────────────
 RUN mkdir -p /home/dev/.ssh \
     && chmod 700 /home/dev/.ssh \

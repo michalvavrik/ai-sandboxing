@@ -31,10 +31,25 @@ Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Eac
 - Clone this repo to `~/sandboxing`: `git clone git@github.com:michalvavrik/ai-sandboxing.git ~/sandboxing`
 - JetBrains features require IntelliJ IDEA and Gateway installed via Toolbox
 
+## Configuration
+
+All machine-specific values live in `config.local` (gitignored). The install script creates a template on first run — fill it in before proceeding:
+
+| Variable               | Purpose                                       |
+|------------------------|-----------------------------------------------|
+| `DEV_AUTOMATION_USER`  | GitHub account for the automation agent       |
+| `DEV_AUTOMATION_EMAIL` | Git commit email inside containers            |
+| `DEV_AUTOMATION_NAME`  | Git commit author name inside containers      |
+| `DEV_GHCR_USER`        | GitHub username for GHCR image pulls          |
+| `DEV_IMAGE`            | Container image to pull and run               |
+| `DEV_SOURCES_DIR`      | Parent directory for project source checkouts |
+
+Project-specific source dirs in `configs/project-templates.conf` are relative to `DEV_SOURCES_DIR`.
+
 ## Setup
 
 ```bash
-/home/mvavrik/sandboxing/scripts/dev-install.sh
+~/sandboxing/scripts/dev-install.sh
 source ~/.bashrc
 ```
 

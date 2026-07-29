@@ -3,7 +3,7 @@ set -euo pipefail
 
 readonly _DEV_BASE_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 readonly _DEV_KEYS_DIR="${_DEV_BASE_DIR}/keys"
-readonly _DEV_AUTOMATION_USER="michalvavrik-dev-automation"
+readonly _DEV_CONFIG_FILE="${_DEV_BASE_DIR}/config.local"
 
 _dev_step_header() {
     local _dev_step="$1"
@@ -15,9 +15,57 @@ _dev_step_header() {
 }
 
 # --------------------------------------------------------------------------
-# Step 1/6: SSH keys
+# Step 0: config.local validation
 # --------------------------------------------------------------------------
-_dev_step_header 1 8 "SSH keys for ${_DEV_AUTOMATION_USER}"
+readonly _DEV_REQUIRED_VARS=(DEV_AUTOMATION_USER DEV_AUTOMATION_EMAIL DEV_AUTOMATION_NAME DEV_GHCR_USER DEV_IMAGE DEV_SOURCES_DIR)
+
+if [[ ! -f "$_DEV_CONFIG_FILE" ]]; then
+    cat > "$_DEV_CONFIG_FILE" <<'CONF'
+# Dev sandbox configuration — machine-specific values.
+# Fill in all values, then re-run 'dev install'.
+
+# GitHub account used by the automation agent (for pushing branches, PRs)
+DEV_AUTOMATION_USER=""
+
+# Git identity for commits made inside containers
+DEV_AUTOMATION_EMAIL=""
+DEV_AUTOMATION_NAME=""
+
+# GitHub username for GHCR authentication (repo owner)
+DEV_GHCR_USER=""
+
+# Container image to pull and run
+DEV_IMAGE=""
+
+# Parent directory for project source checkouts (used by project-templates.conf)
+DEV_SOURCES_DIR="${HOME}/sources"
+CONF
+    echo "Created ${_DEV_CONFIG_FILE} with empty values."
+    echo "Fill it in and re-run: $0"
+    exit 1
+fi
+
+source "$_DEV_CONFIG_FILE"
+
+_dev_missing=()
+for _dev_var in "${_DEV_REQUIRED_VARS[@]}"; do
+    if [[ -z "${!_dev_var:-}" ]]; then
+        _dev_missing+=("$_dev_var")
+    fi
+done
+
+if [[ ${#_dev_missing[@]} -gt 0 ]]; then
+    echo "Error: ${_DEV_CONFIG_FILE} is missing values for: ${_dev_missing[*]}" >&2
+    echo "Fill them in and re-run: $0" >&2
+    exit 1
+fi
+
+echo "Config loaded: ${_DEV_CONFIG_FILE}"
+
+# --------------------------------------------------------------------------
+# Step 1/9: SSH keys
+# --------------------------------------------------------------------------
+_dev_step_header 1 9 "SSH keys for ${DEV_AUTOMATION_USER}"
 
 mkdir -p "$_DEV_KEYS_DIR"
 chmod 700 "$_DEV_KEYS_DIR"
@@ -27,18 +75,18 @@ readonly _DEV_SSH_KEY="${_DEV_KEYS_DIR}/id_ed25519_dev_automation"
 if [[ -f "$_DEV_SSH_KEY" ]]; then
     echo "SSH key already exists: ${_DEV_SSH_KEY}"
 else
-    ssh-keygen -t ed25519 -C "dev-automation@michalvavrik.net" -f "$_DEV_SSH_KEY" -N ""
+    ssh-keygen -t ed25519 -C "$DEV_AUTOMATION_EMAIL" -f "$_DEV_SSH_KEY" -N ""
     echo "SSH key generated."
 fi
 
 # Verify SSH access — if not working, guide the user
 _dev_ssh_output=$(ssh -i "$_DEV_SSH_KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1) || true
-if echo "$_dev_ssh_output" | grep -q "$_DEV_AUTOMATION_USER"; then
+if echo "$_dev_ssh_output" | grep -q "$DEV_AUTOMATION_USER"; then
     echo "SSH key already registered and working."
 else
     echo "SSH key is not yet registered on GitHub. Add it now:"
     echo ""
-    echo "  1. Log in to GitHub as: ${_DEV_AUTOMATION_USER}"
+    echo "  1. Log in to GitHub as: ${DEV_AUTOMATION_USER}"
     echo "  2. Go to: https://github.com/settings/ssh/new"
     echo "  3. Title: dev-sandbox"
     echo "  4. Key type: Authentication key"
@@ -49,10 +97,10 @@ else
     read -rp "Press Enter after adding the key..."
 
     _dev_ssh_output=$(ssh -i "$_DEV_SSH_KEY" -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new -T git@github.com 2>&1) || true
-    if echo "$_dev_ssh_output" | grep -q "$_DEV_AUTOMATION_USER"; then
+    if echo "$_dev_ssh_output" | grep -q "$DEV_AUTOMATION_USER"; then
         echo "SSH verification passed."
     else
-        echo "Error: SSH key not recognized as ${_DEV_AUTOMATION_USER}." >&2
+        echo "Error: SSH key not recognized as ${DEV_AUTOMATION_USER}." >&2
         echo "Response: ${_dev_ssh_output}" >&2
         echo "Fix this before continuing." >&2
         exit 1
@@ -69,9 +117,9 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 2/6: Fine-grained PAT for containers
+# Step 2/9: Fine-grained PAT for containers
 # --------------------------------------------------------------------------
-_dev_step_header 2 8 "Fine-grained PAT for containers"
+_dev_step_header 2 9 "Fine-grained PAT for containers"
 
 readonly _DEV_CONTAINER_PAT_FILE="${_DEV_KEYS_DIR}/gh-pat-container"
 
@@ -80,7 +128,7 @@ if [[ -f "$_DEV_CONTAINER_PAT_FILE" ]]; then
 else
     echo "Create a fine-grained PAT for use INSIDE containers:"
     echo ""
-    echo "  1. Log in to GitHub as: ${_DEV_AUTOMATION_USER}"
+    echo "  1. Log in to GitHub as: ${DEV_AUTOMATION_USER}"
     echo "  2. Go to: https://github.com/settings/personal-access-tokens/new"
     echo ""
     echo "  Settings:"
@@ -107,9 +155,9 @@ echo "To rotate: replace ${_DEV_CONTAINER_PAT_FILE} with a new token."
 echo "New containers will use the new token automatically."
 
 # --------------------------------------------------------------------------
-# Step 3/8: Bob Shell API key
+# Step 3/9: Bob Shell API key
 # --------------------------------------------------------------------------
-_dev_step_header 3 8 "Bob Shell API key"
+_dev_step_header 3 9 "Bob Shell API key"
 
 readonly _DEV_BOB_KEY_FILE="${_DEV_KEYS_DIR}/ibm_bob_shell_api.key"
 
@@ -146,9 +194,9 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 4/8: System packages
+# Step 4/9: System packages
 # --------------------------------------------------------------------------
-_dev_step_header 4 8 "System packages"
+_dev_step_header 4 9 "System packages"
 
 _dev_pkgs_needed=()
 for _dev_pkg in libkrun crun-krun python3-google-auth python3-requests passt; do
@@ -165,9 +213,9 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 4/7: Firewall — block proxy port from external network
+# Step 5/9: Firewall — block proxy port from external network
 # --------------------------------------------------------------------------
-_dev_step_header 5 8 "Firewall rule for proxy port"
+_dev_step_header 5 9 "Firewall rule for proxy port"
 
 readonly _DEV_FW_RULE_V4='rule priority="-1" family="ipv4" port port="9222" protocol="tcp" reject'
 readonly _DEV_FW_RULE_V6='rule priority="-1" family="ipv6" port port="9222" protocol="tcp" reject'
@@ -186,9 +234,9 @@ fi
 echo "Firewall rules verified (IPv4 + IPv6)."
 
 # --------------------------------------------------------------------------
-# Step 5/7: Register krun runtime
+# Step 6/9: Register krun runtime
 # --------------------------------------------------------------------------
-_dev_step_header 6 8 "Register krun runtime"
+_dev_step_header 6 9 "Register krun runtime"
 
 readonly _DEV_CONTAINERS_CONF="${HOME}/.config/containers/containers.conf"
 
@@ -219,22 +267,23 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 5/6: GHCR auth
+# Step 7/9: GHCR auth
 # --------------------------------------------------------------------------
-_dev_step_header 7 8 "GHCR authentication"
+_dev_step_header 7 9 "GHCR authentication"
 
 source "$(dirname "$0")/dev-common.sh"
 _dev_ensure_ghcr_auth
 echo "GHCR authentication OK."
 
 # --------------------------------------------------------------------------
-# Step 6/6: Shell alias
+# Step 8/9: Shell alias
 # --------------------------------------------------------------------------
-_dev_step_header 8 8 "Shell alias"
+_dev_step_header 8 9 "Shell alias"
 
 readonly _DEV_ALIAS="alias dev=\"source ${_DEV_BASE_DIR}/scripts/dev.sh\""
 
-readonly _DEV_BG_PULL='(flock -n /tmp/dev-pull.lock -c '\''{ podman login --get-login ghcr.io &>/dev/null || gh auth token | podman login ghcr.io -u michalvavrik --password-stdin &>/dev/null; podman pull --policy newer ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest; podman pull --policy newer ghcr.io/michalvavrik/ai-sandboxing/dev-sandbox:latest-next; }'\'' &>/dev/null &)'
+_DEV_IMAGE_REPO="${DEV_IMAGE%:*}"
+readonly _DEV_BG_PULL="(flock -n /tmp/dev-pull.lock -c '{ podman login --get-login ghcr.io &>/dev/null || gh auth token | podman login ghcr.io -u ${DEV_GHCR_USER} --password-stdin &>/dev/null; podman pull --policy newer ${DEV_IMAGE}; podman pull --policy newer ${_DEV_IMAGE_REPO}:latest-next; }' &>/dev/null &)"
 
 if grep -qF 'alias dev=' "${HOME}/.bashrc" 2>/dev/null; then
     echo "Shell alias already present in ~/.bashrc."
@@ -285,6 +334,18 @@ _dev_completion() {
 complete -F _dev_completion dev
 COMP
     echo "Tab completion added to ~/.bashrc."
+fi
+
+# --------------------------------------------------------------------------
+# Step 9/9: Sources directory
+# --------------------------------------------------------------------------
+_dev_step_header 9 9 "Sources directory"
+
+if [[ ! -d "$DEV_SOURCES_DIR" ]]; then
+    mkdir -p "$DEV_SOURCES_DIR"
+    echo "Created ${DEV_SOURCES_DIR}"
+else
+    echo "Sources directory exists: ${DEV_SOURCES_DIR}"
 fi
 
 echo ""

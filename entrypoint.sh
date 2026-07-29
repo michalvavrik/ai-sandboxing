@@ -6,6 +6,12 @@ ulimit -Sn 32768
 echo "* soft nofile 32768" > /etc/security/limits.d/90-nofile.conf
 echo "* hard nofile 65536" >> /etc/security/limits.d/90-nofile.conf
 
+# ── Git identity (from host config.local, passed as env vars) ──────────────
+printf '[user]\n\temail = %s\n\tname = %s\n' \
+    "${DEV_AUTOMATION_EMAIL:-dev@sandbox.local}" \
+    "${DEV_AUTOMATION_NAME:-Dev Automation}" \
+    > /etc/gitconfig
+
 # ── Guest firewall (nft — kernel has NF_TABLES but not XTABLES) ─────────────
 HOST_IP=$(getent hosts host.internal | awk '{print $1}')
 HOST_IP="${HOST_IP:-$(getent hosts host.containers.internal | awk '{print $1}')}"
@@ -159,7 +165,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
             ln -s "/opt/workspace/${_repo}" /workspace
         fi
         runuser -u dev -- git -C /workspace remote set-url origin \
-            "http://host.internal:${PROXY_PORT}/git/michalvavrik-dev-automation/${_repo}.git"
+            "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git"
         runuser -u dev -- git -C /workspace remote add upstream \
             "https://github.com/${_org}/${_repo}.git" 2>/dev/null || true
     fi
@@ -186,7 +192,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
   git -C /opt/project-src blame path/to/file
   git -C /opt/project-src show <commit>:path/to/file
   \`\`\`
-- Push to origin (michalvavrik-dev-automation/${_repo}), fetch from upstream (${_org}/${_repo}).
+- Push to origin (${DEV_AUTOMATION_USER:-dev-automation}/${_repo}), fetch from upstream (${_org}/${_repo}).
 
 ## Reference codebases (read-only)
 - /opt/project-src — ${_org}/${_repo} (keycloak/quarkus) with full commit history (host mount). Use for \`git log\`, \`git blame\`, \`git show\`.
