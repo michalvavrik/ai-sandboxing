@@ -39,6 +39,7 @@ export CLOUD_ML_REGION="${CLOUD_ML_REGION:-}"
 export CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL:-max}"
 export XDG_RUNTIME_DIR=/run/user/1000
 export DOCKER_HOST=unix:///run/user/1000/podman/podman.sock
+export TESTCONTAINERS_RYUK_DISABLED=true
 export HISTFILE=/dev/null
 DEVENV
 
@@ -92,6 +93,8 @@ mkdir -p /run/user/1000
 chown dev:dev /run/user/1000
 
 if [[ -d /mnt/podman ]]; then
+    rm -rf /mnt/podman/run/* /run/user/1000/libpod 2>/dev/null || true
+
     runuser -u dev -- mkdir -p /home/dev/.config/containers
     cat > /home/dev/.config/containers/storage.conf <<STCONF
 [storage]
