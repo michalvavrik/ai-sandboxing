@@ -397,7 +397,7 @@ _dev_detect_template_from_cwd() {
         if [[ -n "$_dev_src_dir" && "$_dev_src_dir" != /* ]]; then
             _dev_src_dir="${DEV_SOURCES_DIR}/${_dev_src_dir}"
         fi
-        if [[ -n "$_dev_src_dir" && "$_dev_cwd" == "$_dev_src_dir"* ]]; then
+        if [[ -n "$_dev_src_dir" && ("$_dev_cwd" == "$_dev_src_dir" || "$_dev_cwd" == "$_dev_src_dir"/*) ]]; then
             echo "${_dev_line%%|*}"
             return 0
         fi
