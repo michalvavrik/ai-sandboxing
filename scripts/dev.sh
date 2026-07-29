@@ -7,13 +7,6 @@ if [[ -n "${DEV_LAST_CONTAINER:-}" ]] && ! podman container exists "$DEV_LAST_CO
     unset DEV_LAST_CONTAINER
 fi
 
-# Check token expiry on any container-related command (soft warning, non-blocking)
-case "$_dev_cmd" in
-  new|enter|start|see|http*|https*)
-    (source "${_dev_dir}/dev-common.sh"; _dev_check_container_pat) || true
-    ;;
-esac
-
 case "$_dev_cmd" in
   new)
     DEV_LAST_CONTAINER="${1:?'Usage: dev new <name>'}"
@@ -55,6 +48,9 @@ case "$_dev_cmd" in
   list)
     "${_dev_dir}/dev-list.sh"
     ;;
+  pull)
+    "${_dev_dir}/dev-pull.sh"
+    ;;
   install)
     "${_dev_dir}/dev-install.sh"
     ;;
@@ -63,7 +59,7 @@ case "$_dev_cmd" in
     DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     ;;
   help|*)
-    echo "Usage: dev {new|enter|delete|stop|start|see|cp|cpout|use|idea|list|install|<url>}"
+    echo "Usage: dev {new|enter|delete|stop|start|see|cp|cpout|use|idea|list|pull|install|<url>}"
     echo ""
     echo "  new <name>     Create and enter a new dev container"
     echo "  enter [name]   Enter an existing container"
@@ -76,6 +72,7 @@ case "$_dev_cmd" in
     echo "  use <name>     Set current container without entering"
     echo "  idea [name]    Open container in IntelliJ IDEA via Gateway"
     echo "  list           List all dev containers"
+    echo "  pull           Pull newer dev image (runs in background on login)"
     echo "  install        Install prerequisites and configure"
     echo "  <github-url>   Create/enter container for a GitHub issue/PR"
     ;;

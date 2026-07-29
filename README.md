@@ -46,6 +46,12 @@ All machine-specific values live in `config.local` (gitignored). The install scr
 
 Project-specific source dirs in `configs/project-templates.conf` are relative to `DEV_SOURCES_DIR`.
 
+### Background image pull
+
+On every login, `.bashrc` runs `dev-pull.sh` in the background to check for newer images.
+This means `dev new` never waits for a pull — it uses whatever image is already local.
+Run `dev pull` manually after pushing Containerfile changes to force an immediate update.
+
 ## Setup
 
 ```bash
@@ -75,6 +81,7 @@ dev cpout /tmp/file.txt    # copy from container (absolute path)
 dev use fix-auth           # set current container without entering
 dev idea                   # open container in IntelliJ IDEA via Gateway
 dev list                   # show all dev containers
+dev pull                   # pull newer image (runs in background on login)
 
 # From a GitHub issue or PR URL:
 dev https://github.com/keycloak/keycloak/issues/50167

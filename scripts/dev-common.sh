@@ -141,8 +141,6 @@ _dev_create_container() {
     local _dev_name="$1"
     local _dev_template_key="${2:-}"
 
-    _dev_check_container_pat || return 1
-
     if [[ ! "$_dev_name" =~ ^[a-zA-Z0-9][a-zA-Z0-9._-]*$ ]]; then
         echo "Error: invalid container name '${_dev_name}'" >&2
         echo "Names must start with a letter/digit and contain only [a-zA-Z0-9._-]" >&2
@@ -216,9 +214,11 @@ _dev_create_container() {
         fi
     fi
 
-    _dev_ensure_ghcr_auth
-    CONTAINERS_CONF_OVERRIDE=<(printf '[engine]\nimage_parallel_copies = 1\n') \
-        podman pull --policy newer "$DEV_IMAGE"
+    if ! podman image exists "$DEV_IMAGE" 2>/dev/null; then
+        echo "Image not found locally, pulling..."
+        _dev_ensure_ghcr_auth
+        podman pull "$DEV_IMAGE"
+    fi
 
     # Build volume mounts (only specific key files — never the whole keys/ dir)
     local _dev_volumes=()
@@ -249,10 +249,12 @@ _dev_create_container() {
         echo "Reusing existing bounded disk for '${_dev_name}' (${_dev_disk_gib}GiB cap)."
     else
         truncate -s "${_dev_disk_gib}G" "$_dev_disk_img"
+        mkfs.ext4 -F -m 0 -q "$_dev_disk_img"
         echo "Created bounded disk: ${_dev_disk_gib}GiB cap."
     fi
     if [[ ! -f "$_dev_podman_img" ]]; then
         truncate -s "${DEV_PODMAN_STORAGE_GIB}G" "$_dev_podman_img"
+        mkfs.ext4 -F -m 0 -q "$_dev_podman_img"
         echo "Created podman storage disk: ${DEV_PODMAN_STORAGE_GIB}GiB cap."
     fi
     _dev_volumes+=(-v "${_dev_disk_img}:/opt/bounded-disk.img:rw")

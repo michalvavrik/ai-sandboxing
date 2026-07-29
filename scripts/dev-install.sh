@@ -267,13 +267,17 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 7/9: GHCR auth
+# Step 7/9: GHCR auth + image pull
 # --------------------------------------------------------------------------
-_dev_step_header 7 9 "GHCR authentication"
+_dev_step_header 7 9 "GHCR authentication and image pull"
 
 source "$(dirname "$0")/dev-common.sh"
 _dev_ensure_ghcr_auth
 echo "GHCR authentication OK."
+
+echo "Pulling dev image (first time may take a few minutes)..."
+podman pull --policy missing "$DEV_IMAGE"
+echo "Dev image ready."
 
 # --------------------------------------------------------------------------
 # Step 8/9: Shell alias
@@ -281,9 +285,6 @@ echo "GHCR authentication OK."
 _dev_step_header 8 9 "Shell alias"
 
 readonly _DEV_ALIAS="alias dev=\"source ${_DEV_BASE_DIR}/scripts/dev.sh\""
-
-_DEV_IMAGE_REPO="${DEV_IMAGE%:*}"
-readonly _DEV_BG_PULL="(flock -n /tmp/dev-pull.lock -c '{ podman login --get-login ghcr.io &>/dev/null || gh auth token | podman login ghcr.io -u ${DEV_GHCR_USER} --password-stdin &>/dev/null; podman pull --policy newer ${DEV_IMAGE}; podman pull --policy newer ${_DEV_IMAGE_REPO}:latest-next; }' &>/dev/null &)"
 
 if grep -qF 'alias dev=' "${HOME}/.bashrc" 2>/dev/null; then
     echo "Shell alias already present in ~/.bashrc."
@@ -294,9 +295,11 @@ else
     echo "Alias added to ~/.bashrc."
 fi
 
-if ! grep -qF 'dev-sandbox:latest' "${HOME}/.bashrc" 2>/dev/null; then
-    echo "$_DEV_BG_PULL" >> "${HOME}/.bashrc"
+if ! grep -qF 'dev-pull.sh' "${HOME}/.bashrc" 2>/dev/null; then
+    echo "(${_DEV_BASE_DIR}/scripts/dev-pull.sh &>/dev/null &)" >> "${HOME}/.bashrc"
     echo "Background image pull added to ~/.bashrc."
+else
+    echo "Background image pull already configured."
 fi
 
 
@@ -316,7 +319,7 @@ _dev_completion() {
     local cur="${COMP_WORDS[COMP_CWORD]}"
     local prev="${COMP_WORDS[COMP_CWORD-1]}"
     if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=($(compgen -W "new enter delete stop start see cp cpout use idea list install" -- "$cur"))
+        COMPREPLY=($(compgen -W "new enter delete stop start see cp cpout use idea list pull install" -- "$cur"))
     elif [[ $COMP_CWORD -eq 2 && "$prev" =~ ^(enter|delete|stop|start|see|use)$ ]]; then
         COMPREPLY=($(compgen -W "$(podman ps -a --filter=label=dev-sandbox --format '{{.Names}}' 2>/dev/null)" -- "$cur"))
     elif [[ ${COMP_WORDS[1]} == "cp" && $COMP_CWORD -ge 2 ]]; then
