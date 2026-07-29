@@ -11,9 +11,12 @@ if ! _dev_container_exists "$_devsee_name"; then
     exit 1
 fi
 
+_devsee_was_stopped=false
 if ! _dev_container_running "$_devsee_name"; then
-    echo "Error: container '${_devsee_name}' is not running" >&2
-    exit 1
+    _devsee_was_stopped=true
+    _dev_ensure_proxy
+    podman start "$_devsee_name" >/dev/null
+    sleep 3
 fi
 
 _dev_update_ssh_config "$_devsee_name"
@@ -21,7 +24,7 @@ _dev_update_ssh_config "$_devsee_name"
 readonly _devsee_branch="dev-auto/${_devsee_name}"
 echo "Pushing changes to ${_devsee_branch}..."
 _dev_ssh_cmd "$_devsee_name" \
-    "cd /workspace && git add -A && git reset HEAD -- CLAUDE.md .pr .issue 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devsee_branch}"
+    "cd /workspace && git add -A && git reset HEAD -- CLAUDE.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devsee_branch}"
 echo "Branch: ${_devsee_branch}"
 
 _devsee_template_key=$(podman inspect --format '{{index .Config.Labels "dev-template-key"}}' "$_devsee_name" 2>/dev/null) || true
@@ -45,6 +48,10 @@ echo "Fetching from ${_devsee_remote}..."
 git fetch "$_devsee_remote"
 
 git checkout -B "$_devsee_branch" "${_devsee_remote}/${_devsee_branch}"
+
+if [[ "$_devsee_was_stopped" == true ]]; then
+    podman stop "$_devsee_name" >/dev/null
+fi
 
 echo ""
 git diff HEAD~1 | less

@@ -271,7 +271,7 @@ CLAUDEMD
             runuser -u dev -- bash -c \
                 "cd /workspace && gh pr checkout -f ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}" || true
             runuser -u dev -- bash -c \
-                "gh pr view ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY} > /workspace/.pr 2>/dev/null" || true
+                "gh pr view ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY} 2>/dev/null | tr -d '\r' > /workspace/.pr" || true
         fi
     fi
 
@@ -279,7 +279,7 @@ CLAUDEMD
     if [ -n "${DEV_ISSUE_NUMBER:-}" ]; then
         if ! [ -f /workspace/.issue ]; then
             runuser -u dev -- bash -c \
-                "gh issue view ${DEV_ISSUE_NUMBER} --repo ${DEV_TEMPLATE_KEY} > /workspace/.issue 2>/dev/null" || true
+                "gh issue view ${DEV_ISSUE_NUMBER} --repo ${DEV_TEMPLATE_KEY} 2>/dev/null | tr -d '\r' > /workspace/.issue" || true
         fi
     fi
 
