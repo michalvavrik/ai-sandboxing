@@ -276,6 +276,18 @@ CLAUDEMD
         fi
     fi
 
+    # Branch checkout from fork (first run only)
+    if [ -n "${DEV_BRANCH_NAME:-}" ]; then
+        if ! runuser -u dev -- git -C /workspace rev-parse --verify "$_target_branch" &>/dev/null 2>&1; then
+            if [ -f /opt/project-src/.git/packed-refs ]; then
+                cp /opt/project-src/.git/packed-refs /workspace/.git/packed-refs 2>/dev/null || true
+            fi
+            echo "Checking out branch ${DEV_BRANCH_NAME} from ${DEV_FORK_ORG}/${_repo}..."
+            runuser -u dev -- bash -c \
+                "cd /workspace && git fetch https://github.com/${DEV_FORK_ORG}/${_repo}.git ${DEV_BRANCH_NAME} && git checkout -b '${DEV_BRANCH_NAME}' FETCH_HEAD" || true
+        fi
+    fi
+
     # Issue details (first run only)
     if [ -n "${DEV_ISSUE_NUMBER:-}" ]; then
         if ! [ -f /workspace/.issue ]; then

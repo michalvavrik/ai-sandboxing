@@ -326,9 +326,10 @@ _dev_completion() {
             [[ $(echo "$_all" | wc -l) -eq 1 && -n "$_all" ]] && name="$_all"
         fi
         if [[ -n "$name" ]]; then
+            compopt -o nospace
             local prefix="/workspace/"
             [[ "$cur" == /* ]] && prefix=""
-            COMPREPLY=($(ssh -q "$name" "ls -d ${prefix}${cur}* 2>/dev/null" | sed "s|^${prefix}||"))
+            COMPREPLY=($(ssh -q "$name" "ls -dp ${prefix}${cur}* 2>/dev/null" | sed "s|^${prefix}||"))
         fi
     fi
 }

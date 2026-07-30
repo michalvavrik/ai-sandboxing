@@ -111,6 +111,24 @@ _dev_container_running() {
     [[ "$_dev_state" == "true" ]]
 }
 
+_dev_find_template_key_by_repo() {
+    local _dev_repo="$1"
+    local _dev_conf="${DEV_CONFIGS_DIR}/project-templates.conf"
+    local _dev_line _dev_tkey
+
+    while IFS= read -r _dev_line; do
+        [[ "$_dev_line" =~ ^[[:space:]]*# || -z "$_dev_line" ]] && continue
+        [[ "$_dev_line" =~ ^DEFAULT\| ]] && continue
+        _dev_tkey="${_dev_line%%|*}"
+        if [[ "${_dev_tkey#*/}" == "$_dev_repo" ]]; then
+            echo "$_dev_tkey"
+            return 0
+        fi
+    done < "$_dev_conf"
+
+    return 1
+}
+
 _dev_lookup_template() {
     local _dev_key="$1"
     local _dev_conf="${DEV_CONFIGS_DIR}/project-templates.conf"
@@ -287,6 +305,8 @@ _dev_create_container() {
         -e "DEV_PODMAN_STORAGE_GIB=${DEV_PODMAN_STORAGE_GIB}" \
         ${DEV_PR_NUMBER:+-e "DEV_PR_NUMBER=${DEV_PR_NUMBER}"} \
         ${DEV_ISSUE_NUMBER:+-e "DEV_ISSUE_NUMBER=${DEV_ISSUE_NUMBER}"} \
+        ${DEV_FORK_ORG:+-e "DEV_FORK_ORG=${DEV_FORK_ORG}"} \
+        ${DEV_BRANCH_NAME:+-e "DEV_BRANCH_NAME=${DEV_BRANCH_NAME}"} \
         -p "127.0.0.1::2222" \
         "${_dev_volumes[@]}" \
         "${_dev_bob_secret[@]}" \
