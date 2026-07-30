@@ -83,9 +83,10 @@ dev idea                   # open container in IntelliJ IDEA via Gateway
 dev list                   # show all dev containers
 dev pull                   # pull newer image (runs in background on login)
 
-# From a GitHub issue or PR URL:
+# From a GitHub issue, PR, or branch URL:
 dev https://github.com/keycloak/keycloak/issues/50167
 dev https://github.com/keycloak/keycloak/pull/50801
+dev https://github.com/your-user/keycloak-client/tree/my-branch
 
 # Inside the container:
 claude                     # start Claude Code (alias: runs with --dangerously-skip-permissions)
