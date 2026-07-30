@@ -89,7 +89,7 @@ dev https://github.com/keycloak/keycloak/pull/50801
 dev https://github.com/your-user/keycloak-client/tree/my-branch
 
 # Inside the container:
-claude                     # start Claude Code (alias: runs with --dangerously-skip-permissions)
+claude                     # start Claude Code (permissions bypassed via env var)
 bob                        # start Bob Shell (API key injected securely)
 ```
 
