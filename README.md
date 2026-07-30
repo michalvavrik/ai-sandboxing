@@ -48,7 +48,7 @@ Project-specific source dirs in `configs/project-templates.conf` are relative to
 
 ### Background image pull
 
-On every login, `.bashrc` runs `dev-pull.sh` in the background to check for newer images.
+A systemd user service (`dev-pull.service`) pulls newer images on graphical login.
 This means `dev new` never waits for a pull — it uses whatever image is already local.
 Run `dev pull` manually after pushing Containerfile changes to force an immediate update.
 

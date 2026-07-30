@@ -63,9 +63,9 @@ fi
 echo "Config loaded: ${_DEV_CONFIG_FILE}"
 
 # --------------------------------------------------------------------------
-# Step 1/9: SSH keys
+# Step 1/10: SSH keys
 # --------------------------------------------------------------------------
-_dev_step_header 1 9 "SSH keys for ${DEV_AUTOMATION_USER}"
+_dev_step_header 1 10 "SSH keys for ${DEV_AUTOMATION_USER}"
 
 mkdir -p "$_DEV_KEYS_DIR"
 chmod 700 "$_DEV_KEYS_DIR"
@@ -117,9 +117,9 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 2/9: Fine-grained PAT for containers
+# Step 2/10: Fine-grained PAT for containers
 # --------------------------------------------------------------------------
-_dev_step_header 2 9 "Fine-grained PAT for containers"
+_dev_step_header 2 10 "Fine-grained PAT for containers"
 
 readonly _DEV_CONTAINER_PAT_FILE="${_DEV_KEYS_DIR}/gh-pat-container"
 
@@ -155,9 +155,9 @@ echo "To rotate: replace ${_DEV_CONTAINER_PAT_FILE} with a new token."
 echo "New containers will use the new token automatically."
 
 # --------------------------------------------------------------------------
-# Step 3/9: Bob Shell API key
+# Step 3/10: Bob Shell API key
 # --------------------------------------------------------------------------
-_dev_step_header 3 9 "Bob Shell API key"
+_dev_step_header 3 10 "Bob Shell API key"
 
 readonly _DEV_BOB_KEY_FILE="${_DEV_KEYS_DIR}/ibm_bob_shell_api.key"
 
@@ -194,9 +194,9 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 4/9: System packages
+# Step 4/10: System packages
 # --------------------------------------------------------------------------
-_dev_step_header 4 9 "System packages"
+_dev_step_header 4 10 "System packages"
 
 _dev_pkgs_needed=()
 for _dev_pkg in libkrun crun-krun python3-google-auth python3-requests passt; do
@@ -213,9 +213,9 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 5/9: Firewall — block proxy port from external network
+# Step 5/10: Firewall — block proxy port from external network
 # --------------------------------------------------------------------------
-_dev_step_header 5 9 "Firewall rule for proxy port"
+_dev_step_header 5 10 "Firewall rule for proxy port"
 
 readonly _DEV_FW_RULE_V4='rule priority="-1" family="ipv4" port port="9222" protocol="tcp" reject'
 readonly _DEV_FW_RULE_V6='rule priority="-1" family="ipv6" port port="9222" protocol="tcp" reject'
@@ -234,9 +234,9 @@ fi
 echo "Firewall rules verified (IPv4 + IPv6)."
 
 # --------------------------------------------------------------------------
-# Step 6/9: Register krun runtime
+# Step 6/10: Register krun runtime
 # --------------------------------------------------------------------------
-_dev_step_header 6 9 "Register krun runtime"
+_dev_step_header 6 10 "Register krun runtime"
 
 readonly _DEV_CONTAINERS_CONF="${HOME}/.config/containers/containers.conf"
 
@@ -267,9 +267,9 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 7/9: GHCR auth + image pull
+# Step 7/10: GHCR auth + image pull
 # --------------------------------------------------------------------------
-_dev_step_header 7 9 "GHCR authentication and image pull"
+_dev_step_header 7 10 "GHCR authentication and image pull"
 
 source "$(dirname "$0")/dev-common.sh"
 _dev_ensure_ghcr_auth
@@ -280,9 +280,9 @@ podman pull --policy missing "$DEV_IMAGE"
 echo "Dev image ready."
 
 # --------------------------------------------------------------------------
-# Step 8/9: Shell alias
+# Step 8/10: Shell alias
 # --------------------------------------------------------------------------
-_dev_step_header 8 9 "Shell alias"
+_dev_step_header 8 10 "Shell alias"
 
 readonly _DEV_ALIAS="alias dev=\"source ${_DEV_BASE_DIR}/scripts/dev.sh\""
 
@@ -293,13 +293,6 @@ else
     echo "# Dev sandbox CLI" >> "${HOME}/.bashrc"
     echo "$_DEV_ALIAS" >> "${HOME}/.bashrc"
     echo "Alias added to ~/.bashrc."
-fi
-
-if ! grep -qF 'dev-pull.sh' "${HOME}/.bashrc" 2>/dev/null; then
-    echo "(${_DEV_BASE_DIR}/scripts/dev-pull.sh &>/dev/null &)" >> "${HOME}/.bashrc"
-    echo "Background image pull added to ~/.bashrc."
-else
-    echo "Background image pull already configured."
 fi
 
 
@@ -340,9 +333,9 @@ COMP
 fi
 
 # --------------------------------------------------------------------------
-# Step 9/9: Sources directory
+# Step 9/10: Sources directory
 # --------------------------------------------------------------------------
-_dev_step_header 9 9 "Sources directory"
+_dev_step_header 9 10 "Sources directory"
 
 if [[ ! -d "$DEV_SOURCES_DIR" ]]; then
     mkdir -p "$DEV_SOURCES_DIR"
@@ -350,6 +343,34 @@ if [[ ! -d "$DEV_SOURCES_DIR" ]]; then
 else
     echo "Sources directory exists: ${DEV_SOURCES_DIR}"
 fi
+
+# --------------------------------------------------------------------------
+# Step 10/10: Systemd user service for login-time image pull
+# --------------------------------------------------------------------------
+_dev_step_header 10 10 "Systemd user service for login-time image pull"
+
+readonly _DEV_SERVICE_DIR="${HOME}/.config/systemd/user"
+readonly _DEV_SERVICE_FILE="${_DEV_SERVICE_DIR}/dev-pull.service"
+
+mkdir -p "$_DEV_SERVICE_DIR"
+cat > "$_DEV_SERVICE_FILE" <<UNIT
+[Unit]
+Description=Pull dev sandbox image
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=${_DEV_BASE_DIR}/scripts/dev-pull.sh
+
+[Install]
+WantedBy=default.target
+UNIT
+
+systemctl --user daemon-reload
+systemctl --user enable dev-pull.service
+echo "Enabled dev-pull.service (runs on graphical login)."
+echo "Logs: journalctl --user -u dev-pull"
 
 echo ""
 echo "=== Setup complete ==="
