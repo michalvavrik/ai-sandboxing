@@ -88,7 +88,7 @@ dev https://github.com/keycloak/keycloak/issues/50167
 dev https://github.com/keycloak/keycloak/pull/50801
 
 # Inside the container:
-claude                     # start Claude Code (connects via host proxy)
+claude                     # start Claude Code (alias: runs with --dangerously-skip-permissions)
 bob                        # start Bob Shell (API key injected securely)
 ```
 

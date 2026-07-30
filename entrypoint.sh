@@ -41,6 +41,7 @@ export XDG_RUNTIME_DIR=/run/user/1000
 export DOCKER_HOST=unix:///run/user/1000/podman/podman.sock
 export TESTCONTAINERS_RYUK_DISABLED=true
 export HISTFILE=/dev/null
+alias claude='claude --dangerously-skip-permissions'
 DEVENV
 
 # ── Allow dev user to use FUSE ───────────────────────────────────────────────
