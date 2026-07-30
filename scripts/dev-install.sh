@@ -320,6 +320,11 @@ _dev_completion() {
         COMPREPLY=($(compgen -f -- "$cur"))
     elif [[ "$prev" == "cpout" ]]; then
         local name="${DEV_LAST_CONTAINER:-}"
+        if [[ -z "$name" ]]; then
+            local _all
+            _all=$(podman ps -a --filter=label=dev-sandbox --format '{{.Names}}' 2>/dev/null)
+            [[ $(echo "$_all" | wc -l) -eq 1 && -n "$_all" ]] && name="$_all"
+        fi
         if [[ -n "$name" ]]; then
             local prefix="/workspace/"
             [[ "$cur" == /* ]] && prefix=""
