@@ -226,8 +226,13 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
             [ -d "$_ref_dir" ] || continue
             _ref_name=$(basename "$_ref_dir")
             [[ "$_ref_name" == "$_repo" ]] && continue
+            _ref_id="$_ref_name"
+            _ref_url=$(git -C "$_ref_dir" remote get-url origin 2>/dev/null) || true
+            if [[ "$_ref_url" =~ github\.com[:/]([^/]+/[^/.]+) ]]; then
+                _ref_id="${BASH_REMATCH[1]}"
+            fi
             _ref_repos="${_ref_repos}
-- /opt/workspace/${_ref_name} — latest ${_ref_name} main (shallow, for browsing source)"
+- /opt/workspace/${_ref_name} — ${_ref_id} latest main (shallow, for browsing source)"
         done
 
         runuser -u dev -- bash -c "cat > /workspace/CLAUDE.md" <<CLAUDEMD
@@ -250,7 +255,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 - .pr — PR details (\`gh pr view\` output), present when working on a pull request
 - .issue — issue details (\`gh issue view\` output), present when working on an issue
 CLAUDEMD
-        runuser -u dev -- git -C /workspace update-index --assume-unchanged CLAUDE.md 2>/dev/null || true
+        runuser -u dev -- bash -c 'printf "CLAUDE.md\n.pr\n.issue\n.pnpm-store\n" >> /workspace/.git/info/exclude'
         runuser -u dev -- git -C /workspace config core.untrackedCache true 2>/dev/null || true
         # Warm virtio-fs dentry cache for workspace + Claude Code binary (async)
         (runuser -u dev -- git -C /workspace status; cat /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe) &>/dev/null &
