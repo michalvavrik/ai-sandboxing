@@ -182,6 +182,8 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 
         _clone_base="/mnt/bounded/repo-base"
         if [[ -d /mnt/bounded ]]; then
+            mkdir -p "$_clone_base"
+            chown dev:dev "$_clone_base"
             if [ -d /opt/project-src/.git ]; then
                 echo "Cloning workspace from host source (shallow)..."
                 runuser -u dev -- git clone --depth 1 file:///opt/project-src "$_clone_base"
