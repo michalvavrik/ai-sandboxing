@@ -288,7 +288,7 @@ CLAUDEMD
             fi
             echo "Checking out branch ${DEV_BRANCH_NAME} from ${DEV_FORK_ORG}/${_repo}..."
             runuser -u dev -- bash -c \
-                "cd /workspace && git fetch https://github.com/${DEV_FORK_ORG}/${_repo}.git ${DEV_BRANCH_NAME} && git checkout -b '${DEV_BRANCH_NAME}' FETCH_HEAD" || true
+                "cd /workspace && git fetch https://github.com/${DEV_FORK_ORG}/${_repo}.git ${DEV_BRANCH_NAME} && git checkout -B '${DEV_BRANCH_NAME}' FETCH_HEAD" || true
         fi
     fi
 
