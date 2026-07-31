@@ -219,7 +219,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
             -o "lowerdir=/opt/project-src/.git/objects,upperdir=/tmp/git-obj-upper,workdir=/tmp/git-obj-work,squash_to_uid=1000,squash_to_gid=1000" \
             /opt/project-src-objects 2>/dev/null || true
         runuser -u dev -- bash -c \
-            'mkdir -p /workspace/.git/objects/info && echo /opt/project-src-objects >> /workspace/.git/objects/info/alternates' \
+            'mkdir -p /workspace/.git/objects/info && echo /opt/project-src/.git/objects >> /workspace/.git/objects/info/alternates' \
             2>/dev/null || true
         _ref_repos=""
         for _ref_dir in /opt/workspace/*/; do
@@ -262,9 +262,6 @@ CLAUDEMD
     if [ -n "${DEV_PR_NUMBER:-}" ]; then
         if ! runuser -u dev -- git -C /workspace rev-parse --verify "$_target_branch" &>/dev/null 2>&1; then
             [ -n "$_gh_auth_pid" ] && wait "$_gh_auth_pid" 2>/dev/null
-            # Copy host refs so git can negotiate efficiently with GitHub
-            # Without this, the depth-1 clone sends 1 "have" and GitHub sends ~1M objects
-            # Objects are available via alternates; refs tell git what commits exist
             if [ -f /opt/project-src/.git/packed-refs ]; then
                 cp /opt/project-src/.git/packed-refs /workspace/.git/packed-refs 2>/dev/null || true
             fi
