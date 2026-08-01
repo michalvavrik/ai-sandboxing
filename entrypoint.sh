@@ -112,6 +112,7 @@ if [[ -d /mnt/podman ]]; then
 
     runuser -u dev -- mkdir -p /home/dev/.config/containers
     _additional_stores=""
+    _mount_program=""
     if [ -d /opt/host-podman-storage ]; then
         mkdir -p /tmp/podman-store-upper /tmp/podman-store-work /opt/host-podman-overlay
         chown dev:dev /tmp/podman-store-upper /tmp/podman-store-work /opt/host-podman-overlay
@@ -119,6 +120,7 @@ if [[ -d /mnt/podman ]]; then
             -o "lowerdir=/opt/host-podman-storage,upperdir=/tmp/podman-store-upper,workdir=/tmp/podman-store-work,squash_to_uid=1000,squash_to_gid=1000" \
             /opt/host-podman-overlay
         _additional_stores='additionalimagestores = ["/opt/host-podman-overlay"]'
+        _mount_program='mount_program = "/usr/bin/fuse-overlayfs"'
     fi
     cat > /home/dev/.config/containers/storage.conf <<STCONF
 [storage]
@@ -126,6 +128,7 @@ driver = "overlay"
 graphroot = "/mnt/podman/storage"
 runroot = "/mnt/podman/run"
 [storage.options]
+${_mount_program}
 ${_additional_stores}
 STCONF
     chown dev:dev /home/dev/.config/containers/storage.conf
