@@ -128,7 +128,7 @@ If you want to connect your IDE directly to a container (for interactive editing
 
 ## Projects
 
-`configs/project-templates.conf` maps `org/repo` to source dir, resources, disk caps, and language. The `lang` field controls runtime behavior (Kind cluster for Go, Maven cache for Java). Template detection (first match wins):
+`configs/project-templates.conf` maps `org/repo` to source dir, resources, disk caps, and profiles. Template detection (first match wins):
 
 1. **GitHub URL** — `dev https://github.com/keycloak/keycloak-client/pull/42` → exact `org/repo` from URL
 2. **cwd** — `cd ~/sources/keycloak-client && dev new fix` → matches template whose `source_dir` contains the cwd
@@ -136,10 +136,10 @@ If you want to connect your IDE directly to a container (for interactive editing
 4. **DEFAULT** — fallback when nothing matches
 
 ```bash
-dev new keycloak-client              # → keycloak-client template (Java image)
+dev new keycloak-client              # → keycloak-client template (profiles: java)
 dev new keycloak-client-my-feature   # → keycloak-client template (prefix match, beats shorter "keycloak")
-cd ~/sources/quarkus && dev new foo  # → quarkus template (Java image, cwd detection)
-cd ~/sources/camel-k && dev new bar  # → camel-k template (Go image, cwd detection)
+cd ~/sources/quarkus && dev new foo  # → quarkus template (profiles: java)
+cd ~/sources/camel-k && dev new bar  # → camel-k template (profiles: go,kind)
 ```
 
 ### Pre-installed toolchains
@@ -151,12 +151,18 @@ Every container ships both Java and Go stacks:
 
 Projects pre-baked into the image (keycloak, quarkus) start instantly. Other templates clone from the host source on first start.
 
-### Go projects (lang=go)
+### Profiles
 
-On first start, a Kind cluster with a local registry (`localhost:5001`) is auto-created inside the container. This replaces minikube for Kubernetes-based projects like camel-k. Go environment (GOPATH, GOBIN, KIND_EXPERIMENTAL_PROVIDER) is set automatically.
+The `profiles` field in `project-templates.conf` is a comma-separated list that controls runtime behavior:
+
+| Profile | Effect |
+|---------|--------|
+| `java`  | Maven cache overlay from host `~/.m2/repository` |
+| `go`    | Sets GOPATH, GOBIN, adds `~/go/bin` to PATH |
+| `kind`  | Auto-creates a Kind cluster with local registry (`localhost:5001`) on first start, 12 GiB podman storage |
 
 ```bash
-# camel-k workflow (inside Go container):
+# camel-k (profiles: go,kind):
 make build                    # build everything (codegen + tests + CLI)
 make images                   # build operator image
 podman tag apache/camel-k:2.11.0-SNAPSHOT localhost:5001/camel-k:dev
@@ -164,7 +170,7 @@ podman push localhost:5001/camel-k:dev
 make install-k8s-global       # install operator on Kind cluster
 make test-smoke               # run e2e smoke tests
 
-# terraform-provider-keycloak workflow (inside Go container):
+# terraform-provider-keycloak (profiles: go):
 make local                    # start Keycloak via podman-compose
 make test                     # unit tests
 make testacc                  # acceptance tests
@@ -194,8 +200,8 @@ Host                              krun MicroVM
 │   ├── ADC stays here            ├── JDK 21 / Maven / Go SDK / Kind / kubectl / Terraform
 │   ├── git push (HTTP→SSH) ◄──── git push (container HTTP, proxy bridges to GitHub SSH)
 │   └── MCP SSE relay ◄────────── Claude Code (whitelisted host MCP servers)
-├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (lang=java: reads host, writes local)
-│   (lang=java only)              ├── Kind cluster (lang=go: auto-created on first start)
+├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (profile: java)
+│   (profile: java only)         ├── Kind cluster (profile: kind, auto-created on first start)
 ├── keys/ (individual files)      ├── credentials (mounted per-file, not whole dir)
 │   ├── id_ed25519_dev_automation │   ├── id_ed25519_container.pub  (sshd authorized_keys)
 │   ├── id_ed25519_container      │   └── gh-pat-container          (read-only gh token)
