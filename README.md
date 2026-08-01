@@ -44,6 +44,7 @@ All machine-specific values live in `config.local` (gitignored). The install scr
 | `DEV_GHCR_USER`        | GitHub username for GHCR image pulls          |
 | `DEV_IMAGE`            | Container image to pull and run               |
 | `DEV_SOURCES_DIR`      | Parent directory for project source checkouts |
+| `DEV_PROXY_PORTS`      | Number of proxy ports (default 5, = 4 container slots). Re-run `dev install` after changing to update firewall rules |
 
 Project-specific source dirs in `configs/project-templates.conf` are relative to `DEV_SOURCES_DIR`.
 
