@@ -19,15 +19,20 @@ readonly DEV_RUNTIME="krun"
 readonly DEV_DEFAULT_RAM=8192
 readonly DEV_DEFAULT_CPUS=4
 readonly DEV_DEFAULT_DISK_GIB=15
-readonly DEV_DEFAULT_LANG="java"
+readonly DEV_DEFAULT_PROFILES="java"
 readonly DEV_DISK_DIR="${HOME}/.local/share/dev-sandbox-disks"
 
+_dev_has_profile() {
+    [[ ",${1}," == *",${2},"* ]]
+}
+
 _dev_podman_storage_gib() {
-    local _dev_lang="${1:-java}"
-    case "$_dev_lang" in
-        go) echo 12 ;;
-        *)  echo 6 ;;
-    esac
+    local _dev_profiles="${1:-java}"
+    if _dev_has_profile "$_dev_profiles" "kind"; then
+        echo 12
+    else
+        echo 6
+    fi
 }
 
 _dev_pid_file() {
@@ -202,26 +207,26 @@ _dev_create_container() {
     fi
 
     local _dev_source_dir="" _dev_ram="$DEV_DEFAULT_RAM" _dev_cpus="$DEV_DEFAULT_CPUS"
-    local _dev_disk_gib="$DEV_DEFAULT_DISK_GIB" _dev_lang="$DEV_DEFAULT_LANG"
+    local _dev_disk_gib="$DEV_DEFAULT_DISK_GIB" _dev_profiles="$DEV_DEFAULT_PROFILES"
 
     if [[ -n "$_dev_template_key" ]]; then
         local _dev_tmpl
         _dev_tmpl=$(_dev_lookup_template "$_dev_template_key") || true
         if [[ -n "$_dev_tmpl" ]]; then
-            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus _dev_disk_gib _dev_lang <<< "$_dev_tmpl"
+            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus _dev_disk_gib _dev_profiles <<< "$_dev_tmpl"
             _dev_disk_gib="${_dev_disk_gib:-$DEV_DEFAULT_DISK_GIB}"
-            _dev_lang="${_dev_lang:-$DEV_DEFAULT_LANG}"
-            echo "Matched template: ${_dev_template_key} (lang=${_dev_lang}, RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
+            _dev_profiles="${_dev_profiles:-$DEV_DEFAULT_PROFILES}"
+            echo "Matched template: ${_dev_template_key} (profiles=${_dev_profiles}, RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
         fi
     else
         local _dev_tmpl
         _dev_tmpl=$(_dev_lookup_template "DEFAULT") || true
         if [[ -n "$_dev_tmpl" ]]; then
-            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus _dev_disk_gib _dev_lang <<< "$_dev_tmpl"
+            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus _dev_disk_gib _dev_profiles <<< "$_dev_tmpl"
             _dev_disk_gib="${_dev_disk_gib:-$DEV_DEFAULT_DISK_GIB}"
-            _dev_lang="${_dev_lang:-$DEV_DEFAULT_LANG}"
+            _dev_profiles="${_dev_profiles:-$DEV_DEFAULT_PROFILES}"
         fi
-        echo "Using default template (lang=${_dev_lang}, RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
+        echo "Using default template (profiles=${_dev_profiles}, RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
     fi
 
     if [[ -n "$_dev_source_dir" && "$_dev_source_dir" != /* ]]; then
@@ -260,7 +265,7 @@ _dev_create_container() {
     if podman secret inspect bob-api-key &>/dev/null; then
         _dev_bob_secret=(--secret bob-api-key,mode=0400)
     fi
-    if [[ "$_dev_lang" == "java" && -d "${HOME}/.m2/repository" ]]; then
+    if _dev_has_profile "$_dev_profiles" "java" && [[ -d "${HOME}/.m2/repository" ]]; then
         _dev_volumes+=(-v "${HOME}/.m2/repository:/opt/m2-base:ro")
     fi
     if [[ -n "$_dev_source_dir" && -d "$_dev_source_dir" && "$_dev_source_dir" == "${DEV_SOURCES_DIR}/"* ]]; then
@@ -273,7 +278,7 @@ _dev_create_container() {
     local _dev_disk_img="${DEV_DISK_DIR}/${_dev_name}.img"
     local _dev_podman_img="${DEV_DISK_DIR}/${_dev_name}-podman.img"
     local _dev_podman_gib
-    _dev_podman_gib=$(_dev_podman_storage_gib "$_dev_lang")
+    _dev_podman_gib=$(_dev_podman_storage_gib "$_dev_profiles")
     mkdir -p "$DEV_DISK_DIR"
     if [[ -f "$_dev_disk_img" ]]; then
         echo "Reusing existing bounded disk for '${_dev_name}' (${_dev_disk_gib}GiB cap)."
@@ -314,7 +319,7 @@ _dev_create_container() {
         -e "DEV_AUTOMATION_EMAIL=${DEV_AUTOMATION_EMAIL}" \
         -e "DEV_AUTOMATION_NAME=${DEV_AUTOMATION_NAME}" \
         -e "DEV_TEMPLATE_KEY=${_dev_template_key}" \
-        -e "DEV_LANG=${_dev_lang}" \
+        -e "DEV_PROFILES=${_dev_profiles}" \
         -e "DEV_PODMAN_STORAGE_GIB=${_dev_podman_gib}" \
         ${DEV_PR_NUMBER:+-e "DEV_PR_NUMBER=${DEV_PR_NUMBER}"} \
         ${DEV_ISSUE_NUMBER:+-e "DEV_ISSUE_NUMBER=${DEV_ISSUE_NUMBER}"} \

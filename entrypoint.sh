@@ -44,13 +44,18 @@ export HISTFILE=/dev/null
 export CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS=true
 DEVENV
 
-if [ "${DEV_LANG:-}" = "go" ]; then
+_has_profile() { [[ ",${DEV_PROFILES:-}," == *",$1,"* ]]; }
+
+if _has_profile go; then
     cat >> /etc/profile.d/dev-sandbox.sh <<'GOENV'
 export GOPATH=/home/dev/go
 export GOBIN=/home/dev/go/bin
 export PATH=/home/dev/go/bin:$PATH
-export KIND_EXPERIMENTAL_PROVIDER=podman
 GOENV
+fi
+
+if _has_profile kind; then
+    echo "export KIND_EXPERIMENTAL_PROVIDER=podman" >> /etc/profile.d/dev-sandbox.sh
 fi
 
 # ── Allow dev user to use FUSE ───────────────────────────────────────────────
@@ -117,8 +122,8 @@ STCONF
     runuser -u dev -- bash -c 'cd /run/user/1000 && XDG_RUNTIME_DIR=/run/user/1000 podman system service --time=0 &'
 fi
 
-# ── Kind cluster for Go containers (auto-create on first start) ─────────────
-if [ "${DEV_LANG:-}" = "go" ] && command -v kind &>/dev/null; then
+# ── Kind cluster (auto-create on first start when 'kind' profile is set) ────
+if _has_profile kind && command -v kind &>/dev/null; then
     _kind_wait=0
     while ! runuser -u dev -- podman info &>/dev/null && (( _kind_wait < 30 )); do
         sleep 1; _kind_wait=$(( _kind_wait + 1 ))
