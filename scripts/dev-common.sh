@@ -268,6 +268,10 @@ _dev_create_container() {
     if _dev_has_profile "$_dev_profiles" "java" && [[ -d "${HOME}/.m2/repository" ]]; then
         _dev_volumes+=(-v "${HOME}/.m2/repository:/opt/m2-base:ro")
     fi
+    local _dev_host_podman_storage="${HOME}/.local/share/containers/storage"
+    if [[ -d "$_dev_host_podman_storage" ]]; then
+        _dev_volumes+=(-v "${_dev_host_podman_storage}:/opt/host-podman-storage:ro")
+    fi
     if [[ -n "$_dev_source_dir" && -d "$_dev_source_dir" && "$_dev_source_dir" == "${DEV_SOURCES_DIR}/"* ]]; then
         _dev_volumes+=(-v "${_dev_source_dir}:/opt/project-src:ro")
     elif [[ -n "$_dev_source_dir" ]]; then

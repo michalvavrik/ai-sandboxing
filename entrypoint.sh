@@ -111,11 +111,17 @@ if [[ -d /mnt/podman ]]; then
     rm -rf /mnt/podman/run/* /run/user/1000/libpod 2>/dev/null || true
 
     runuser -u dev -- mkdir -p /home/dev/.config/containers
+    _additional_stores=""
+    if [ -d /opt/host-podman-storage ]; then
+        _additional_stores='additionalimagestores = ["/opt/host-podman-storage"]'
+    fi
     cat > /home/dev/.config/containers/storage.conf <<STCONF
 [storage]
 driver = "overlay"
 graphroot = "/mnt/podman/storage"
 runroot = "/mnt/podman/run"
+[storage.options]
+${_additional_stores}
 STCONF
     chown dev:dev /home/dev/.config/containers/storage.conf
 

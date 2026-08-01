@@ -202,6 +202,7 @@ Host                              krun MicroVM
 │   └── MCP SSE relay ◄────────── Claude Code (whitelisted host MCP servers)
 ├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (profile: java)
 │   (profile: java only)         ├── Kind cluster (profile: kind, auto-created on first start)
+├── podman storage ────ro mount── ├── additionalimagestores (host images available without pulling)
 ├── keys/ (individual files)      ├── credentials (mounted per-file, not whole dir)
 │   ├── id_ed25519_dev_automation │   ├── id_ed25519_container.pub  (sshd authorized_keys)
 │   ├── id_ed25519_container      │   └── gh-pat-container          (read-only gh token)
