@@ -72,7 +72,7 @@ case "$_dev_cmd" in
     echo "  use <name>     Set current container without entering"
     echo "  idea [name]    Open container in IntelliJ IDEA via Gateway"
     echo "  list           List all dev containers"
-    echo "  pull           Pull newer dev image (runs in background on login)"
+    echo "  pull           Pull newer images and fetch project sources (runs on login)"
     echo "  install        Install prerequisites and configure"
     echo "  <github-url>   Create/enter container for a GitHub issue/PR"
     ;;

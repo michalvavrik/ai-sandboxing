@@ -44,6 +44,15 @@ export HISTFILE=/dev/null
 export CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS=true
 DEVENV
 
+if [ "${DEV_LANG:-}" = "go" ]; then
+    cat >> /etc/profile.d/dev-sandbox.sh <<'GOENV'
+export GOPATH=/home/dev/go
+export GOBIN=/home/dev/go/bin
+export PATH=/usr/local/go/bin:/home/dev/go/bin:$PATH
+export KIND_EXPERIMENTAL_PROVIDER=podman
+GOENV
+fi
+
 # ── Allow dev user to use FUSE ───────────────────────────────────────────────
 chmod 666 /dev/fuse 2>/dev/null || true
 
@@ -106,6 +115,39 @@ STCONF
     chown dev:dev /home/dev/.config/containers/storage.conf
 
     runuser -u dev -- bash -c 'cd /run/user/1000 && XDG_RUNTIME_DIR=/run/user/1000 podman system service --time=0 &'
+fi
+
+# ── Kind cluster for Go containers (auto-create on first start) ─────────────
+if [ "${DEV_LANG:-}" = "go" ] && command -v kind &>/dev/null; then
+    _kind_wait=0
+    while ! runuser -u dev -- podman info &>/dev/null && (( _kind_wait < 30 )); do
+        sleep 1; _kind_wait=$(( _kind_wait + 1 ))
+    done
+
+    if runuser -u dev -- podman info &>/dev/null; then
+        if ! runuser -u dev -- bash -c 'export KIND_EXPERIMENTAL_PROVIDER=podman; kind get clusters 2>/dev/null' | grep -q "dev-k8s"; then
+            echo "Creating Kind cluster with local registry..."
+            runuser -u dev -- bash -c '
+                export KIND_EXPERIMENTAL_PROVIDER=podman
+                podman run -d --restart=always -p 127.0.0.1:5001:5000 --name kind-registry registry:2 2>/dev/null || true
+                cat <<KINDCFG | kind create cluster --name dev-k8s --wait 120s --config=-
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+containerdConfigPatches:
+- |-
+  [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
+    endpoint = ["http://kind-registry:5001"]
+KINDCFG
+                podman network connect kind kind-registry 2>/dev/null || true
+            ' && echo "Kind cluster ready. Registry at localhost:5001" \
+              || echo "WARNING: Kind cluster creation failed — create manually with: kind create cluster --name dev-k8s" >&2
+        else
+            runuser -u dev -- bash -c 'podman start dev-k8s-control-plane kind-registry 2>/dev/null' || true
+            echo "Kind cluster already exists."
+        fi
+    else
+        echo "WARNING: podman not ready, skipping Kind cluster setup" >&2
+    fi
 fi
 
 # ── Maven cache (fuse-overlayfs as dev user) ────────────────────────────────

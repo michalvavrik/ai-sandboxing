@@ -8,7 +8,7 @@ This tool is (and will be even more) customized to automate my workflow and limi
 
 ## About this tool
 
-Ephemeral, microVM-isolated dev containers for AI-assisted Java development. Each container runs in a krun microVM (KVM-backed), gets its own kernel, and has no access to your host filesystem or services.
+Ephemeral, microVM-isolated dev containers for AI-assisted development. Each container runs in a krun microVM (KVM-backed), gets its own kernel, and has no access to your host filesystem or services. The container image is selected automatically based on the project's language (Java or Go) via the template configuration.
 
 ## Security model
 
@@ -41,15 +41,18 @@ All machine-specific values live in `config.local` (gitignored). The install scr
 | `DEV_AUTOMATION_EMAIL` | Git commit email inside containers            |
 | `DEV_AUTOMATION_NAME`  | Git commit author name inside containers      |
 | `DEV_GHCR_USER`        | GitHub username for GHCR image pulls          |
-| `DEV_IMAGE`            | Container image to pull and run               |
+| `DEV_IMAGE`            | Container image base name (lang suffix added from template) |
 | `DEV_SOURCES_DIR`      | Parent directory for project source checkouts |
 
 Project-specific source dirs in `configs/project-templates.conf` are relative to `DEV_SOURCES_DIR`.
 
-### Background image pull
+### Background image pull and source fetch
 
-A systemd user service (`dev-pull.service`) pulls newer images on graphical login.
-This means `dev new` never waits for a pull — it uses whatever image is already local.
+A systemd user service (`dev-pull.service`) runs on graphical login and:
+1. Pulls newer container images for all language variants
+2. Fetches latest sources for all template projects under `DEV_SOURCES_DIR` — if the default branch is checked out, it stashes local changes, rebases, and pops the stash; otherwise it fast-forwards the local main ref without touching the worktree
+
+This means `dev new` never waits for a pull — it uses whatever image and source are already local.
 Run `dev pull` manually after pushing Containerfile changes to force an immediate update.
 
 ## Setup
@@ -125,7 +128,7 @@ If you want to connect your IDE directly to a container (for interactive editing
 
 ## Projects
 
-`configs/project-templates.conf` maps `org/repo` to source dir, resources, and disk caps. Template detection (first match wins):
+`configs/project-templates.conf` maps `org/repo` to source dir, resources, disk caps, and language. The `lang` field selects which container image to use (`dev-sandbox-java` or `dev-sandbox-go`). Template detection (first match wins):
 
 1. **GitHub URL** — `dev https://github.com/keycloak/keycloak-client/pull/42` → exact `org/repo` from URL
 2. **cwd** — `cd ~/sources/keycloak-client && dev new fix` → matches template whose `source_dir` contains the cwd
@@ -133,12 +136,37 @@ If you want to connect your IDE directly to a container (for interactive editing
 4. **DEFAULT** — fallback when nothing matches
 
 ```bash
-dev new keycloak-client              # → keycloak-client template (name heuristic)
+dev new keycloak-client              # → keycloak-client template (Java image)
 dev new keycloak-client-my-feature   # → keycloak-client template (prefix match, beats shorter "keycloak")
-cd ~/sources/quarkus && dev new foo  # → quarkus template (cwd detection)
+cd ~/sources/quarkus && dev new foo  # → quarkus template (Java image, cwd detection)
+cd ~/sources/camel-k && dev new bar  # → camel-k template (Go image, cwd detection)
 ```
 
-Projects pre-baked into the image (keycloak, quarkus) start instantly. Other templates clone from the host source (`~/sources/<source_dir>`) on first start, falling back to GitHub if no local source exists.
+### Java containers (lang=java)
+
+Pre-installed: SDKMAN + JDK 21 Temurin, Maven, Git, Claude Code, Bob Shell.
+Projects pre-baked into the image (keycloak, quarkus) start instantly. Other Java templates clone from the host source on first start.
+
+### Go containers (lang=go)
+
+Pre-installed: Go SDK, Make, gcc/g++, kubectl, Kind, Helm, Terraform, golangci-lint, Delve, gotestfmt, govulncheck, JDK 21 (for Camel runtime builds), Maven, podman-compose, Claude Code, Bob Shell.
+
+On first start, a Kind cluster with a local registry (`localhost:5001`) is auto-created inside the container. This replaces minikube for Kubernetes-based projects like camel-k.
+
+```bash
+# camel-k workflow (inside Go container):
+make build                    # build everything (codegen + tests + CLI)
+make images                   # build operator image
+podman tag apache/camel-k:2.11.0-SNAPSHOT localhost:5001/camel-k:dev
+podman push localhost:5001/camel-k:dev
+make install-k8s-global       # install operator on Kind cluster
+make test-smoke               # run e2e smoke tests
+
+# terraform-provider-keycloak workflow (inside Go container):
+make local                    # start Keycloak via podman-compose
+make test                     # unit tests
+make testacc                  # acceptance tests
+```
 
 ## Keys
 
@@ -161,10 +189,11 @@ To rotate: `podman secret rm bob-api-key`, replace `keys/ibm_bob_shell_api.key`,
 ```
 Host                              krun MicroVM
 ├── dev-proxy.py ◄─────────────── Claude Code (Vertex AI requests)
-│   ├── ADC stays here            ├── JDK 21 / Maven / Git / Claude Code / Bob Shell
-│   ├── git push (HTTP→SSH) ◄──── git push (container HTTP, proxy bridges to GitHub SSH)
-│   └── MCP SSE relay ◄────────── Claude Code (whitelisted host MCP servers)
-├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (reads host, writes local)
+│   ├── ADC stays here            ├── Java: JDK 21 / Maven / SDKMAN
+│   ├── git push (HTTP→SSH) ◄──── │   Go: Go SDK / Kind / kubectl / Terraform / Helm
+│   └── MCP SSE relay ◄────────── │   Shared: Git / Claude Code / Bob Shell
+├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (Java only: reads host, writes local)
+│   (Java containers only)        ├── Kind cluster (Go only: auto-created on first start)
 ├── keys/ (individual files)      ├── credentials (mounted per-file, not whole dir)
 │   ├── id_ed25519_dev_automation │   ├── id_ed25519_container.pub  (sshd authorized_keys)
 │   ├── id_ed25519_container      │   └── gh-pat-container          (read-only gh token)
@@ -172,7 +201,8 @@ Host                              krun MicroVM
 │   └── ibm_bob_shell_api.key    │   └── bob-api-key → /run/bob-secrets/api.key (bobrunner:400)
 └── dev-sandbox-disks/            └── bounded loopback disks (ext4, root:600 inside VM)
     ├── <name>.img (workspace)        ├── /mnt/bounded → /workspace, /home/dev, /tmp
-    └── <name>-podman.img (images)    └── /mnt/podman  → rootless Podman storage (Testcontainers)
+    └── <name>-podman.img             └── /mnt/podman  → rootless Podman storage
+        (6 GiB java, 12 GiB go)          (Testcontainers / Kind nodes)
 ```
 
 ### Bob Shell credential isolation

@@ -19,8 +19,16 @@ readonly DEV_RUNTIME="krun"
 readonly DEV_DEFAULT_RAM=8192
 readonly DEV_DEFAULT_CPUS=4
 readonly DEV_DEFAULT_DISK_GIB=15
-readonly DEV_PODMAN_STORAGE_GIB=6
+readonly DEV_DEFAULT_LANG="java"
 readonly DEV_DISK_DIR="${HOME}/.local/share/dev-sandbox-disks"
+
+_dev_podman_storage_gib() {
+    local _dev_lang="${1:-java}"
+    case "$_dev_lang" in
+        go) echo 12 ;;
+        *)  echo 6 ;;
+    esac
+}
 
 _dev_pid_file() {
     echo "/run/user/$(id -u)/dev-proxy.pid"
@@ -194,29 +202,35 @@ _dev_create_container() {
     fi
 
     local _dev_source_dir="" _dev_ram="$DEV_DEFAULT_RAM" _dev_cpus="$DEV_DEFAULT_CPUS"
-    local _dev_disk_gib="$DEV_DEFAULT_DISK_GIB"
+    local _dev_disk_gib="$DEV_DEFAULT_DISK_GIB" _dev_lang="$DEV_DEFAULT_LANG"
 
     if [[ -n "$_dev_template_key" ]]; then
         local _dev_tmpl
         _dev_tmpl=$(_dev_lookup_template "$_dev_template_key") || true
         if [[ -n "$_dev_tmpl" ]]; then
-            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus _dev_disk_gib <<< "$_dev_tmpl"
+            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus _dev_disk_gib _dev_lang <<< "$_dev_tmpl"
             _dev_disk_gib="${_dev_disk_gib:-$DEV_DEFAULT_DISK_GIB}"
-            echo "Matched template: ${_dev_template_key} (RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
+            _dev_lang="${_dev_lang:-$DEV_DEFAULT_LANG}"
+            echo "Matched template: ${_dev_template_key} (lang=${_dev_lang}, RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
         fi
     else
         local _dev_tmpl
         _dev_tmpl=$(_dev_lookup_template "DEFAULT") || true
         if [[ -n "$_dev_tmpl" ]]; then
-            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus _dev_disk_gib <<< "$_dev_tmpl"
+            IFS='|' read -r _dev_source_dir _dev_ram _dev_cpus _dev_disk_gib _dev_lang <<< "$_dev_tmpl"
             _dev_disk_gib="${_dev_disk_gib:-$DEV_DEFAULT_DISK_GIB}"
+            _dev_lang="${_dev_lang:-$DEV_DEFAULT_LANG}"
         fi
-        echo "Using default template (RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
+        echo "Using default template (lang=${_dev_lang}, RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
     fi
 
     if [[ -n "$_dev_source_dir" && "$_dev_source_dir" != /* ]]; then
         _dev_source_dir="${DEV_SOURCES_DIR}/${_dev_source_dir}"
     fi
+
+    # Compute image name from template lang
+    local _dev_image_base="${DEV_IMAGE%:*}"
+    local _dev_full_image="${_dev_image_base}-${_dev_lang}:latest"
 
     _dev_ensure_proxy
     local _dev_port
@@ -224,7 +238,7 @@ _dev_create_container() {
 
     # Warn if image is stale (>4 days old)
     local _dev_img_date
-    _dev_img_date=$(podman image inspect "$DEV_IMAGE" --format '{{.Created}}' 2>/dev/null | cut -d' ' -f1) || true
+    _dev_img_date=$(podman image inspect "$_dev_full_image" --format '{{.Created}}' 2>/dev/null | cut -d' ' -f1) || true
     if [[ -n "$_dev_img_date" ]]; then
         local _dev_age=$(( ($(date +%s) - $(date -d "$_dev_img_date" +%s)) / 86400 ))
         if (( _dev_age > 4 )); then
@@ -232,10 +246,10 @@ _dev_create_container() {
         fi
     fi
 
-    if ! podman image exists "$DEV_IMAGE" 2>/dev/null; then
-        echo "Image not found locally, pulling..."
+    if ! podman image exists "$_dev_full_image" 2>/dev/null; then
+        echo "Image not found locally, pulling ${_dev_full_image}..."
         _dev_ensure_ghcr_auth
-        podman pull "$DEV_IMAGE"
+        podman pull "$_dev_full_image"
     fi
 
     # Build volume mounts (only specific key files — never the whole keys/ dir)
@@ -250,7 +264,7 @@ _dev_create_container() {
     if podman secret inspect bob-api-key &>/dev/null; then
         _dev_bob_secret=(--secret bob-api-key,mode=0400)
     fi
-    if [[ -d "${HOME}/.m2/repository" ]]; then
+    if [[ "$_dev_lang" == "java" && -d "${HOME}/.m2/repository" ]]; then
         _dev_volumes+=(-v "${HOME}/.m2/repository:/opt/m2-base:ro")
     fi
     if [[ -n "$_dev_source_dir" && -d "$_dev_source_dir" && "$_dev_source_dir" == "${DEV_SOURCES_DIR}/"* ]]; then
@@ -262,6 +276,8 @@ _dev_create_container() {
     # Create per-container disk images (sparse ext4 loopbacks, cap host disk usage)
     local _dev_disk_img="${DEV_DISK_DIR}/${_dev_name}.img"
     local _dev_podman_img="${DEV_DISK_DIR}/${_dev_name}-podman.img"
+    local _dev_podman_gib
+    _dev_podman_gib=$(_dev_podman_storage_gib "$_dev_lang")
     mkdir -p "$DEV_DISK_DIR"
     if [[ -f "$_dev_disk_img" ]]; then
         echo "Reusing existing bounded disk for '${_dev_name}' (${_dev_disk_gib}GiB cap)."
@@ -271,9 +287,9 @@ _dev_create_container() {
         echo "Created bounded disk: ${_dev_disk_gib}GiB cap."
     fi
     if [[ ! -f "$_dev_podman_img" ]]; then
-        truncate -s "${DEV_PODMAN_STORAGE_GIB}G" "$_dev_podman_img"
+        truncate -s "${_dev_podman_gib}G" "$_dev_podman_img"
         mkfs.ext4 -F -m 0 -q "$_dev_podman_img"
-        echo "Created podman storage disk: ${DEV_PODMAN_STORAGE_GIB}GiB cap."
+        echo "Created podman storage disk: ${_dev_podman_gib}GiB cap."
     fi
     _dev_volumes+=(-v "${_dev_disk_img}:/opt/bounded-disk.img:rw")
     _dev_volumes+=(-v "${_dev_podman_img}:/opt/podman-disk.img:rw")
@@ -302,7 +318,8 @@ _dev_create_container() {
         -e "DEV_AUTOMATION_EMAIL=${DEV_AUTOMATION_EMAIL}" \
         -e "DEV_AUTOMATION_NAME=${DEV_AUTOMATION_NAME}" \
         -e "DEV_TEMPLATE_KEY=${_dev_template_key}" \
-        -e "DEV_PODMAN_STORAGE_GIB=${DEV_PODMAN_STORAGE_GIB}" \
+        -e "DEV_LANG=${_dev_lang}" \
+        -e "DEV_PODMAN_STORAGE_GIB=${_dev_podman_gib}" \
         ${DEV_PR_NUMBER:+-e "DEV_PR_NUMBER=${DEV_PR_NUMBER}"} \
         ${DEV_ISSUE_NUMBER:+-e "DEV_ISSUE_NUMBER=${DEV_ISSUE_NUMBER}"} \
         ${DEV_FORK_ORG:+-e "DEV_FORK_ORG=${DEV_FORK_ORG}"} \
@@ -310,7 +327,7 @@ _dev_create_container() {
         -p "127.0.0.1::2222" \
         "${_dev_volumes[@]}" \
         "${_dev_bob_secret[@]}" \
-        "$DEV_IMAGE"
+        "$_dev_full_image"
 }
 
 _dev_ssh_port() {

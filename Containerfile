@@ -1,21 +1,26 @@
+ARG DEV_LANG=java
 FROM registry.fedoraproject.org/fedora:44
 
-# ── System packages ──────────────────────────────────────────────────────────
+# ── System packages (shared base) ────────────────────────────────────────────
 RUN dnf install -y \
         git git-lfs curl wget jq zip unzip findutils procps-ng hostname \
         diffutils less iproute iptables openssh-server \
-        podman fuse-overlayfs e2fsprogs maven nodejs npm gh \
+        podman fuse-overlayfs e2fsprogs maven nodejs npm gh gcc \
     && dnf clean all
 
-# ── Non-root users with rootless-Podman support ──────────────────────────────
+# ── Language-specific system packages ────────────────────────────────────────
+ARG DEV_LANG
+RUN if [ "$DEV_LANG" = "go" ]; then \
+        dnf install -y java-21-openjdk-devel make gcc-c++ podman-compose && dnf clean all; \
+    fi
+
+# ── Non-root users with rootless-Podman support ─────────────────────────────
 RUN useradd -m -u 1000 -s /bin/bash dev \
     && useradd -r -s /usr/sbin/nologin bobrunner \
     && echo "dev:100000:65536" >> /etc/subuid \
     && echo "dev:100000:65536" >> /etc/subgid
 
-# ── Lock root, strip ALL setuid/setgid except newuidmap/newgidmap ───────────
-# (newuidmap/newgidmap must keep setuid for rootless Podman / Testcontainers)
-# Without this, the dev user could e.g. run "passwd root" to re-enable root.
+# ── Lock root, strip ALL setuid/setgid except newuidmap/newgidmap ────────────
 RUN passwd -l root \
     && dnf remove -y sudo 2>/dev/null || true \
     && find / -xdev -perm /6000 -type f \
@@ -39,15 +44,13 @@ RUN printf '[claude-code]\nname=Claude Code\nbaseurl=https://downloads.claude.ai
 # ── Bob Shell (npm — no dnf package available) ───────────────────────────────
 RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash -s -- --pm npm
 
-# ── Bob Shell secure launcher ────────────────────────────────────────────────
+# ── Bob Shell secure launcher (gcc already in shared base) ───────────────────
 COPY bob-env-filter.c bob-run.c /tmp/build/
-RUN dnf install -y gcc && \
-    gcc -shared -fPIC -O2 -o /usr/local/lib/bob-env-filter.so /tmp/build/bob-env-filter.c -ldl \
+RUN gcc -shared -fPIC -O2 -o /usr/local/lib/bob-env-filter.so /tmp/build/bob-env-filter.c -ldl \
     && gcc -O2 -o /usr/local/bin/bob-run /tmp/build/bob-run.c \
     && chown bobrunner:bobrunner /usr/local/bin/bob-run \
     && chmod 4711 /usr/local/bin/bob-run \
     && rm -rf /tmp/build \
-    && dnf remove -y gcc && dnf clean all \
     && mv /usr/local/bin/bob /usr/local/bin/bob-real \
     && ln -s /usr/local/bin/bob-run /usr/local/bin/bob
 
@@ -55,10 +58,41 @@ RUN dnf install -y gcc && \
 COPY --chown=dev:dev configs/bob-settings.json /home/dev/.bob/settings.json
 COPY --chown=dev:dev configs/bob-trusted-folders.json /home/dev/.bob/trustedFolders.json
 
-# ── SDKMAN + JDK 21 Temurin (installed as dev) ──────────────────────────────
+# ── Language: Java (SDKMAN + JDK 21 Temurin) ────────────────────────────────
 USER dev
-RUN curl -s "https://get.sdkman.io" | bash \
-    && bash -c "source /home/dev/.sdkman/bin/sdkman-init.sh && sdk install java 21-tem"
+RUN if [ "$DEV_LANG" = "java" ]; then \
+        curl -s "https://get.sdkman.io" | bash \
+        && bash -c "source /home/dev/.sdkman/bin/sdkman-init.sh && sdk install java 21-tem"; \
+    fi
+USER root
+
+# ── Language: Go (SDK + development tools) ───────────────────────────────────
+RUN if [ "$DEV_LANG" = "go" ]; then \
+        GO_VERSION=1.26.4 \
+        && curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" | tar -C /usr/local -xzf - \
+        && KUBECTL_VERSION=$(curl -fsSL https://dl.k8s.io/release/stable.txt) \
+        && curl -fsSL "https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl \
+        && chmod +x /usr/local/bin/kubectl \
+        && KIND_VERSION=$(curl -fsSL https://api.github.com/repos/kubernetes-sigs/kind/releases/latest | jq -r .tag_name) \
+        && curl -fsSL "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64" -o /usr/local/bin/kind \
+        && chmod +x /usr/local/bin/kind \
+        && HELM_VERSION=$(curl -fsSL https://api.github.com/repos/helm/helm/releases/latest | jq -r .tag_name) \
+        && curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar -C /tmp -xzf - \
+        && mv /tmp/linux-amd64/helm /usr/local/bin/helm && rm -rf /tmp/linux-amd64 \
+        && TF_VERSION=1.14.3 \
+        && curl -fsSL "https://releases.hashicorp.com/terraform/${TF_VERSION}/terraform_${TF_VERSION}_linux_amd64.zip" -o /tmp/terraform.zip \
+        && unzip -q /tmp/terraform.zip -d /usr/local/bin && rm /tmp/terraform.zip \
+        && curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/HEAD/install.sh | sh -s -- -b /usr/local/bin; \
+    fi
+
+USER dev
+RUN if [ "$DEV_LANG" = "go" ]; then \
+        export PATH=/usr/local/go/bin:$PATH \
+        && export GOPATH=/home/dev/go \
+        && go install github.com/go-delve/delve/cmd/dlv@latest \
+        && go install github.com/gotesttools/gotestfmt/v2/cmd/gotestfmt@latest \
+        && go install golang.org/x/vuln/cmd/govulncheck@latest; \
+    fi
 USER root
 
 # ── SSH directory (keys injected at runtime, NEVER baked in) ─────────────────
@@ -72,16 +106,22 @@ RUN sed -i 's|export GPG_TTY=$(tty)|export GPG_TTY=$(tty 2>/dev/null)|' /etc/pro
 
 # ── Claude Code sandbox settings ─────────────────────────────────────────────
 COPY --chown=dev:dev configs/claude-settings.json /home/dev/.claude/settings.json
-RUN echo '{"hasCompletedOnboarding":true,"hasAcceptedTerms":true,"hasSeenTasksHint":true,"numStartups":1,"autoUpdates":false,"effortLevel":"max","projects":{"/workspace":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/keycloak":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/quarkus":{"allowedTools":[],"hasTrustDialogAccepted":true}}}' > /home/dev/.claude.json \
+RUN if [ "$DEV_LANG" = "java" ]; then \
+        echo '{"hasCompletedOnboarding":true,"hasAcceptedTerms":true,"hasSeenTasksHint":true,"numStartups":1,"autoUpdates":false,"effortLevel":"max","projects":{"/workspace":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/keycloak":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/quarkus":{"allowedTools":[],"hasTrustDialogAccepted":true}}}' > /home/dev/.claude.json; \
+    else \
+        echo '{"hasCompletedOnboarding":true,"hasAcceptedTerms":true,"hasSeenTasksHint":true,"numStartups":1,"autoUpdates":false,"effortLevel":"max","projects":{"/workspace":{"allowedTools":[],"hasTrustDialogAccepted":true}}}' > /home/dev/.claude.json; \
+    fi \
     && chown dev:dev /home/dev/.claude.json
 
-# ── Pre-baked project repos (shallow clone — workspace-ready) ────────────────
+# ── Pre-baked project repos (Java only — Go projects mount from host) ───────
 RUN mkdir -p /opt/workspace && chown dev:dev /opt/workspace
 USER dev
-RUN git clone --depth 1 --single-branch --branch main \
-        https://github.com/keycloak/keycloak.git /opt/workspace/keycloak \
-    && git clone --depth 1 --single-branch --branch main \
-        https://github.com/quarkusio/quarkus.git /opt/workspace/quarkus
+RUN if [ "$DEV_LANG" = "java" ]; then \
+        git clone --depth 1 --single-branch --branch main \
+            https://github.com/keycloak/keycloak.git /opt/workspace/keycloak \
+        && git clone --depth 1 --single-branch --branch main \
+            https://github.com/quarkusio/quarkus.git /opt/workspace/quarkus; \
+    fi
 USER root
 
 # ── Entrypoint ───────────────────────────────────────────────────────────────

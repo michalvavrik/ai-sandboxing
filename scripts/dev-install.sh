@@ -34,7 +34,7 @@ DEV_AUTOMATION_NAME=""
 # GitHub username for GHCR authentication (repo owner)
 DEV_GHCR_USER=""
 
-# Container image to pull and run
+# Container image base name (lang suffix added automatically from templates)
 DEV_IMAGE=""
 
 # Parent directory for project source checkouts (used by project-templates.conf)
@@ -275,9 +275,20 @@ source "$(dirname "$0")/dev-common.sh"
 _dev_ensure_ghcr_auth
 echo "GHCR authentication OK."
 
-echo "Pulling dev image (first time may take a few minutes)..."
-podman pull --policy missing "$DEV_IMAGE"
-echo "Dev image ready."
+_dev_image_base="${DEV_IMAGE%:*}"
+_dev_conf="${DEV_CONFIGS_DIR}/project-templates.conf"
+_dev_seen=""
+while IFS= read -r _dev_line; do
+    [[ "$_dev_line" =~ ^[[:space:]]*# || -z "$_dev_line" ]] && continue
+    _dev_lang=$(echo "$_dev_line" | awk -F'|' '{print $NF}')
+    _dev_lang="${_dev_lang:-java}"
+    [[ "$_dev_seen" == *"|${_dev_lang}|"* ]] && continue
+    _dev_seen="${_dev_seen}|${_dev_lang}|"
+    _dev_img="${_dev_image_base}-${_dev_lang}:latest"
+    echo "Pulling ${_dev_img} (first time may take a few minutes)..."
+    podman pull --policy missing "$_dev_img"
+done < "$_dev_conf"
+echo "Dev images ready."
 
 # --------------------------------------------------------------------------
 # Step 8/10: Shell alias
@@ -307,30 +318,16 @@ fi
 
 
 if ! grep -qF '_dev_completion' "${HOME}/.bashrc" 2>/dev/null; then
-    cat >> "${HOME}/.bashrc" <<'COMP'
+    cat >> "${HOME}/.bashrc" <<COMP
 _dev_completion() {
-    local cur="${COMP_WORDS[COMP_CWORD]}"
-    local prev="${COMP_WORDS[COMP_CWORD-1]}"
-    if [[ $COMP_CWORD -eq 1 ]]; then
-        COMPREPLY=($(compgen -W "new enter delete stop start see cp cpout use idea list pull install" -- "$cur"))
-    elif [[ $COMP_CWORD -eq 2 && "$prev" =~ ^(enter|delete|stop|start|see|use)$ ]]; then
-        COMPREPLY=($(compgen -W "$(podman ps -a --filter=label=dev-sandbox --format '{{.Names}}' 2>/dev/null)" -- "$cur"))
-    elif [[ ${COMP_WORDS[1]} == "cp" && $COMP_CWORD -ge 2 ]]; then
+    local cur="\${COMP_WORDS[COMP_CWORD]}"
+    local prev="\${COMP_WORDS[COMP_CWORD-1]}"
+    if [[ "\${COMP_WORDS[1]}" == "cp" && \$COMP_CWORD -ge 2 ]]; then
         compopt -o filenames
-        COMPREPLY=($(compgen -f -- "$cur"))
-    elif [[ "$prev" == "cpout" ]]; then
-        local name="${DEV_LAST_CONTAINER:-}"
-        if [[ -z "$name" ]]; then
-            local _all
-            _all=$(podman ps -a --filter=label=dev-sandbox --format '{{.Names}}' 2>/dev/null)
-            [[ $(echo "$_all" | wc -l) -eq 1 && -n "$_all" ]] && name="$_all"
-        fi
-        if [[ -n "$name" ]]; then
-            compopt -o nospace
-            local prefix="/workspace/"
-            [[ "$cur" == /* ]] && prefix=""
-            COMPREPLY=($(ssh -q "$name" "ls -dp ${prefix}${cur}* 2>/dev/null" | sed "s|^${prefix}||"))
-        fi
+        COMPREPLY=(\$(compgen -f -- "\$cur"))
+    else
+        [[ "\$prev" == "cpout" ]] && compopt -o nospace
+        COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur"))
     fi
 }
 complete -F _dev_completion dev
