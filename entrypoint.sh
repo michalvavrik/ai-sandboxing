@@ -113,7 +113,12 @@ if [[ -d /mnt/podman ]]; then
     runuser -u dev -- mkdir -p /home/dev/.config/containers
     _additional_stores=""
     if [ -d /opt/host-podman-storage ]; then
-        _additional_stores='additionalimagestores = ["/opt/host-podman-storage"]'
+        mkdir -p /tmp/podman-store-upper /tmp/podman-store-work /opt/host-podman-overlay
+        chown dev:dev /tmp/podman-store-upper /tmp/podman-store-work /opt/host-podman-overlay
+        fuse-overlayfs \
+            -o "lowerdir=/opt/host-podman-storage,upperdir=/tmp/podman-store-upper,workdir=/tmp/podman-store-work,squash_to_uid=1000,squash_to_gid=1000" \
+            /opt/host-podman-overlay
+        _additional_stores='additionalimagestores = ["/opt/host-podman-overlay"]'
     fi
     cat > /home/dev/.config/containers/storage.conf <<STCONF
 [storage]
