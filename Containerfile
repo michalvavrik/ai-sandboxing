@@ -2,7 +2,7 @@ ARG DEV_LANG=java
 FROM registry.fedoraproject.org/fedora:44
 
 # ── System packages (shared base) ────────────────────────────────────────────
-RUN dnf install -y \
+RUN dnf install -y --setopt=retries=5 \
         git git-lfs curl wget jq zip unzip findutils procps-ng hostname \
         diffutils less iproute iptables openssh-server \
         podman fuse-overlayfs e2fsprogs maven nodejs npm gh gcc \
@@ -11,7 +11,7 @@ RUN dnf install -y \
 # ── Language-specific system packages ────────────────────────────────────────
 ARG DEV_LANG
 RUN if [ "$DEV_LANG" = "go" ]; then \
-        dnf install -y java-21-openjdk-devel make gcc-c++ podman-compose && dnf clean all; \
+        dnf install -y --setopt=retries=5 java-devel make gcc-c++ podman-compose && dnf clean all; \
     fi
 
 # ── Non-root users with rootless-Podman support ─────────────────────────────
@@ -39,7 +39,7 @@ RUN echo "user_allow_other" >> /etc/fuse.conf
 # ── Claude Code (via official dnf repo) ──────────────────────────────────────
 RUN printf '[claude-code]\nname=Claude Code\nbaseurl=https://downloads.claude.ai/claude-code/rpm/stable\nenabled=1\ngpgcheck=1\ngpgkey=https://downloads.claude.ai/keys/claude-code.asc\n' \
         > /etc/yum.repos.d/claude-code.repo \
-    && dnf install -y claude-code && dnf clean all
+    && dnf install -y --setopt=retries=5 claude-code && dnf clean all
 
 # ── Bob Shell (npm — no dnf package available) ───────────────────────────────
 RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash -s -- --pm npm
