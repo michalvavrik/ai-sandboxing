@@ -1,4 +1,4 @@
-name: Build Dev Sandbox Images
+name: Build Dev Sandbox Image
 
 on:
   schedule:
@@ -17,17 +17,13 @@ jobs:
     permissions:
       contents: read
       packages: write
-    strategy:
-      matrix:
-        lang: [java, go]
+    env:
+      IMAGE: ghcr.io/${{ github.repository }}/dev-sandbox
     steps:
       - uses: actions/checkout@v5
 
       - name: Login to GHCR
         run: echo "${{ secrets.GITHUB_TOKEN }}" | podman login ghcr.io -u ${{ github.actor }} --password-stdin
-
-      - name: Set image name
-        run: echo "IMAGE=ghcr.io/${{ github.repository }}/dev-sandbox-${{ matrix.lang }}" >> "$GITHUB_ENV"
 
       # Scheduled builds: rotate latest-next → latest, build new latest-next
       - name: Promote latest-next to latest
@@ -39,7 +35,7 @@ jobs:
           fi
 
       - name: Build image
-        run: podman build --build-arg DEV_LANG=${{ matrix.lang }} -t "$IMAGE:latest-next" .
+        run: podman build -t "$IMAGE:latest-next" .
 
       - name: Push latest-next
         run: podman push "$IMAGE:latest-next"
@@ -61,10 +57,9 @@ jobs:
 
       - name: Delete old image versions
         run: |
-          PACKAGE="ai-sandboxing%2Fdev-sandbox-${{ matrix.lang }}"
-          gh api /users/${{ github.repository_owner }}/packages/container/${PACKAGE}/versions \
+          gh api /users/${{ github.repository_owner }}/packages/container/ai-sandboxing%2Fdev-sandbox/versions \
             --paginate --jq '.[].id' | tail -n +3 | while read -r id; do
-            gh api --method DELETE "/users/${{ github.repository_owner }}/packages/container/${PACKAGE}/versions/$id" || true
+            gh api --method DELETE "/users/${{ github.repository_owner }}/packages/container/ai-sandboxing%2Fdev-sandbox/versions/$id" || true
           done
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

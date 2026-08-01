@@ -34,7 +34,7 @@ DEV_AUTOMATION_NAME=""
 # GitHub username for GHCR authentication (repo owner)
 DEV_GHCR_USER=""
 
-# Container image base name (lang suffix added automatically from templates)
+# Container image to pull and run
 DEV_IMAGE=""
 
 # Parent directory for project source checkouts (used by project-templates.conf)
@@ -275,20 +275,9 @@ source "$(dirname "$0")/dev-common.sh"
 _dev_ensure_ghcr_auth
 echo "GHCR authentication OK."
 
-_dev_image_base="${DEV_IMAGE%:*}"
-_dev_conf="${DEV_CONFIGS_DIR}/project-templates.conf"
-_dev_seen=""
-while IFS= read -r _dev_line; do
-    [[ "$_dev_line" =~ ^[[:space:]]*# || -z "$_dev_line" ]] && continue
-    _dev_lang=$(echo "$_dev_line" | awk -F'|' '{print $NF}')
-    _dev_lang="${_dev_lang:-java}"
-    [[ "$_dev_seen" == *"|${_dev_lang}|"* ]] && continue
-    _dev_seen="${_dev_seen}|${_dev_lang}|"
-    _dev_img="${_dev_image_base}-${_dev_lang}:latest"
-    echo "Pulling ${_dev_img} (first time may take a few minutes)..."
-    podman pull --policy missing "$_dev_img"
-done < "$_dev_conf"
-echo "Dev images ready."
+echo "Pulling dev image (first time may take a few minutes)..."
+podman pull --policy missing "$DEV_IMAGE"
+echo "Dev image ready."
 
 # --------------------------------------------------------------------------
 # Step 8/10: Shell alias

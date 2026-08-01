@@ -228,17 +228,13 @@ _dev_create_container() {
         _dev_source_dir="${DEV_SOURCES_DIR}/${_dev_source_dir}"
     fi
 
-    # Compute image name from template lang
-    local _dev_image_base="${DEV_IMAGE%:*}"
-    local _dev_full_image="${_dev_image_base}-${_dev_lang}:latest"
-
     _dev_ensure_proxy
     local _dev_port
     _dev_port=$(_dev_proxy_port)
 
     # Warn if image is stale (>4 days old)
     local _dev_img_date
-    _dev_img_date=$(podman image inspect "$_dev_full_image" --format '{{.Created}}' 2>/dev/null | cut -d' ' -f1) || true
+    _dev_img_date=$(podman image inspect "$DEV_IMAGE" --format '{{.Created}}' 2>/dev/null | cut -d' ' -f1) || true
     if [[ -n "$_dev_img_date" ]]; then
         local _dev_age=$(( ($(date +%s) - $(date -d "$_dev_img_date" +%s)) / 86400 ))
         if (( _dev_age > 4 )); then
@@ -246,10 +242,10 @@ _dev_create_container() {
         fi
     fi
 
-    if ! podman image exists "$_dev_full_image" 2>/dev/null; then
+    if ! podman image exists "$DEV_IMAGE" 2>/dev/null; then
         echo "Image not found locally, pulling ${_dev_full_image}..."
         _dev_ensure_ghcr_auth
-        podman pull "$_dev_full_image"
+        podman pull "$DEV_IMAGE"
     fi
 
     # Build volume mounts (only specific key files — never the whole keys/ dir)
@@ -327,7 +323,7 @@ _dev_create_container() {
         -p "127.0.0.1::2222" \
         "${_dev_volumes[@]}" \
         "${_dev_bob_secret[@]}" \
-        "$_dev_full_image"
+        "$DEV_IMAGE"
 }
 
 _dev_ssh_port() {

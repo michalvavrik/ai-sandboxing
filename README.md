@@ -8,7 +8,7 @@ This tool is (and will be even more) customized to automate my workflow and limi
 
 ## About this tool
 
-Ephemeral, microVM-isolated dev containers for AI-assisted development. Each container runs in a krun microVM (KVM-backed), gets its own kernel, and has no access to your host filesystem or services. The container image is selected automatically based on the project's language (Java or Go) via the template configuration.
+Ephemeral, microVM-isolated dev containers for AI-assisted development. Each container runs in a krun microVM (KVM-backed), gets its own kernel, and has no access to your host filesystem or services. A single container image ships both Java and Go toolchains; the template's `lang` field controls runtime behavior (Kind cluster, Maven cache, environment).
 
 ## Security model
 
@@ -41,7 +41,7 @@ All machine-specific values live in `config.local` (gitignored). The install scr
 | `DEV_AUTOMATION_EMAIL` | Git commit email inside containers            |
 | `DEV_AUTOMATION_NAME`  | Git commit author name inside containers      |
 | `DEV_GHCR_USER`        | GitHub username for GHCR image pulls          |
-| `DEV_IMAGE`            | Container image base name (lang suffix added from template) |
+| `DEV_IMAGE`            | Container image to pull and run               |
 | `DEV_SOURCES_DIR`      | Parent directory for project source checkouts |
 
 Project-specific source dirs in `configs/project-templates.conf` are relative to `DEV_SOURCES_DIR`.
@@ -128,7 +128,7 @@ If you want to connect your IDE directly to a container (for interactive editing
 
 ## Projects
 
-`configs/project-templates.conf` maps `org/repo` to source dir, resources, disk caps, and language. The `lang` field selects which container image to use (`dev-sandbox-java` or `dev-sandbox-go`). Template detection (first match wins):
+`configs/project-templates.conf` maps `org/repo` to source dir, resources, disk caps, and language. The `lang` field controls runtime behavior (Kind cluster for Go, Maven cache for Java). Template detection (first match wins):
 
 1. **GitHub URL** — `dev https://github.com/keycloak/keycloak-client/pull/42` → exact `org/repo` from URL
 2. **cwd** — `cd ~/sources/keycloak-client && dev new fix` → matches template whose `source_dir` contains the cwd
@@ -142,16 +142,18 @@ cd ~/sources/quarkus && dev new foo  # → quarkus template (Java image, cwd det
 cd ~/sources/camel-k && dev new bar  # → camel-k template (Go image, cwd detection)
 ```
 
-### Java containers (lang=java)
+### Pre-installed toolchains
 
-Pre-installed: SDKMAN + JDK 21 Temurin, Maven, Git, Claude Code, Bob Shell.
-Projects pre-baked into the image (keycloak, quarkus) start instantly. Other Java templates clone from the host source on first start.
+Every container ships both Java and Go stacks:
+- **Java:** SDKMAN + JDK 21 Temurin, Maven
+- **Go:** Go SDK, kubectl, Kind, Helm, Terraform, golangci-lint, Delve, gotestfmt, govulncheck
+- **Shared:** Git, gcc/g++, Make, podman-compose, Claude Code, Bob Shell
 
-### Go containers (lang=go)
+Projects pre-baked into the image (keycloak, quarkus) start instantly. Other templates clone from the host source on first start.
 
-Pre-installed: Go SDK, Make, gcc/g++, kubectl, Kind, Helm, Terraform, golangci-lint, Delve, gotestfmt, govulncheck, JDK 21 (for Camel runtime builds), Maven, podman-compose, Claude Code, Bob Shell.
+### Go projects (lang=go)
 
-On first start, a Kind cluster with a local registry (`localhost:5001`) is auto-created inside the container. This replaces minikube for Kubernetes-based projects like camel-k.
+On first start, a Kind cluster with a local registry (`localhost:5001`) is auto-created inside the container. This replaces minikube for Kubernetes-based projects like camel-k. Go environment (GOPATH, GOBIN, KIND_EXPERIMENTAL_PROVIDER) is set automatically.
 
 ```bash
 # camel-k workflow (inside Go container):
@@ -189,11 +191,11 @@ To rotate: `podman secret rm bob-api-key`, replace `keys/ibm_bob_shell_api.key`,
 ```
 Host                              krun MicroVM
 ├── dev-proxy.py ◄─────────────── Claude Code (Vertex AI requests)
-│   ├── ADC stays here            ├── Java: JDK 21 / Maven / SDKMAN
-│   ├── git push (HTTP→SSH) ◄──── │   Go: Go SDK / Kind / kubectl / Terraform / Helm
-│   └── MCP SSE relay ◄────────── │   Shared: Git / Claude Code / Bob Shell
-├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (Java only: reads host, writes local)
-│   (Java containers only)        ├── Kind cluster (Go only: auto-created on first start)
+│   ├── ADC stays here            ├── JDK 21 / Maven / Go SDK / Kind / kubectl / Terraform
+│   ├── git push (HTTP→SSH) ◄──── git push (container HTTP, proxy bridges to GitHub SSH)
+│   └── MCP SSE relay ◄────────── Claude Code (whitelisted host MCP servers)
+├── ~/.m2/repository ──ro mount── ├── overlayfs .m2 (lang=java: reads host, writes local)
+│   (lang=java only)              ├── Kind cluster (lang=go: auto-created on first start)
 ├── keys/ (individual files)      ├── credentials (mounted per-file, not whole dir)
 │   ├── id_ed25519_dev_automation │   ├── id_ed25519_container.pub  (sshd authorized_keys)
 │   ├── id_ed25519_container      │   └── gh-pat-container          (read-only gh token)

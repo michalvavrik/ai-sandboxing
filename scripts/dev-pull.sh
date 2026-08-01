@@ -10,29 +10,11 @@ fi
 
 _dev_ensure_ghcr_auth
 
-_dev_image_base="${DEV_IMAGE%:*}"
-
-_dev_pull_langs() {
-    local _dev_conf="${DEV_CONFIGS_DIR}/project-templates.conf"
-    local _dev_seen="" _dev_line _dev_lang
-    while IFS= read -r _dev_line; do
-        [[ "$_dev_line" =~ ^[[:space:]]*# || -z "$_dev_line" ]] && continue
-        _dev_lang=$(echo "$_dev_line" | awk -F'|' '{print $NF}')
-        _dev_lang="${_dev_lang:-java}"
-        [[ "$_dev_seen" == *"|${_dev_lang}|"* ]] && continue
-        _dev_seen="${_dev_seen}|${_dev_lang}|"
-        echo "$_dev_lang"
-    done < "$_dev_conf"
-}
-
-while IFS= read -r _dev_lang; do
-    _dev_img="${_dev_image_base}-${_dev_lang}:latest"
-    _dev_img_next="${_dev_image_base}-${_dev_lang}:latest-next"
-    CONTAINERS_CONF_OVERRIDE=<(printf '[engine]\nimage_parallel_copies = 1\n') \
-        podman pull --policy newer "$_dev_img" || true
-    CONTAINERS_CONF_OVERRIDE=<(printf '[engine]\nimage_parallel_copies = 1\n') \
-        podman pull --policy newer "$_dev_img_next" 2>/dev/null || true
-done < <(_dev_pull_langs)
+_DEV_IMAGE_REPO="${DEV_IMAGE%:*}"
+CONTAINERS_CONF_OVERRIDE=<(printf '[engine]\nimage_parallel_copies = 1\n') \
+    podman pull --policy newer "$DEV_IMAGE"
+CONTAINERS_CONF_OVERRIDE=<(printf '[engine]\nimage_parallel_copies = 1\n') \
+    podman pull --policy newer "${_DEV_IMAGE_REPO}:latest-next" 2>/dev/null || true
 
 # ── Update template project sources ─────────────────────────────────────────
 _dev_conf="${DEV_CONFIGS_DIR}/project-templates.conf"

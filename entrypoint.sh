@@ -48,7 +48,7 @@ if [ "${DEV_LANG:-}" = "go" ]; then
     cat >> /etc/profile.d/dev-sandbox.sh <<'GOENV'
 export GOPATH=/home/dev/go
 export GOBIN=/home/dev/go/bin
-export PATH=/usr/local/go/bin:/home/dev/go/bin:$PATH
+export PATH=/home/dev/go/bin:$PATH
 export KIND_EXPERIMENTAL_PROVIDER=podman
 GOENV
 fi
