@@ -21,7 +21,7 @@ fi
 
 _dev_update_ssh_config "$_devsee_name"
 
-readonly _devsee_branch="dev-auto/${_devsee_name}"
+readonly _devsee_branch="dev-auto/${_devsee_name}/main"
 echo "Pushing changes to ${_devsee_branch}..."
 _dev_ssh_cmd "$_devsee_name" \
     "cd /workspace && git add -A && git reset HEAD -- CLAUDE.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devsee_branch}"

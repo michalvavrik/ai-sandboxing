@@ -21,6 +21,8 @@ readonly DEV_DEFAULT_CPUS=4
 readonly DEV_DEFAULT_DISK_GIB=15
 readonly DEV_DEFAULT_PROFILES="java"
 readonly DEV_DISK_DIR="${HOME}/.local/share/dev-sandbox-disks"
+readonly DEV_PROXY_BASE_PORT=9222
+readonly DEV_PROXY_PORT_COUNT="${DEV_PROXY_PORTS:-5}"
 
 _dev_has_profile() {
     [[ ",${1}," == *",${2},"* ]]
@@ -41,6 +43,65 @@ _dev_pid_file() {
 
 _dev_port_file() {
     echo "/run/user/$(id -u)/dev-proxy.port"
+}
+
+_dev_proxy_mapping_file() {
+    echo "/run/user/$(id -u)/dev-proxy-ports.json"
+}
+
+_dev_assign_proxy_port() {
+    local _dev_container="$1"
+    local _dev_mapfile
+    _dev_mapfile="$(_dev_proxy_mapping_file)"
+    local _dev_mapping="{}"
+
+    if [[ -f "$_dev_mapfile" ]]; then
+        _dev_mapping=$(cat "$_dev_mapfile")
+    fi
+
+    local _dev_port
+    for (( _dev_port = DEV_PROXY_BASE_PORT + 1; _dev_port < DEV_PROXY_BASE_PORT + DEV_PROXY_PORT_COUNT; _dev_port++ )); do
+        if ! echo "$_dev_mapping" | jq -e --arg p "$_dev_port" 'has($p)' &>/dev/null; then
+            echo "$_dev_mapping" | jq --arg p "$_dev_port" \
+                --arg c "$_dev_container" \
+                --arg b "dev-auto/${_dev_container}" \
+                '. + {($p): {container: $c, branch: $b}}' > "$_dev_mapfile"
+            local _dev_pf
+            _dev_pf="$(_dev_pid_file)"
+            if [[ -f "$_dev_pf" ]] && kill -0 "$(cat "$_dev_pf")" 2>/dev/null; then
+                kill -HUP "$(cat "$_dev_pf")" 2>/dev/null || true
+            fi
+            echo "$_dev_port"
+            return 0
+        fi
+    done
+
+    echo "Error: all ${DEV_PROXY_PORT_COUNT} proxy port slots are in use. Delete a container first." >&2
+    return 1
+}
+
+_dev_release_proxy_port() {
+    local _dev_container="$1"
+    local _dev_mapfile
+    _dev_mapfile="$(_dev_proxy_mapping_file)"
+
+    if [[ ! -f "$_dev_mapfile" ]]; then
+        return 0
+    fi
+
+    local _dev_port
+    _dev_port=$(jq -r --arg c "$_dev_container" \
+        'to_entries[] | select(.value.container == $c) | .key' "$_dev_mapfile" 2>/dev/null) || true
+
+    if [[ -n "$_dev_port" ]]; then
+        jq --arg p "$_dev_port" 'del(.[$p])' "$_dev_mapfile" > "${_dev_mapfile}.tmp" \
+            && mv "${_dev_mapfile}.tmp" "$_dev_mapfile"
+        local _dev_pf
+        _dev_pf="$(_dev_pid_file)"
+        if [[ -f "$_dev_pf" ]] && kill -0 "$(cat "$_dev_pf")" 2>/dev/null; then
+            kill -HUP "$(cat "$_dev_pf")" 2>/dev/null || true
+        fi
+    fi
 }
 
 _dev_resolve_name() {
@@ -235,7 +296,7 @@ _dev_create_container() {
 
     _dev_ensure_proxy
     local _dev_port
-    _dev_port=$(_dev_proxy_port)
+    _dev_port=$(_dev_assign_proxy_port "$_dev_name")
 
     # Warn if image is stale (>4 days old)
     local _dev_img_date

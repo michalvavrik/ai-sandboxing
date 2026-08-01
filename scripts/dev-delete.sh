@@ -14,11 +14,18 @@ fi
 _devdel_template_key=$(podman inspect --format '{{index .Config.Labels "dev-template-key"}}' "$_devdel_name" 2>/dev/null) || true
 if [[ -n "$_devdel_template_key" ]]; then
     _devdel_repo="${_devdel_template_key#*/}"
-    GIT_SSH_COMMAND="ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no" \
-        git push "git@github.com:${DEV_AUTOMATION_USER}/${_devdel_repo}.git" \
-        --delete "dev-auto/${_devdel_name}" 2>/dev/null || true
+    _devdel_git_ssh="ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+    _devdel_remote="git@github.com:${DEV_AUTOMATION_USER}/${_devdel_repo}.git"
+    _devdel_refs=$(GIT_SSH_COMMAND="$_devdel_git_ssh" \
+        git ls-remote --refs "$_devdel_remote" "refs/heads/dev-auto/${_devdel_name}/*" 2>/dev/null \
+        | awk '{print $2}') || true
+    if [[ -n "$_devdel_refs" ]]; then
+        GIT_SSH_COMMAND="$_devdel_git_ssh" \
+            git push "$_devdel_remote" --delete $_devdel_refs 2>/dev/null || true
+    fi
 fi
 
+_dev_release_proxy_port "$_devdel_name"
 podman rm -f "$_devdel_name"
 _dev_remove_ssh_config "$_devdel_name"
 echo "Container '${_devdel_name}' deleted."

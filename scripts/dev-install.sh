@@ -217,8 +217,9 @@ fi
 # --------------------------------------------------------------------------
 _dev_step_header 5 10 "Firewall rule for proxy port"
 
-readonly _DEV_FW_RULE_V4='rule priority="-1" family="ipv4" port port="9222" protocol="tcp" reject'
-readonly _DEV_FW_RULE_V6='rule priority="-1" family="ipv6" port port="9222" protocol="tcp" reject'
+_DEV_FW_PORT_END=$((9222 + ${DEV_PROXY_PORTS:-5} - 1))
+readonly _DEV_FW_RULE_V4="rule priority=\"-1\" family=\"ipv4\" port port=\"9222-${_DEV_FW_PORT_END}\" protocol=\"tcp\" reject"
+readonly _DEV_FW_RULE_V6="rule priority=\"-1\" family=\"ipv6\" port port=\"9222-${_DEV_FW_PORT_END}\" protocol=\"tcp\" reject"
 
 for _dev_fw_rule in "$_DEV_FW_RULE_V4" "$_DEV_FW_RULE_V6"; do
     if ! firewall-cmd --query-rich-rule="$_dev_fw_rule" --permanent &>/dev/null; then

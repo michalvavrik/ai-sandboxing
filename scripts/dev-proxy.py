@@ -4,6 +4,7 @@
 - Vertex AI: adds Google auth token to Claude Code's API requests
 - Git: bridges HTTP smart protocol from containers to GitHub via SSH key
 - MCP: reverse-proxies host MCP SSE servers (e.g. JetBrains) into containers
+- Branch isolation: per-container ports restrict git push to allowed branches
 """
 
 import atexit
@@ -15,6 +16,7 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -27,6 +29,7 @@ PROJECT_ID = os.environ.get("ANTHROPIC_VERTEX_PROJECT_ID", "")
 PID_FILE = os.environ.get("DEV_PROXY_PID_FILE", "/run/user/1000/dev-proxy.pid")
 PORT_FILE = os.environ.get("DEV_PROXY_PORT_FILE", "/run/user/1000/dev-proxy.port")
 LISTEN_PORT = int(os.environ.get("DEV_PROXY_PORT", "9222"))
+MAPPING_FILE = os.path.join(os.path.dirname(PID_FILE), "dev-proxy-ports.json")
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _KEYS_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "keys")
@@ -62,6 +65,10 @@ MCP_WHITELIST = set()
 
 MCP_SERVERS = {}
 
+_port_mapping = {}
+_port_mapping_lock = threading.Lock()
+_container_servers = {}
+
 
 def _load_mcp_servers():
     if not MCP_WHITELIST:
@@ -79,6 +86,76 @@ def _load_mcp_servers():
                 log.info("MCP server: %s -> %s:%d", name, parsed.hostname, parsed.port)
     except (FileNotFoundError, json.JSONDecodeError, KeyError) as exc:
         log.warning("Could not load MCP servers from %s: %s", claude_json, exc)
+
+
+def _load_port_mapping():
+    global _port_mapping
+    try:
+        with open(MAPPING_FILE) as f:
+            new_mapping = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        new_mapping = {}
+
+    with _port_mapping_lock:
+        _port_mapping = new_mapping
+
+    return new_mapping
+
+
+def _get_branch_prefix(port):
+    with _port_mapping_lock:
+        entry = _port_mapping.get(str(port))
+    if entry:
+        return entry.get("branch", "")
+    return None
+
+
+def _extract_push_refs(body):
+    """Extract ref names from a git-receive-pack pkt-line payload."""
+    refs = []
+    offset = 0
+    while offset + 4 <= len(body):
+        pkt_len_hex = body[offset:offset + 4]
+        try:
+            pkt_len = int(pkt_len_hex, 16)
+        except ValueError:
+            break
+        if pkt_len == 0:
+            break
+        if pkt_len < 4:
+            break
+        pkt_data = body[offset + 4:offset + pkt_len]
+        offset += pkt_len
+
+        line = pkt_data.split(b"\x00", 1)[0]
+        parts = line.split()
+        if len(parts) >= 3:
+            ref = parts[2].decode("utf-8", errors="replace")
+            refs.append(ref)
+
+    return refs
+
+
+def _check_push_allowed(port, body):
+    """Check if a git push is allowed on this port. Returns (allowed, reason)."""
+    if port == LISTEN_PORT:
+        return False, "git push not allowed on base proxy port"
+
+    branch_prefix = _get_branch_prefix(port)
+    if branch_prefix is None:
+        return False, f"no container registered for port {port}"
+
+    refs = _extract_push_refs(body)
+    if not refs:
+        return False, "could not extract refs from push payload"
+
+    allowed_full = f"refs/heads/{branch_prefix}"
+    allowed_sub = f"refs/heads/{branch_prefix}/"
+    for ref in refs:
+        if ref != allowed_full and not ref.startswith(allowed_sub):
+            return False, f"ref {ref} not allowed (must match {allowed_full} or {allowed_sub}*)"
+
+    return True, "ok"
 
 
 def _get_token():
@@ -156,6 +233,18 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         """POST /git-receive-pack or /git-upload-pack — bridge to SSH."""
         content_length = int(self.headers.get("Content-Length", 0))
         raw_body = self.rfile.read(content_length) if content_length > 0 else b""
+
+        if service == "git-receive-pack":
+            port = self.server.server_address[1]
+            allowed, reason = _check_push_allowed(port, raw_body)
+            if not allowed:
+                log.warning("BLOCKED push on port %d: %s", port, reason)
+                msg = f"Push rejected: {reason}\n".encode()
+                self.send_response(403)
+                self.send_header("Content-Length", str(len(msg)))
+                self.end_headers()
+                self.wfile.write(msg)
+                return
 
         proc = subprocess.Popen(
             [*_git_ssh_cmd(), f"{service} '{repo_path}'"],
@@ -394,8 +483,46 @@ def _remove_runtime_files():
             pass
 
 
+def _start_listener(port):
+    """Start a listener on a port in a daemon thread."""
+    try:
+        server = http.server.ThreadingHTTPServer(("0.0.0.0", port), _ProxyHandler)
+    except OSError as exc:
+        log.error("Could not bind port %d: %s", port, exc)
+        return None
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    log.info("Listener started on port %d", port)
+    return server
+
+
+def _sync_listeners():
+    """Start/stop per-container listeners to match the mapping file."""
+    mapping = _load_port_mapping()
+    mapped_ports = {int(p) for p in mapping}
+
+    for port in list(_container_servers):
+        if port not in mapped_ports:
+            _container_servers[port].shutdown()
+            del _container_servers[port]
+            log.info("Listener stopped on port %d", port)
+
+    for port in mapped_ports:
+        if port not in _container_servers:
+            server = _start_listener(port)
+            if server:
+                _container_servers[port] = server
+
+
+def _sighup_handler(signum, _frame):
+    log.info("SIGHUP received, reloading port mapping")
+    threading.Thread(target=_sync_listeners, daemon=True).start()
+
+
 def _shutdown_handler(signum, _frame):
     log.info("Received signal %d, shutting down", signum)
+    for server in _container_servers.values():
+        server.shutdown()
     _remove_runtime_files()
     sys.exit(0)
 
@@ -403,6 +530,7 @@ def _shutdown_handler(signum, _frame):
 def main():
     signal.signal(signal.SIGTERM, _shutdown_handler)
     signal.signal(signal.SIGINT, _shutdown_handler)
+    signal.signal(signal.SIGHUP, _sighup_handler)
 
     _load_mcp_servers()
 
@@ -413,7 +541,9 @@ def main():
     _write_file(PORT_FILE, str(port))
     atexit.register(_remove_runtime_files)
 
-    log.info("Listening on 0.0.0.0:%d", port)
+    _sync_listeners()
+
+    log.info("Listening on 0.0.0.0:%d (base)", port)
     log.info("Git SSH key: %s", SSH_KEY)
     log.info("Vertex AI: %s", UPSTREAM_HOST)
     log.info("MCP servers: %s", list(MCP_SERVERS.keys()) or "none")

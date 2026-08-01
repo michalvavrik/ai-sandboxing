@@ -314,6 +314,9 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 - /opt/project-src — ${_org}/${_repo} with full commit history (host mount). Use for \`git log\`, \`git blame\`, \`git show\`.${_ref_repos}
 - /tmp/workspace — additional documents copied in by the user (if any)
 
+## Git branches
+You can only push to branches under \`dev-auto/\$(hostname)/\`. If you need extra branches, name them \`dev-auto/\$(hostname)/<name>\`.
+
 ## Task context
 - .pr — PR details (\`gh pr view\` output), present when working on a pull request
 - .issue — issue details (\`gh issue view\` output), present when working on an issue
@@ -324,7 +327,7 @@ CLAUDEMD
         (runuser -u dev -- git -C /workspace status; cat /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe) &>/dev/null &
     fi
 
-    _target_branch="dev-auto/$(hostname)"
+    _target_branch="dev-auto/$(hostname)/main"
 
     # PR checkout and details (first run only — subsequent starts reuse the working branch)
     if [ -n "${DEV_PR_NUMBER:-}" ]; then
