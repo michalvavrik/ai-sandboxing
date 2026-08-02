@@ -25,22 +25,11 @@ if [[ -n "$_devdel_template_key" ]]; then
     fi
 fi
 
-# Revoke Gemini OAuth token
-_devdel_gemini_creds=$(podman cp "${_devdel_name}:/home/dev/.gemini/oauth_creds.json" - 2>/dev/null | tar -xO 2>/dev/null) || true
-_devdel_gemini_token=""
-if [[ -n "$_devdel_gemini_creds" ]]; then
-    _devdel_gemini_token=$(echo "$_devdel_gemini_creds" | jq -r '.refresh_token // empty' 2>/dev/null) || true
-fi
-_devdel_gemini_used=$(podman cp "${_devdel_name}:/home/dev/.gemini/settings.json" - 2>/dev/null | tar -xO 2>/dev/null) || true
-
-if [[ -n "$_devdel_gemini_token" ]]; then
-    curl -sf -X POST "https://oauth2.googleapis.com/revoke?token=${_devdel_gemini_token}" \
-        -H "Content-Type: application/x-www-form-urlencoded" \
-        && echo "Gemini OAuth token revoked." \
-        || echo "WARNING: Failed to revoke Gemini OAuth token — revoke manually at myaccount.google.com/permissions" >&2
-elif [[ -n "$_devdel_gemini_used" ]]; then
-    echo "WARNING: Gemini CLI was used but no OAuth token found — it may have been deleted or moved." >&2
-    echo "         Revoke manually at: https://myaccount.google.com/permissions" >&2
+# Revoke Antigravity CLI OAuth token
+# TODO: Update credential path once we discover where agy stores tokens empirically
+_devdel_agy_settings=$(podman cp "${_devdel_name}:/home/dev/.gemini/antigravity-cli/settings.json" - 2>/dev/null | tar -xO 2>/dev/null) || true
+if [[ -n "$_devdel_agy_settings" ]]; then
+    echo "WARNING: Antigravity CLI was used — revoke token manually at: https://myaccount.google.com/permissions" >&2
 fi
 
 _dev_release_proxy_port "$_devdel_name"

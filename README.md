@@ -96,20 +96,17 @@ dev https://github.com/your-user/keycloak-client/tree/my-branch
 # Inside the container:
 claude                     # start Claude Code (permissions bypassed via env var)
 bob                        # start Bob Shell (API key injected securely)
+agy                        # start Antigravity CLI (Google Gemini models)
 ```
 
 Container name is remembered — after `dev new foo`, just `dev enter`, `dev see`, `dev cp`, etc.
 Use `dev use <name>` to set the current container from a different terminal.
 
-## Gemini CLI
+## Antigravity CLI (Google Gemini models)
 
-```bash
-dev gemini fix-auth         # authenticate + launch Gemini CLI (SSH tunnel for OAuth)
-```
+On first run inside a container, `agy` detects the SSH environment and prints an auth URL — open it in your host browser, sign in with your Google account, and paste the code back. Subsequent runs use cached tokens.
 
-First run opens an OAuth port forward — copy the printed URL into your host browser. After consent, the callback reaches the container through the SSH tunnel and authentication completes. Subsequent `gemini` runs from `dev enter` use cached tokens without the tunnel.
-
-Tokens are automatically revoked when you run `dev delete`. If the token file is missing but Gemini was used, a warning is shown with a manual revocation URL (`myaccount.google.com/permissions`).
+On `dev delete`, a warning reminds you to revoke the token at `myaccount.google.com/permissions` if the CLI was used.
 
 ## PR review workflow
 
