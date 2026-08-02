@@ -41,7 +41,7 @@ if [[ -f "$_devdel_agy_disk" ]] && debugfs -R "stat agy-used" "$_devdel_agy_disk
 fi
 
 if [[ -n "$_devdel_agy_refresh" ]]; then
-    curl -sf -X POST "https://oauth2.googleapis.com/revoke?token=${_devdel_agy_refresh}" \
+    curl -sfo /dev/null -X POST "https://oauth2.googleapis.com/revoke?token=${_devdel_agy_refresh}" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         && echo "Antigravity CLI OAuth token revoked." \
         || echo "WARNING: Failed to revoke Antigravity CLI token — revoke manually at myaccount.google.com/permissions" >&2
