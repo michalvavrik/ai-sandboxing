@@ -298,7 +298,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 - /opt/workspace/${_ref_name} — ${_ref_id} latest main (shallow, for browsing source)"
         done
 
-        runuser -u dev -- bash -c "cat > /workspace/CLAUDE.md" <<CLAUDEMD
+        runuser -u dev -- bash -c "cat > /workspace/AGENTS.md" <<AGENTSMD
 # Sandbox environment for ${_org}/${_repo}
 
 - /workspace is a shallow clone (1 commit). Work here.
@@ -320,8 +320,9 @@ You can only push to branches under \`dev-auto/\$(hostname)/\`. If you need extr
 ## Task context
 - .pr — PR details (\`gh pr view\` output), present when working on a pull request
 - .issue — issue details (\`gh issue view\` output), present when working on an issue
-CLAUDEMD
-        runuser -u dev -- bash -c 'printf "CLAUDE.md\n.pr\n.issue\n.pnpm-store\n" >> /workspace/.git/info/exclude'
+AGENTSMD
+        runuser -u dev -- bash -c 'ln -sf AGENTS.md /workspace/CLAUDE.md && ln -sf AGENTS.md /workspace/GEMINI.md'
+        runuser -u dev -- bash -c 'printf "AGENTS.md\nCLAUDE.md\nGEMINI.md\n.pr\n.issue\n.pnpm-store\n" >> /workspace/.git/info/exclude'
         runuser -u dev -- git -C /workspace config core.untrackedCache true 2>/dev/null || true
         # Warm virtio-fs dentry cache for workspace + Claude Code binary (async)
         (runuser -u dev -- git -C /workspace status; cat /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe) &>/dev/null &
