@@ -1,7 +1,9 @@
 {
   "model": "claude-opus-4-6[1m]",
   "theme": "dark-daltonized",
+  "skipDangerousModePermissionPrompt": true,
   "permissions": {
+    "defaultMode": "bypassPermissions",
     "allow": [
       "Bash(*)",
       "Read(*)",

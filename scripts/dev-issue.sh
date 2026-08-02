@@ -16,6 +16,12 @@ elif [[ "$_devissue_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/(tree|pull/new
     readonly _devissue_type="tree"
     readonly _devissue_number=""
     readonly _devissue_branch="${BASH_REMATCH[4]}"
+elif [[ "$_devissue_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/compare/.*\.\.\.([^:]+):([^:]+):(.+) ]]; then
+    readonly _devissue_org="${BASH_REMATCH[3]}"
+    readonly _devissue_repo="${BASH_REMATCH[4]}"
+    readonly _devissue_type="tree"
+    readonly _devissue_number=""
+    readonly _devissue_branch="${BASH_REMATCH[5]%%\?*}"
 else
     echo "Error: could not parse GitHub URL" >&2
     echo "Expected: https://github.com/{org}/{repo}/{issues|pull}/{number}" >&2
@@ -30,7 +36,11 @@ if [[ "$_devissue_type" == "tree" ]]; then
         _devissue_template_key=$(_dev_find_template_key_by_repo "$_devissue_repo") || true
     fi
     readonly _devissue_template_key="${_devissue_template_key:-${_devissue_org}/${_devissue_repo}}"
-    readonly _devissue_name="${_devissue_repo}-${_devissue_branch//\//-}"
+    if [[ "$_devissue_branch" =~ ^dev-auto/([^/]+) ]]; then
+        readonly _devissue_name="${BASH_REMATCH[1]}"
+    else
+        readonly _devissue_name="${_devissue_repo}-${_devissue_branch//\//-}"
+    fi
     echo "Branch ${_devissue_branch} in ${_devissue_org}/${_devissue_repo} (template: ${_devissue_template_key})"
 else
     readonly _devissue_template_key="${_devissue_org}/${_devissue_repo}"
