@@ -109,7 +109,7 @@ RUN echo '{"hasCompletedOnboarding":true,"hasAcceptedTerms":true,"hasSeenTasksHi
 
 # ── Antigravity CLI sandbox settings ─────────────────────────────────────────
 RUN mkdir -p /home/dev/.gemini/antigravity-cli/cache \
-    && echo '{"trustedWorkspaces":["/workspace"]}' > /home/dev/.gemini/antigravity-cli/settings.json \
+    && echo '{"trustedWorkspaces":["/workspace"],"toolPermission":"always-proceed","artifactReviewPolicy":"always-proceed","enableTerminalSandbox":"off","allowNonWorkspaceAccess":"on","model":"Gemini 3.1 Pro (High)"}' > /home/dev/.gemini/antigravity-cli/settings.json \
     && echo '{"consumerOnboardingComplete":true,"enterpriseOnboardingComplete":false,"onboardingComplete":true}' > /home/dev/.gemini/antigravity-cli/cache/onboarding.json \
     && chown -R dev:dev /home/dev/.gemini
 
