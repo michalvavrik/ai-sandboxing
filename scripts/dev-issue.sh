@@ -10,12 +10,12 @@ if [[ "$_devissue_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/(issues|pull)/([
     readonly _devissue_type="${BASH_REMATCH[3]}"
     readonly _devissue_number="${BASH_REMATCH[4]}"
     readonly _devissue_branch=""
-elif [[ "$_devissue_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/tree/(.+)$ ]]; then
+elif [[ "$_devissue_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/(tree|pull/new)/(.+)$ ]]; then
     readonly _devissue_org="${BASH_REMATCH[1]}"
     readonly _devissue_repo="${BASH_REMATCH[2]}"
     readonly _devissue_type="tree"
     readonly _devissue_number=""
-    readonly _devissue_branch="${BASH_REMATCH[3]}"
+    readonly _devissue_branch="${BASH_REMATCH[4]}"
 else
     echo "Error: could not parse GitHub URL" >&2
     echo "Expected: https://github.com/{org}/{repo}/{issues|pull}/{number}" >&2

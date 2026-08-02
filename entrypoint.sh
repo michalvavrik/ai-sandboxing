@@ -315,7 +315,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 - /tmp/workspace — additional documents copied in by the user (if any)
 
 ## Git branches
-You can only push to branches under \`dev-auto/\$(hostname)/\`. If you need extra branches, name them \`dev-auto/\$(hostname)/<name>\`.
+You can only push to branches under \`dev-auto/$(hostname)/\`. If you need extra branches, name them \`dev-auto/$(hostname)/<name>\`.
 
 ## Task context
 - .pr — PR details (\`gh pr view\` output), present when working on a pull request
