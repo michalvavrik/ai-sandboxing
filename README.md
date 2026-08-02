@@ -31,7 +31,6 @@ Ephemeral, microVM-isolated dev containers for AI-assisted development. Each con
 ## Prerequisites
 
 - Clone this repo to `~/sandboxing`: `git clone git@github.com:michalvavrik/ai-sandboxing.git ~/sandboxing`
-- JetBrains features require IntelliJ IDEA and Gateway installed via Toolbox
 
 ## Configuration
 
@@ -85,7 +84,6 @@ dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
 dev cpout pom.xml          # copy from container (relative to /workspace)
 dev cpout /tmp/file.txt    # copy from container (absolute path)
 dev use fix-auth           # set current container without entering
-dev idea                   # open container in IntelliJ IDEA via Gateway
 dev list                   # show all dev containers
 dev pull                   # pull newer image (runs in background on login)
 
@@ -126,15 +124,6 @@ dev https://github.com/keycloak/keycloak/pull/50801
 ## MCP server proxy
 
 The host proxy can reverse-proxy MCP SSE servers running on the host into containers. Only whitelisted servers are proxied (see `MCP_WHITELIST` in `scripts/dev-proxy.py`). The entrypoint auto-discovers available servers and injects the `mcpServers` config into the container's Claude Code settings at startup.
-
-## IntelliJ IDEA (via Gateway)
-
-If you want to connect your IDE directly to a container (for interactive editing), `dev idea` opens JetBrains Gateway:
-
-1. `dev idea` — opens Gateway, prints host name
-2. In Gateway: **SSH Connection** → enter the host name shown, user `dev`, leave password empty
-3. Select `/workspace` as the project directory
-4. Gateway installs the backend and opens IntelliJ
 
 ## Projects
 

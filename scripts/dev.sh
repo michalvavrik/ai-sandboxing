@@ -35,9 +35,6 @@ case "$_dev_cmd" in
   cpout)
     DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-cpout.sh" "$@"
     ;;
-  idea)
-    "${_dev_dir}/dev-idea.sh" "${1:-$DEV_LAST_CONTAINER}"
-    ;;
   use)
     DEV_LAST_CONTAINER="${1:?'Usage: dev use <name>'}"
     echo "Using: ${DEV_LAST_CONTAINER}"
@@ -56,7 +53,7 @@ case "$_dev_cmd" in
     DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     ;;
   help|*)
-    echo "Usage: dev {new|enter|delete|stop|start|see|cp|cpout|use|idea|list|pull|install|<url>}"
+    echo "Usage: dev {new|enter|delete|start|see|cp|cpout|use|list|pull|install|<url>}"
     echo ""
     echo "  new <name>     Create and enter a new dev container"
     echo "  enter [name]   Enter an existing container"
@@ -66,7 +63,6 @@ case "$_dev_cmd" in
     echo "  cp <path>      Copy files/dirs into container's /tmp/workspace"
     echo "  cpout <path>   Copy files/dirs from container to current dir"
     echo "  use <name>     Set current container without entering"
-    echo "  idea [name]    Open container in IntelliJ IDEA via Gateway"
     echo "  list           List all dev containers"
     echo "  pull           Pull newer images and fetch project sources (runs on login)"
     echo "  install        Install prerequisites and configure"

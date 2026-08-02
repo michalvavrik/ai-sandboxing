@@ -297,7 +297,7 @@ else
 fi
 
 
-# SSH config Include for container access (Gateway, dev enter, dev see, dev cp)
+# SSH config Include for container access (dev enter, dev see, dev cp)
 # Uses wildcard in tmpfs — silently ignored when no containers exist, wiped on reboot
 if ! grep -qF 'dev-sandbox-ssh' "${HOME}/.ssh/config" 2>/dev/null; then
     sed -i "1i Include /run/user/$(id -u)/dev-sandbox-ssh*.conf" "${HOME}/.ssh/config"
