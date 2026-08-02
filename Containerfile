@@ -35,6 +35,9 @@ RUN printf '[claude-code]\nname=Claude Code\nbaseurl=https://downloads.claude.ai
         > /etc/yum.repos.d/claude-code.repo \
     && dnf install -y --setopt=retries=5 claude-code && dnf clean all
 
+# ── Gemini CLI ───────────────────────────────────────────────────────────────
+RUN npm install -g @google/gemini-cli
+
 # ── Bob Shell (npm — no dnf package available) ───────────────────────────────
 RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash -s -- --pm npm
 

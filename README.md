@@ -8,7 +8,7 @@ This tool is (and will be even more) customized to automate my workflow and limi
 
 ## About this tool
 
-Ephemeral, microVM-isolated dev containers for AI-assisted development. Each container runs in a krun microVM (KVM-backed), gets its own kernel, and has no access to your host filesystem or services. A single container image ships both Java and Go toolchains; the template's `lang` field controls runtime behavior (Kind cluster, Maven cache, environment).
+Ephemeral, microVM-isolated dev containers for AI-assisted development. Each container runs in a krun microVM (KVM-backed), gets its own kernel, and has no access to your host filesystem or services. A single container image ships both Java and Go toolchains; the template's `profiles` field controls runtime behavior (Kind cluster, Maven cache, environment).
 
 ## Security model
 
@@ -100,6 +100,16 @@ bob                        # start Bob Shell (API key injected securely)
 
 Container name is remembered — after `dev new foo`, just `dev enter`, `dev see`, `dev cp`, etc.
 Use `dev use <name>` to set the current container from a different terminal.
+
+## Gemini CLI
+
+```bash
+dev gemini fix-auth         # authenticate + launch Gemini CLI (SSH tunnel for OAuth)
+```
+
+First run opens an OAuth port forward — copy the printed URL into your host browser. After consent, the callback reaches the container through the SSH tunnel and authentication completes. Subsequent `gemini` runs from `dev enter` use cached tokens without the tunnel.
+
+Tokens are automatically revoked when you run `dev delete`. If the token file is missing but Gemini was used, a warning is shown with a manual revocation URL (`myaccount.google.com/permissions`).
 
 ## PR review workflow
 

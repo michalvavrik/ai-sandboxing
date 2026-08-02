@@ -38,6 +38,10 @@ case "$_dev_cmd" in
   cpout)
     DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-cpout.sh" "$@"
     ;;
+  gemini)
+    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
+    "${_dev_dir}/dev-gemini.sh" "$DEV_LAST_CONTAINER"
+    ;;
   idea)
     "${_dev_dir}/dev-idea.sh" "${1:-$DEV_LAST_CONTAINER}"
     ;;
@@ -70,6 +74,7 @@ case "$_dev_cmd" in
     echo "  cp <path>      Copy files/dirs into container's /tmp/workspace"
     echo "  cpout <path>   Copy files/dirs from container to current dir"
     echo "  use <name>     Set current container without entering"
+    echo "  gemini [name]  Authenticate and launch Gemini CLI (SSH tunnel for OAuth)"
     echo "  idea [name]    Open container in IntelliJ IDEA via Gateway"
     echo "  list           List all dev containers"
     echo "  pull           Pull newer images and fetch project sources (runs on login)"
