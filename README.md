@@ -13,10 +13,11 @@ Ephemeral, microVM-isolated dev containers for AI-assisted development. Each con
 ## Security model
 
 - **krun microVM** — hardware-isolated guest kernel
-- **Non-root agent** — Claude Code and Bob Shell run as unprivileged `dev` user, cannot modify iptables or escalate
+- **Non-root agent** — Claude Code, Bob Shell, and Antigravity CLI run as unprivileged `dev` user, cannot modify iptables or escalate
 - **Host-side proxy** — Google Vertex AI credentials stay on the host; git push is bridged from container HTTP to GitHub SSH using the host's SSH key
 - **Credential-free image** — only a read-only GitHub token, a container-only SSH key, and a Bob Shell API key are injected at runtime
 - **No write credentials in container** — git push goes through the host proxy which adds auth; container has zero GitHub write access
+- **Antigravity CLI OAuth tokens are exposed to the agent** — stored in plaintext on the container filesystem, readable by model-invoked tool calls. `dev delete` revokes the token automatically; warns if the token file is missing
 - **Per-container branch isolation** — each container gets a unique proxy port (9223+), locked by nftables. The proxy only allows `git push` to `dev-auto/<container-name>` and sub-branches. The agent cannot push to other containers' branches or upstream branches. Port assignment survives container stop/start; released on `dev delete`
 - **Read-only GitHub token** — for `gh` CLI rate limits on public repos; cannot write to any repo
 - **Bob Shell API key isolation** — the API key is never in the `dev` user's environment; a setuid launcher reads it from a protected file, `LD_PRELOAD` strips it from subprocess environments, and `PR_SET_DUMPABLE=0` blocks `/proc` inspection
@@ -106,7 +107,7 @@ Use `dev use <name>` to set the current container from a different terminal.
 
 On first run inside a container, `agy` detects the SSH environment and prints an auth URL — open it in your host browser, sign in with your Google account, and paste the code back. Subsequent runs use cached tokens.
 
-On `dev delete`, a warning reminds you to revoke the token at `myaccount.google.com/permissions` if the CLI was used.
+Google OAuth tokens live in plaintext inside the container — the agent can read them. `dev delete` revokes the token; always verify revocation or check `myaccount.google.com/permissions`.
 
 ## PR review workflow
 

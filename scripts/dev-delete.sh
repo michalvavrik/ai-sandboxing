@@ -26,10 +26,21 @@ if [[ -n "$_devdel_template_key" ]]; then
 fi
 
 # Revoke Antigravity CLI OAuth token
-# TODO: Update credential path once we discover where agy stores tokens empirically
-_devdel_agy_settings=$(podman cp "${_devdel_name}:/home/dev/.gemini/antigravity-cli/settings.json" - 2>/dev/null | tar -xO 2>/dev/null) || true
-if [[ -n "$_devdel_agy_settings" ]]; then
-    echo "WARNING: Antigravity CLI was used — revoke token manually at: https://myaccount.google.com/permissions" >&2
+_devdel_agy_token_file=$(podman cp "${_devdel_name}:/home/dev/.gemini/antigravity-cli/antigravity-oauth-token" - 2>/dev/null | tar -xO 2>/dev/null) || true
+_devdel_agy_refresh=""
+if [[ -n "$_devdel_agy_token_file" ]]; then
+    _devdel_agy_refresh=$(echo "$_devdel_agy_token_file" | jq -r '.token.refresh_token // empty' 2>/dev/null) || true
+fi
+_devdel_agy_onboarding=$(podman cp "${_devdel_name}:/home/dev/.gemini/antigravity-cli/cache/onboarding.json" - 2>/dev/null | tar -xO 2>/dev/null) || true
+
+if [[ -n "$_devdel_agy_refresh" ]]; then
+    curl -sf -X POST "https://oauth2.googleapis.com/revoke?token=${_devdel_agy_refresh}" \
+        -H "Content-Type: application/x-www-form-urlencoded" \
+        && echo "Antigravity CLI OAuth token revoked." \
+        || echo "WARNING: Failed to revoke Antigravity CLI token — revoke manually at myaccount.google.com/permissions" >&2
+elif [[ -n "$_devdel_agy_onboarding" ]]; then
+    echo "WARNING: Antigravity CLI was used but no token found — it may have been deleted or moved." >&2
+    echo "         Revoke manually at: https://myaccount.google.com/permissions" >&2
 fi
 
 _dev_release_proxy_port "$_devdel_name"

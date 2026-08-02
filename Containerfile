@@ -99,6 +99,12 @@ COPY --chown=dev:dev configs/claude-settings.json /home/dev/.claude/settings.jso
 RUN echo '{"hasCompletedOnboarding":true,"hasAcceptedTerms":true,"hasSeenTasksHint":true,"numStartups":1,"autoUpdates":false,"effortLevel":"max","projects":{"/workspace":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/keycloak":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/quarkus":{"allowedTools":[],"hasTrustDialogAccepted":true}}}' > /home/dev/.claude.json \
     && chown dev:dev /home/dev/.claude.json
 
+# ── Antigravity CLI sandbox settings ─────────────────────────────────────────
+RUN mkdir -p /home/dev/.gemini/antigravity-cli/cache \
+    && echo '{"trustedWorkspaces":["/workspace"]}' > /home/dev/.gemini/antigravity-cli/settings.json \
+    && echo '{"consumerOnboardingComplete":true,"enterpriseOnboardingComplete":false,"onboardingComplete":true}' > /home/dev/.gemini/antigravity-cli/cache/onboarding.json \
+    && chown -R dev:dev /home/dev/.gemini
+
 # ── Pre-baked project repos (shallow clone — workspace-ready) ────────────────
 RUN mkdir -p /opt/workspace && chown dev:dev /opt/workspace
 USER dev
