@@ -25,21 +25,28 @@ if [[ -n "$_devdel_template_key" ]]; then
     fi
 fi
 
-# Revoke Antigravity CLI OAuth token
-_devdel_agy_token_file=$(podman cp "${_devdel_name}:/home/dev/.gemini/antigravity-cli/antigravity-oauth-token" - 2>/dev/null | tar -xO 2>/dev/null) || true
+# Revoke Antigravity CLI OAuth token (read from bounded disk image via debugfs — works whether container is running or stopped)
+_devdel_agy_disk="${DEV_DISK_DIR}/${_devdel_name}.img"
 _devdel_agy_refresh=""
-if [[ -n "$_devdel_agy_token_file" ]]; then
-    _devdel_agy_refresh=$(echo "$_devdel_agy_token_file" | jq -r '.token.refresh_token // empty' 2>/dev/null) || true
+if [[ -f "$_devdel_agy_disk" ]]; then
+    _devdel_agy_token_file=$(debugfs -R "cat home-upper/.gemini/antigravity-cli/antigravity-oauth-token" "$_devdel_agy_disk" 2>/dev/null) || true
+    if [[ -n "$_devdel_agy_token_file" ]]; then
+        _devdel_agy_refresh=$(echo "$_devdel_agy_token_file" | jq -r '.token.refresh_token // empty' 2>/dev/null) || true
+    fi
 fi
-_devdel_agy_onboarding=$(podman cp "${_devdel_name}:/home/dev/.gemini/antigravity-cli/cache/onboarding.json" - 2>/dev/null | tar -xO 2>/dev/null) || true
+
+_devdel_agy_used=false
+if [[ -f "$_devdel_agy_disk" ]] && debugfs -R "stat agy-used" "$_devdel_agy_disk" &>/dev/null; then
+    _devdel_agy_used=true
+fi
 
 if [[ -n "$_devdel_agy_refresh" ]]; then
     curl -sf -X POST "https://oauth2.googleapis.com/revoke?token=${_devdel_agy_refresh}" \
         -H "Content-Type: application/x-www-form-urlencoded" \
         && echo "Antigravity CLI OAuth token revoked." \
         || echo "WARNING: Failed to revoke Antigravity CLI token — revoke manually at myaccount.google.com/permissions" >&2
-elif [[ -n "$_devdel_agy_onboarding" ]]; then
-    echo "WARNING: Antigravity CLI was used but no token found — it may have been deleted or moved." >&2
+elif [[ "$_devdel_agy_used" == true ]]; then
+    echo "WARNING: Antigravity CLI was used but no OAuth token found — it may have been deleted." >&2
     echo "         Revoke manually at: https://myaccount.google.com/permissions" >&2
 fi
 

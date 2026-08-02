@@ -43,6 +43,14 @@ USER root
 # ── Bob Shell (npm — no dnf package available) ───────────────────────────────
 RUN curl -fsSL https://bob.ibm.com/download/bobshell.sh | bash -s -- --pm npm
 
+# ── Antigravity CLI usage marker (setuid root — tamper-proof flag for token revocation)
+COPY agy-mark.c /tmp/build/
+RUN gcc -O2 -o /usr/local/bin/agy-mark /tmp/build/agy-mark.c \
+    && chmod 4711 /usr/local/bin/agy-mark \
+    && rm -f /tmp/build/agy-mark.c \
+    && printf '#!/bin/bash\n/usr/local/bin/agy-mark 2>/dev/null\nexec /home/dev/.local/bin/agy "$@"\n' > /usr/local/bin/agy \
+    && chmod 755 /usr/local/bin/agy
+
 # ── Bob Shell secure launcher ────────────────────────────────────────────────
 COPY bob-env-filter.c bob-run.c /tmp/build/
 RUN gcc -shared -fPIC -O2 -o /usr/local/lib/bob-env-filter.so /tmp/build/bob-env-filter.c -ldl \

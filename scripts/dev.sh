@@ -22,9 +22,6 @@ case "$_dev_cmd" in
     DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
     "${_dev_dir}/dev-enter.sh" "$DEV_LAST_CONTAINER"
     ;;
-  stop)
-    "${_dev_dir}/dev-stop.sh" "${1:-${DEV_LAST_CONTAINER:-}}"
-    ;;
   start)
     DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
     "${_dev_dir}/dev-start.sh" "$DEV_LAST_CONTAINER"
@@ -64,7 +61,6 @@ case "$_dev_cmd" in
     echo "  new <name>     Create and enter a new dev container"
     echo "  enter [name]   Enter an existing container"
     echo "  delete [name]  Remove a container"
-    echo "  stop [name]    Stop a container"
     echo "  start [name]   Start a stopped container"
     echo "  see [name]     Sync changes to host and show diff"
     echo "  cp <path>      Copy files/dirs into container's /tmp/workspace"
