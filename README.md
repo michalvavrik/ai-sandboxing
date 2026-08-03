@@ -80,6 +80,7 @@ dev stop fix-auth          # stop (preserves state)
 dev start fix-auth         # resume stopped container
 dev delete fix-auth        # remove permanently
 dev see fix-auth           # push from container, pull to host, show diff
+dev show fix-auth          # push host changes into container
 dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
 dev cpout pom.xml          # copy from container (relative to /workspace)
 dev cpout /tmp/file.txt    # copy from container (absolute path)

@@ -7,8 +7,8 @@ _comp_prev="$2"
 _comp_cur="$3"
 
 if [[ $_comp_cword -eq 1 ]]; then
-    compgen -W "new enter delete start see cp cpout use list pull install" -- "$_comp_cur"
-elif [[ $_comp_cword -eq 2 && "$_comp_prev" =~ ^(enter|delete|start|see|use)$ ]]; then
+    compgen -W "new enter delete start see show cp cpout use list pull install" -- "$_comp_cur"
+elif [[ $_comp_cword -eq 2 && "$_comp_prev" =~ ^(enter|delete|start|see|show|use)$ ]]; then
     compgen -W "$(podman ps -a --filter=label=${DEV_LABEL} --format '{{.Names}}' 2>/dev/null)" -- "$_comp_cur"
 elif [[ "$_comp_prev" == "cpout" ]]; then
     _comp_name=$(_dev_resolve_name "" 2>/dev/null) || exit 0

@@ -119,10 +119,39 @@ _dev_resolve_name() {
     echo "$_dev_name"
 }
 
+_dev_rebuild_port_mapping() {
+    local _dev_mapfile
+    _dev_mapfile="$(_dev_proxy_mapping_file)"
+
+    if [[ -f "$_dev_mapfile" ]]; then
+        return 0
+    fi
+
+    local _dev_mapping="{}"
+    local _dev_cname _dev_port
+    while read -r _dev_cname; do
+        [[ -z "$_dev_cname" ]] && continue
+        _dev_port=$(podman inspect --format '{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$_dev_cname" 2>/dev/null \
+            | sed -n 's/^PROXY_PORT=//p')
+        [[ -z "$_dev_port" ]] && continue
+        _dev_mapping=$(echo "$_dev_mapping" | jq --arg p "$_dev_port" \
+            --arg c "$_dev_cname" \
+            --arg b "dev-auto/${_dev_cname}" \
+            '. + {($p): {container: $c, branch: $b}}')
+    done < <(podman ps -a --filter="label=${DEV_LABEL}" --format '{{.Names}}' 2>/dev/null)
+
+    if [[ "$_dev_mapping" != "{}" ]]; then
+        echo "$_dev_mapping" > "$_dev_mapfile"
+        echo "Rebuilt proxy port mapping from existing containers."
+    fi
+}
+
 _dev_ensure_proxy() {
     local _dev_pf _dev_ptf
     _dev_pf="$(_dev_pid_file)"
     _dev_ptf="$(_dev_port_file)"
+
+    _dev_rebuild_port_mapping
 
     if [[ -f "$_dev_pf" ]] && kill -0 "$(cat "$_dev_pf")" 2>/dev/null; then
         return 0
