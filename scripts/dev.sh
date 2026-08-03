@@ -30,7 +30,8 @@ case "$_dev_cmd" in
     "${_dev_dir}/dev-see.sh" "${1:-${DEV_LAST_CONTAINER:-}}"
     ;;
   show)
-    "${_dev_dir}/dev-show.sh" "${1:-${DEV_LAST_CONTAINER:-}}"
+    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
+    "${_dev_dir}/dev-show.sh" "$DEV_LAST_CONTAINER"
     ;;
   cp)
     DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-cp.sh" "$@"
