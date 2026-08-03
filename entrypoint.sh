@@ -243,15 +243,19 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 
         _clone_base="/mnt/bounded/repo-base"
         if [[ -d /mnt/bounded ]]; then
-            mkdir -p "$_clone_base"
-            chown dev:dev "$_clone_base"
-            if [ -d /opt/project-src/.git ]; then
-                echo "Cloning workspace from host source (shallow)..."
-                runuser -u dev -- git clone --depth 1 file:///opt/project-src "$_clone_base"
+            if [ -d "${_clone_base}/.git" ]; then
+                echo "Reusing existing workspace clone..."
             else
-                echo "No host source mounted, cloning from GitHub (shallow)..."
-                runuser -u dev -- git clone --depth 1 \
-                    "https://github.com/${_org}/${_repo}.git" "$_clone_base"
+                mkdir -p "$_clone_base"
+                chown dev:dev "$_clone_base"
+                if [ -d /opt/project-src/.git ]; then
+                    echo "Cloning workspace from host source (shallow)..."
+                    runuser -u dev -- git clone --depth 1 file:///opt/project-src "$_clone_base"
+                else
+                    echo "No host source mounted, cloning from GitHub (shallow)..."
+                    runuser -u dev -- git clone --depth 1 \
+                        "https://github.com/${_org}/${_repo}.git" "$_clone_base"
+                fi
             fi
             mkdir -p /mnt/bounded/ws-upper /mnt/bounded/ws-work
             chown dev:dev /mnt/bounded/ws-upper /mnt/bounded/ws-work
