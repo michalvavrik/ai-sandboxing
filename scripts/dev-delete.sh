@@ -36,7 +36,7 @@ if [[ -f "$_devdel_agy_disk" ]]; then
 fi
 
 _devdel_agy_used=false
-if [[ -f "$_devdel_agy_disk" ]] && debugfs -R "stat agy-used" "$_devdel_agy_disk" &>/dev/null; then
+if [[ -f "$_devdel_agy_disk" ]] && ! debugfs -R "stat agy-used" "$_devdel_agy_disk" 2>&1 | grep -q "File not found"; then
     _devdel_agy_used=true
 fi
 
