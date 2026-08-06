@@ -231,3 +231,7 @@ Result:
   ├── Child processes don't inherit API key (LD_PRELOAD strips it)
   └── Key file unreadable by dev (owned by bobrunner)
 ```
+
+## Known issues
+
+- After container re-entrance (e.g. after host restart), Podman running inside the container does not work with Testcontainers (`LogMessageWaitStrategy` is not working). Arguably, this happens because the logging driver which is usually `journald` is unset.
