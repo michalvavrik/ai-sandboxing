@@ -52,12 +52,16 @@ case "$_dev_cmd" in
   install)
     "${_dev_dir}/dev-install.sh"
     ;;
+  .)
+    "${_dev_dir}/dev-local.sh"
+    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
+    ;;
   http*|https*)
     "${_dev_dir}/dev-issue.sh" "$_dev_cmd"
     DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     ;;
   help|*)
-    echo "Usage: dev {new|enter|delete|start|see|show|cp|cpout|use|list|pull|install|<url>}"
+    echo "Usage: dev {new|enter|delete|start|see|show|cp|cpout|use|list|pull|install|.|<url>}"
     echo ""
     echo "  new <name>     Create and enter a new dev container"
     echo "  enter [name]   Enter an existing container"
@@ -71,6 +75,7 @@ case "$_dev_cmd" in
     echo "  list           List all dev containers"
     echo "  pull           Pull newer images and fetch project sources (runs on login)"
     echo "  install        Install prerequisites and configure"
+    echo "  .              Create/enter container from current git project"
     echo "  <github-url>   Create/enter container for a GitHub issue/PR"
     ;;
 esac

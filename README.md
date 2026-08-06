@@ -88,6 +88,9 @@ dev use fix-auth           # set current container without entering
 dev list                   # show all dev containers
 dev pull                   # pull newer image (runs in background on login)
 
+# From the current git project directory:
+cd ~/sources/keycloak && dev .   # detect template, push local HEAD to container
+
 # From a GitHub issue, PR, or branch URL:
 dev https://github.com/keycloak/keycloak/issues/50167
 dev https://github.com/keycloak/keycloak/pull/50801
@@ -107,6 +110,32 @@ Use `dev use <name>` to set the current container from a different terminal.
 On first run inside a container, `agy` detects the SSH environment and prints an auth URL — open it in your host browser, sign in with your Google account, and paste the code back. Subsequent runs use cached tokens.
 
 Google OAuth tokens live in plaintext inside the container — the agent can read them. `dev delete` revokes the token; always verify revocation or check `myaccount.google.com/permissions`.
+
+## Local project workflow
+
+```bash
+cd ~/sources/keycloak
+git checkout my-feature
+dev .
+# → pushes local HEAD (+ uncommitted changes) to agent's fork
+# → creates container keycloak-my-feature, you're inside the container
+
+claude
+# → work with agent on your branch
+
+# Made local changes? Re-sync:
+dev .                          # re-pushes and refreshes the existing container
+
+# Works with dev-auto branches from 'dev see':
+git checkout dev-auto/keycloak-pr-50801/main
+dev .                          # reuses container name keycloak-pr-50801
+
+# Branch already prefixed with repo name? No double prefix:
+git checkout keycloak-pr-50801
+dev .                          # container name: keycloak-pr-50801 (not keycloak-keycloak-pr-50801)
+```
+
+Uncommitted changes are included via a temporary WIP commit pushed to the agent's fork — the local commit is immediately reset so your branch is unchanged. `dev-auto/` branches from `dev see` reuse the original container name.
 
 ## PR review workflow
 
@@ -131,9 +160,10 @@ The host proxy can reverse-proxy MCP SSE servers running on the host into contai
 `configs/project-templates.conf` maps `org/repo` to source dir, resources, disk caps, and profiles. Template detection (first match wins):
 
 1. **GitHub URL** — `dev https://github.com/keycloak/keycloak-client/pull/42` → exact `org/repo` from URL
-2. **cwd** — `cd ~/sources/keycloak-client && dev new fix` → matches template whose `source_dir` contains the cwd
-3. **Name heuristic** — `dev new keycloak-client-fix` → longest repo name matching the container name or its prefix
-4. **DEFAULT** — fallback when nothing matches
+2. **`dev .`** — `cd ~/sources/keycloak && dev .` → matches template whose `source_dir` contains the cwd (requires non-DEFAULT match and a git branch)
+3. **cwd** — `cd ~/sources/keycloak-client && dev new fix` → matches template whose `source_dir` contains the cwd
+4. **Name heuristic** — `dev new keycloak-client-fix` → longest repo name matching the container name or its prefix
+5. **DEFAULT** — fallback when nothing matches
 
 ```bash
 dev new keycloak-client              # → keycloak-client template (profiles: java)
