@@ -62,40 +62,43 @@ fi
 chmod 666 /dev/fuse 2>/dev/null || true
 
 # ── Bounded disk (caps host disk usage per container) ───────────────────────
-if [[ -f /opt/bounded-disk.img ]]; then
-    if ! blkid /opt/bounded-disk.img 2>/dev/null | grep -q ext4; then
-        mkfs.ext4 -m 0 -q /opt/bounded-disk.img
-    fi
-    mkdir -p /mnt/bounded
-    mount -o loop /opt/bounded-disk.img /mnt/bounded
-
-    chown root:root /opt/bounded-disk.img
-    chmod 600 /opt/bounded-disk.img
-
-    mkdir -p /mnt/bounded/home-upper /mnt/bounded/home-work /mnt/bounded/tmp-data
-    chown dev:dev /mnt/bounded/home-upper /mnt/bounded/home-work /mnt/bounded/tmp-data
-
-    fuse-overlayfs \
-        -o "lowerdir=/home/dev,upperdir=/mnt/bounded/home-upper,workdir=/mnt/bounded/home-work,squash_to_uid=1000,squash_to_gid=1000" \
-        /home/dev
-
-    mount --bind /mnt/bounded/tmp-data /tmp
-    chmod 1777 /tmp
-
+if [[ ! -f /opt/bounded-disk.img ]]; then
+    echo "FATAL: /opt/bounded-disk.img not found — refusing to start without disk caps" >&2
+    exit 1
 fi
+if ! blkid /opt/bounded-disk.img 2>/dev/null | grep -q ext4; then
+    mkfs.ext4 -m 0 -q /opt/bounded-disk.img
+fi
+mkdir -p /mnt/bounded
+mount -o loop /opt/bounded-disk.img /mnt/bounded
+
+chown root:root /opt/bounded-disk.img
+chmod 600 /opt/bounded-disk.img
+
+mkdir -p /mnt/bounded/home-upper /mnt/bounded/home-work /mnt/bounded/tmp-data
+chown dev:dev /mnt/bounded/home-upper /mnt/bounded/home-work /mnt/bounded/tmp-data
+
+fuse-overlayfs \
+    -o "lowerdir=/home/dev,upperdir=/mnt/bounded/home-upper,workdir=/mnt/bounded/home-work,squash_to_uid=1000,squash_to_gid=1000" \
+    /home/dev
+
+mount --bind /mnt/bounded/tmp-data /tmp
+chmod 1777 /tmp
 
 # ── Inner podman storage (separate loopback, independent of bounded disk) ───
-if [[ -f /opt/podman-disk.img ]]; then
-    if ! blkid /opt/podman-disk.img 2>/dev/null | grep -q ext4; then
-        mkfs.ext4 -m 0 -q /opt/podman-disk.img
-    fi
-    mkdir -p /mnt/podman
-    mount -o loop /opt/podman-disk.img /mnt/podman
-    chown root:root /opt/podman-disk.img
-    chmod 600 /opt/podman-disk.img
-    mkdir -p /mnt/podman/storage /mnt/podman/run
-    chown dev:dev /mnt/podman/storage /mnt/podman/run
+if [[ ! -f /opt/podman-disk.img ]]; then
+    echo "FATAL: /opt/podman-disk.img not found — refusing to start without disk caps" >&2
+    exit 1
 fi
+if ! blkid /opt/podman-disk.img 2>/dev/null | grep -q ext4; then
+    mkfs.ext4 -m 0 -q /opt/podman-disk.img
+fi
+mkdir -p /mnt/podman
+mount -o loop /opt/podman-disk.img /mnt/podman
+chown root:root /opt/podman-disk.img
+chmod 600 /opt/podman-disk.img
+mkdir -p /mnt/podman/storage /mnt/podman/run
+chown dev:dev /mnt/podman/storage /mnt/podman/run
 
 # ── Rootless podman (for Testcontainers) ────────────────────────────────────
 chmod u+s /usr/bin/newuidmap /usr/bin/newgidmap 2>/dev/null || true
@@ -404,6 +407,12 @@ fi
 # Port 2222: passt runs unprivileged and cannot bind ports below 1024,
 # so sshd must use a non-privileged port for port forwarding to work.
 (ssh-keygen -A &>/dev/null && /usr/sbin/sshd -p 2222 &>/dev/null) &
+
+# ── Cap /var on bounded disk (close the /var/tmp world-writable gap) ────────
+mkdir -p /mnt/bounded/var-upper /mnt/bounded/var-work
+fuse-overlayfs \
+    -o "lowerdir=/var,upperdir=/mnt/bounded/var-upper,workdir=/mnt/bounded/var-work" \
+    /var
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
 exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; exec "$@"' _ "${@:-bash --login}"
