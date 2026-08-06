@@ -47,6 +47,23 @@ fi
 echo "Fetching from ${_devsee_remote}..."
 git fetch "$_devsee_remote"
 
+if git rev-parse --verify "$_devsee_branch" &>/dev/null; then
+    _devsee_backup="dev-auto/${_devsee_name}/backup/see/$(date +%s)"
+    _devsee_git_ssh="ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+    _devsee_had_wip=false
+    if [[ "$(git branch --show-current 2>/dev/null)" == "$_devsee_branch" && -n "$(git status --porcelain 2>/dev/null)" ]]; then
+        git add -A
+        git commit --quiet -m "WIP" --no-verify
+        _devsee_had_wip=true
+    fi
+    echo "Backing up host state to ${_devsee_backup}..."
+    GIT_SSH_COMMAND="$_devsee_git_ssh" \
+        git push "$_devsee_remote_url" "refs/heads/${_devsee_branch}:refs/heads/${_devsee_backup}" 2>/dev/null || true
+    if [[ "$_devsee_had_wip" == true ]]; then
+        git reset --quiet HEAD~1
+    fi
+fi
+
 git checkout -B "$_devsee_branch" "${_devsee_remote}/${_devsee_branch}"
 
 if [[ "$_devsee_was_stopped" == true ]]; then

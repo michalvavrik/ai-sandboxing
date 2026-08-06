@@ -78,6 +78,11 @@ fi
 
 _dev_update_ssh_config "$_devshow_name"
 
+_devshow_backup="dev-auto/${_devshow_name}/backup/show/$(date +%s)"
+echo "Backing up container state to ${_devshow_backup}..."
+_dev_ssh_cmd "$_devshow_name" \
+    "cd /workspace && git add -A && git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'backup'; git push origin HEAD:refs/heads/${_devshow_backup}" 2>/dev/null || true
+
 echo "Pulling inside container..."
 _dev_ssh_cmd "$_devshow_name" \
     "cd /workspace && git fetch origin ${_devshow_branch} && git checkout -B '${_devshow_branch}' FETCH_HEAD"

@@ -288,8 +288,13 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         runuser -u dev -- fuse-overlayfs \
             -o "lowerdir=/opt/project-src/.git/objects,upperdir=/tmp/git-obj-upper,workdir=/tmp/git-obj-work,squash_to_uid=1000,squash_to_gid=1000" \
             /opt/project-src-objects 2>/dev/null || true
+        if mountpoint -q /opt/project-src-objects 2>/dev/null; then
+            _alternates_path=/opt/project-src-objects
+        else
+            _alternates_path=/opt/project-src/.git/objects
+        fi
         runuser -u dev -- bash -c \
-            'mkdir -p /workspace/.git/objects/info && echo /opt/project-src/.git/objects >> /workspace/.git/objects/info/alternates' \
+            "mkdir -p /workspace/.git/objects/info && echo ${_alternates_path} >> /workspace/.git/objects/info/alternates" \
             2>/dev/null || true
         _ref_repos=""
         for _ref_dir in /opt/workspace/*/; do
