@@ -81,6 +81,7 @@ dev start fix-auth         # resume stopped container
 dev delete fix-auth        # remove permanently
 dev see fix-auth           # push from container, pull to host, show diff
 dev show fix-auth          # push host changes into container
+dev push fix-auth          # sync agent's work to original branch and push
 dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
 dev cpout pom.xml          # copy from container (relative to /workspace)
 dev cpout /tmp/file.txt    # copy from container (absolute path)
@@ -114,26 +115,40 @@ Google OAuth tokens live in plaintext inside the container — the agent can rea
 ## Local project workflow
 
 ```bash
-cd ~/sources/keycloak
-git checkout my-feature
+# 1. Start — push your branch to an agent container
+cd ~/sources/keycloak && git checkout my-feature
 dev .
-# → pushes local HEAD (+ uncommitted changes) to agent's fork
-# → creates container keycloak-my-feature, you're inside the container
+# → creates container keycloak-my-feature, you're inside it
+# → uncommitted changes included (temporary WIP commit, reset after push)
 
+# 2. Work with the agent
 claude
-# → work with agent on your branch
 
-# Made local changes? Re-sync:
-dev .                          # re-pushes and refreshes the existing container
+# 3. Review — pull agent's changes to host
+dev see                    # syncs to dev-auto/keycloak-my-feature/main, shows diff
 
-# Works with dev-auto branches from 'dev see':
-git checkout dev-auto/keycloak-pr-50801/main
-dev .                          # reuses container name keycloak-pr-50801
+# 4. Edit locally, then push back to the container
+dev show                   # pushes host edits into the container
+dev .                      # alternative: re-syncs and re-enters
+
+# Repeat steps 2–4 as needed
+
+# 5. Finish — land on your branch and push
+dev push                   # squashes to one commit on my-feature, pushes to your remote
+dev push --local           # same but skip the push
 ```
 
-Uncommitted changes are included via a temporary WIP commit pushed to the agent's fork — the local commit is immediately reset so your branch is unchanged. `dev-auto/` branches from `dev see` reuse the original container name.
+`dev push` creates a single commit on the original branch using the original commit message, your git identity, and signoff. If the agent branch has uncommitted changes or multiple commits, they are squashed first. Works from any directory — resolves the source directory from container metadata.
 
-Working state is in agent's fork git branch and syncing works via `dev see` and `dev show`. Before either host or container branch is replaced, its state is pushed to a back-up git branch in case you need to recover previous state. All these branches are deleted when the container is deleted.
+`dev-auto/` branches from `dev see` reuse the original container name when passed to `dev .`. Before `dev see` or `dev show` replaces a branch, its state is backed up to a timestamped branch. All agent branches are cleaned up by `dev delete`.
+
+Works with PRs — `dev push` lands on the PR's head branch:
+
+```bash
+dev https://github.com/keycloak/keycloak/pull/50801
+# ... agent work, dev see/show cycle ...
+dev push                   # pushes to the PR's head branch
+```
 
 ## PR review workflow
 

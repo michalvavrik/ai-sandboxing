@@ -402,6 +402,7 @@ _dev_create_container() {
         --label="$DEV_LABEL" \
         --label="dev-source-dir=${_dev_source_dir}" \
         --label="dev-template-key=${_dev_template_key}" \
+        ${DEV_ORIGINAL_BRANCH:+--label="dev-original-branch=${DEV_ORIGINAL_BRANCH}"} \
         -e "PROXY_PORT=${_dev_port}" \
         -e "CLAUDE_CODE_USE_VERTEX=1" \
         -e "CLAUDE_CODE_SKIP_VERTEX_AUTH=1" \

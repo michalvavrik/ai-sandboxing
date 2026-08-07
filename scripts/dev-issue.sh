@@ -83,6 +83,10 @@ fi
 # New container — pass context via env, entrypoint handles checkout
 if [[ "$_devissue_type" == "pull" ]]; then
     export DEV_PR_NUMBER="$_devissue_number"
+    _devissue_head_ref=$(gh pr view "$_devissue_number" --repo "$_devissue_template_key" --json headRefName --jq '.headRefName' 2>/dev/null) || true
+    if [[ -n "$_devissue_head_ref" ]]; then
+        export DEV_ORIGINAL_BRANCH="$_devissue_head_ref"
+    fi
 elif [[ "$_devissue_type" == "tree" ]]; then
     export DEV_FORK_ORG="$_devissue_org"
     export DEV_BRANCH_NAME="$_devissue_branch"

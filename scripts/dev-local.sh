@@ -93,6 +93,9 @@ fi
 # New container
 export DEV_FORK_ORG="$DEV_AUTOMATION_USER"
 export DEV_BRANCH_NAME="$_devlocal_push_branch"
+if [[ ! "$_devlocal_branch" =~ ^dev-auto/ ]]; then
+    export DEV_ORIGINAL_BRANCH="$_devlocal_branch"
+fi
 
 _dev_create_container "$_devlocal_name" "$_devlocal_template_key"
 
