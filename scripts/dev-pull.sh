@@ -54,3 +54,26 @@ while IFS='|' read -r _dev_key _dev_src _dev_rest; do
 done < "$_dev_conf"
 
 _dev_check_container_pat || true
+
+# ── Check for pending dependency updates ───────────────────────────────────
+_devpull_repo=$(git -C "$DEV_BASE_DIR" remote get-url origin 2>/dev/null \
+    | sed -E 's#(git@github\.com:|https://github\.com/)##;s#\.git$##') || true
+if [[ -n "$_devpull_repo" ]]; then
+    _devpull_deps=$(gh pr list --repo "$_devpull_repo" --label dependencies --state open --json number --jq 'length' 2>/dev/null) || true
+    if [[ "${_devpull_deps:-0}" -gt 0 ]]; then
+        echo "NOTE: ${_devpull_deps} dependency update PR(s) pending — gh pr list --repo ${_devpull_repo} --label dependencies"
+    fi
+fi
+
+_devpull_current_tf=$(grep -oP 'TF_VERSION=\K[\d.]+' "$DEV_BASE_DIR/Containerfile" 2>/dev/null) || true
+if [[ -n "$_devpull_current_tf" ]]; then
+    _devpull_latest_tf=$(curl -fsSL --max-time 5 https://api.github.com/repos/hashicorp/terraform/releases/latest 2>/dev/null \
+        | jq -r '.tag_name // empty' | sed 's/^v//') || true
+    if [[ -n "$_devpull_latest_tf" ]]; then
+        _devpull_cur_minor="${_devpull_current_tf%.*}"
+        _devpull_lat_minor="${_devpull_latest_tf%.*}"
+        if [[ "$_devpull_lat_minor" != "$_devpull_cur_minor" ]]; then
+            echo "NOTE: Terraform ${_devpull_latest_tf} available (using ${_devpull_current_tf})"
+        fi
+    fi
+fi
