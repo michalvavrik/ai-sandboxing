@@ -129,13 +129,11 @@ dev .                          # re-pushes and refreshes the existing container
 # Works with dev-auto branches from 'dev see':
 git checkout dev-auto/keycloak-pr-50801/main
 dev .                          # reuses container name keycloak-pr-50801
-
-# Branch already prefixed with repo name? No double prefix:
-git checkout keycloak-pr-50801
-dev .                          # container name: keycloak-pr-50801 (not keycloak-keycloak-pr-50801)
 ```
 
 Uncommitted changes are included via a temporary WIP commit pushed to the agent's fork — the local commit is immediately reset so your branch is unchanged. `dev-auto/` branches from `dev see` reuse the original container name.
+
+Working state is in agent's fork git branch and syncing works via `dev see` and `dev show`. Before either host or container branch is replaced, its state is pushed to a back-up git branch in case you need to recover previous state. All these branches are deleted when the container is deleted.
 
 ## PR review workflow
 
