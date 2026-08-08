@@ -408,6 +408,24 @@ if [[ -n "$HOST_IP" ]]; then
     fi
 fi
 
+# ── Auto-backup workspace (background — every 30s, no workspace side effects)
+if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
+    runuser -u dev -- bash -c '
+        while sleep 30; do
+            cd /workspace 2>/dev/null || continue
+            _idx=$(mktemp)
+            GIT_INDEX_FILE="$_idx" git add -A 2>/dev/null
+            _tree=$(GIT_INDEX_FILE="$_idx" git write-tree 2>/dev/null) || { rm -f "$_idx"; continue; }
+            rm -f "$_idx"
+            _head=$(git rev-parse HEAD 2>/dev/null) || continue
+            _head_tree=$(git rev-parse HEAD^{tree} 2>/dev/null) || continue
+            [ "$_tree" = "$_head_tree" ] && continue
+            _backup=$(git commit-tree "$_tree" -p "$_head" -m "backup" 2>/dev/null) || continue
+            git push -f origin "$_backup:refs/heads/dev-auto/$(hostname)/backup" -q 2>/dev/null
+        done
+    ' &
+fi
+
 # ── Start sshd (for additional terminals via dev enter) ─────────────────────
 # Port 2222: passt runs unprivileged and cannot bind ports below 1024,
 # so sshd must use a non-privileged port for port forwarding to work.

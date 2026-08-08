@@ -25,12 +25,13 @@ export DEV_BRANCH_NAME=$(_devrc_env DEV_BRANCH_NAME)
 
 echo "Recreating container '${_devrc_name}' (template: ${_devrc_template_key})"
 
-# Ensure running for copy-out
+# Ensure running for SSH access
 if ! _dev_container_running "$_devrc_name"; then
     _dev_ensure_proxy
     podman start "$_devrc_name" >/dev/null
     sleep 3
 fi
+_dev_update_ssh_config "$_devrc_name"
 
 # Push workspace via git (same as dev see squash logic)
 readonly _devrc_branch="dev-auto/${_devrc_name}/main"

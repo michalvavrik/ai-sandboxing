@@ -280,6 +280,10 @@ Result:
   └── Key file unreadable by dev (owned by bobrunner)
 ```
 
+## Auto-backup
+
+Every 30 seconds, a background process snapshots the workspace (including uncommitted and untracked files) and pushes to `dev-auto/<name>/backup` on the remote without affecting the workspace.
+
 ## Known issues
 
 - After container re-entrance (e.g. after host restart), Podman running inside the container does not work with Testcontainers (`LogMessageWaitStrategy` is not working). Arguably, this happens because the logging driver which is usually `journald` is unset.
