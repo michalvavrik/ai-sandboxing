@@ -11,7 +11,7 @@ if ! _dev_container_exists "$_devdel_name"; then
 fi
 
 # Delete remote branch if it was pushed
-_devdel_template_key=$(podman inspect --format '{{index .Config.Labels "dev-template-key"}}' "$_devdel_name" 2>/dev/null) || true
+_devdel_template_key=$(_dev_container_template_key "$_devdel_name")
 if [[ -n "$_devdel_template_key" ]]; then
     _devdel_repo="${_devdel_template_key#*/}"
     _devdel_git_ssh="ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"

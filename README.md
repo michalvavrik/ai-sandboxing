@@ -105,6 +105,7 @@ agy                        # start Antigravity CLI (Google Gemini models)
 
 Container name is remembered — after `dev new foo`, just `dev enter`, `dev see`, `dev cp`, etc.
 Use `dev use <name>` to set the current container from a different terminal.
+When multiple containers exist, commands resolve by cwd: `cd ~/sources/quarkus && dev see` picks the quarkus container if exactly one matches.
 
 ## Antigravity CLI (Google Gemini models)
 

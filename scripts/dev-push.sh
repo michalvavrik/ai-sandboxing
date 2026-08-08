@@ -44,7 +44,7 @@ if [[ -z "$_devpush_original_branch" || "$_devpush_original_branch" == "<no valu
 fi
 readonly _devpush_original_branch
 
-_devpush_template_key=$(podman inspect --format '{{index .Config.Labels "dev-template-key"}}' "$_devpush_name" 2>/dev/null) || true
+_devpush_template_key=$(_dev_container_template_key "$_devpush_name")
 if [[ -z "$_devpush_template_key" ]]; then
     echo "Error: could not determine template from container labels" >&2
     exit 1

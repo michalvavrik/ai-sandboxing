@@ -112,8 +112,26 @@ _dev_resolve_name() {
         if [[ $(echo "$_dev_all" | wc -l) -eq 1 && -n "$_dev_all" ]]; then
             _dev_name="$_dev_all"
         else
-            echo "Error: no container specified and multiple (or zero) exist. Use 'dev use <name>' first." >&2
-            return 1
+            local _dev_tkey
+            _dev_tkey=$(_dev_detect_template_from_cwd) || true
+            if [[ -n "$_dev_tkey" ]]; then
+                local _dev_matched="" _dev_match_count=0 _dev_cname _dev_ctkey
+                while read -r _dev_cname; do
+                    [[ -z "$_dev_cname" ]] && continue
+                    _dev_ctkey=$(_dev_container_template_key "$_dev_cname")
+                    if [[ "$_dev_ctkey" == "$_dev_tkey" ]]; then
+                        _dev_matched="$_dev_cname"
+                        _dev_match_count=$((_dev_match_count + 1))
+                    fi
+                done <<< "$_dev_all"
+                if [[ $_dev_match_count -eq 1 ]]; then
+                    _dev_name="$_dev_matched"
+                fi
+            fi
+            if [[ -z "$_dev_name" ]]; then
+                echo "Error: no container specified and multiple (or zero) exist. Use 'dev use <name>' first." >&2
+                return 1
+            fi
         fi
     fi
     echo "$_dev_name"
@@ -212,6 +230,10 @@ _dev_container_running() {
     local _dev_state
     _dev_state=$(podman inspect --format '{{.State.Running}}' "$_dev_name" 2>/dev/null) || return 1
     [[ "$_dev_state" == "true" ]]
+}
+
+_dev_container_template_key() {
+    podman inspect --format '{{index .Config.Labels "dev-template-key"}}' "$1" 2>/dev/null || true
 }
 
 _dev_find_template_key_by_repo() {

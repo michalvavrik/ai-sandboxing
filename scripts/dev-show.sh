@@ -11,7 +11,7 @@ if ! _dev_container_exists "$_devshow_name"; then
     exit 1
 fi
 
-_devshow_template_key=$(podman inspect --format '{{index .Config.Labels "dev-template-key"}}' "$_devshow_name" 2>/dev/null) || true
+_devshow_template_key=$(_dev_container_template_key "$_devshow_name")
 if [[ -z "$_devshow_template_key" ]]; then
     echo "Error: could not determine template from container labels" >&2
     exit 1
