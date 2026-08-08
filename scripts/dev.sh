@@ -71,7 +71,7 @@ case "$_dev_cmd" in
     echo "  enter [name]   Enter an existing container"
     echo "  delete [name]  Remove a container"
     echo "  start [name]   Start a stopped container"
-    echo "  see [name]     Sync changes to host"
+    echo "  see [name]     Sync changes to host (squashes commits; --dont-squash to keep history)"
     echo "  show [name]    Push host changes into a container"
     echo "  push [name]    Push agent's work to the original branch (--local to skip)"
     echo "  cp <path>      Copy files/dirs into container's /tmp/workspace"

@@ -9,6 +9,10 @@ _comp_cur="$3"
 if [[ $_comp_cword -eq 1 ]]; then
     compgen -W "new enter delete start see show push cp cpout use list pull install ." -- "$_comp_cur"
 elif [[ $_comp_cword -eq 2 && "$_comp_prev" =~ ^(enter|delete|start|see|show|push|use)$ ]]; then
+    _comp_words="$(podman ps -a --filter=label=${DEV_LABEL} --format '{{.Names}}' 2>/dev/null)"
+    [[ "$_comp_prev" == "see" ]] && _comp_words="--dont-squash $_comp_words"
+    compgen -W "$_comp_words" -- "$_comp_cur"
+elif [[ $_comp_cword -eq 3 && "$_comp_prev" == "--dont-squash" ]]; then
     compgen -W "$(podman ps -a --filter=label=${DEV_LABEL} --format '{{.Names}}' 2>/dev/null)" -- "$_comp_cur"
 elif [[ "$_comp_prev" == "cpout" ]]; then
     _comp_name=$(_dev_resolve_name "" 2>/dev/null) || exit 0

@@ -79,7 +79,8 @@ dev enter fix-auth         # re-enter an existing container
 dev stop fix-auth          # stop (preserves state)
 dev start fix-auth         # resume stopped container
 dev delete fix-auth        # remove permanently
-dev see fix-auth           # push from container, pull to host
+dev see fix-auth           # push from container, pull to host (squashes commits)
+dev see --dont-squash      # same but keeps full commit history
 dev show fix-auth          # push host changes into container
 dev push fix-auth          # sync agent's work to original branch and push
 dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
