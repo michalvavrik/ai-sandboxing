@@ -27,7 +27,8 @@ case "$_dev_cmd" in
     "${_dev_dir}/dev-start.sh" "$DEV_LAST_CONTAINER"
     ;;
   see)
-    "${_dev_dir}/dev-see.sh" "${1:-${DEV_LAST_CONTAINER:-}}"
+    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
+    "${_dev_dir}/dev-see.sh" "$DEV_LAST_CONTAINER"
     ;;
   show)
     DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
