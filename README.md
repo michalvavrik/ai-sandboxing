@@ -78,14 +78,17 @@ dev new fix-auth           # create container, enter it (detects project from cw
 dev enter fix-auth         # re-enter an existing container
 dev stop fix-auth          # stop (preserves state)
 dev start fix-auth         # resume stopped container
+dev recreate fix-auth      # fresh container, preserves workspace and Claude session
 dev delete fix-auth        # remove permanently
 dev see fix-auth           # push from container, pull to host (squashes commits)
 dev see --dont-squash      # same but keeps full commit history
 dev show fix-auth          # push host changes into container
 dev push fix-auth          # sync agent's work to original branch and push
 dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
+dev cp --to /workspace f.patch # copy into a specific container directory
 dev cpout pom.xml          # copy from container (relative to /workspace)
 dev cpout /tmp/file.txt    # copy from container (absolute path)
+dev cpout --to ~/review src # copy from container into a specific host directory
 dev use fix-auth           # set current container without entering
 dev list                   # show all dev containers
 dev pull                   # pull newer image (runs in background on login)

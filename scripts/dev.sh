@@ -12,6 +12,10 @@ case "$_dev_cmd" in
     DEV_LAST_CONTAINER="${1:?'Usage: dev new <name>'}"
     "${_dev_dir}/dev-new.sh" "$@"
     ;;
+  recreate)
+    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
+    "${_dev_dir}/dev-recreate.sh" "$DEV_LAST_CONTAINER"
+    ;;
   delete)
     "${_dev_dir}/dev-delete.sh" "${1:-${DEV_LAST_CONTAINER:-}}"
     if [[ "${1:-${DEV_LAST_CONTAINER:-}}" == "${DEV_LAST_CONTAINER:-}" ]]; then
@@ -65,17 +69,18 @@ case "$_dev_cmd" in
     DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     ;;
   help|*)
-    echo "Usage: dev {new|enter|delete|start|see|show|push|cp|cpout|use|list|pull|install|.|<url>}"
+    echo "Usage: dev {new|enter|recreate|delete|start|see|show|push|cp|cpout|use|list|pull|install|.|<url>}"
     echo ""
     echo "  new <name>     Create and enter a new dev container"
     echo "  enter [name]   Enter an existing container"
+    echo "  recreate [name] Fresh container, preserves workspace and Claude session"
     echo "  delete [name]  Remove a container"
     echo "  start [name]   Start a stopped container"
     echo "  see [name]     Sync changes to host (squashes commits; --dont-squash to keep history)"
     echo "  show [name]    Push host changes into a container"
     echo "  push [name]    Push agent's work to the original branch (--local to skip)"
-    echo "  cp <path>      Copy files/dirs into container's /tmp/workspace"
-    echo "  cpout <path>   Copy files/dirs from container to current dir"
+    echo "  cp [--to <dir>] <path>  Copy files/dirs into container (default: /tmp/workspace)"
+    echo "  cpout [--to <dir>] <path> Copy files/dirs from container (default: cwd)"
     echo "  use <name>     Set current container without entering"
     echo "  list           List all dev containers"
     echo "  pull           Pull newer images and fetch project sources (runs on login)"
