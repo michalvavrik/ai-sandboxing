@@ -70,5 +70,4 @@ if [[ "$_devsee_was_stopped" == true ]]; then
     podman stop "$_devsee_name" >/dev/null
 fi
 
-echo ""
-git diff HEAD~1 | less
+echo "Done."

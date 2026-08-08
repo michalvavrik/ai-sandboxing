@@ -79,7 +79,7 @@ dev enter fix-auth         # re-enter an existing container
 dev stop fix-auth          # stop (preserves state)
 dev start fix-auth         # resume stopped container
 dev delete fix-auth        # remove permanently
-dev see fix-auth           # push from container, pull to host, show diff
+dev see fix-auth           # push from container, pull to host
 dev show fix-auth          # push host changes into container
 dev push fix-auth          # sync agent's work to original branch and push
 dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
@@ -126,7 +126,7 @@ dev .
 claude
 
 # 3. Review — pull agent's changes to host
-dev see                    # syncs to dev-auto/keycloak-my-feature/main, shows diff
+dev see                    # syncs to dev-auto/keycloak-my-feature/main
 
 # 4. Edit locally, then push back to the container
 dev show                   # pushes host edits into the container
