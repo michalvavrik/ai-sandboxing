@@ -37,7 +37,7 @@ _dev_update_ssh_config "$_devrc_name"
 readonly _devrc_branch="dev-auto/${_devrc_name}/main"
 echo "Pushing workspace to ${_devrc_branch}..."
 _dev_ssh_cmd "$_devrc_name" \
-    "cd /workspace && git add -A; _c=\$(git rev-list --count HEAD); [ \$_c -gt 1 ] && git reset --soft HEAD~\$((_c - 1)); git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devrc_branch}"
+    "cd /workspace && git add -A; _b=\$(git merge-base origin/main HEAD 2>/dev/null || head -1 .git/shallow 2>/dev/null); [ -n \"\$_b\" ] && [ \"\$_b\" != \"\$(git rev-parse HEAD)\" ] && git reset --soft \$_b; git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devrc_branch}"
 
 # Save Claude session (small — scp is fine)
 readonly _devrc_staging="/tmp/dev-recreate-${_devrc_name}"
