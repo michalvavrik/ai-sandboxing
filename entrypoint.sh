@@ -58,6 +58,24 @@ if _has_profile kind; then
     echo "export KIND_EXPERIMENTAL_PROVIDER=podman" >> /etc/profile.d/dev-sandbox.sh
 fi
 
+cat >> /etc/profile.d/dev-sandbox.sh <<'EXITSAVE'
+if [[ "${DEV_MAIN_SHELL:-}" == "1" ]]; then
+    _dev_exit_saved=false
+    _dev_exit_save() {
+        [[ "$_dev_exit_saved" == true ]] && return
+        _dev_exit_saved=true
+        cd /workspace 2>/dev/null || return
+        git add -A 2>/dev/null
+        git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null
+        git diff --cached --quiet 2>/dev/null && return
+        git commit -m 'on-exit save' --no-verify -q 2>/dev/null
+        git push -f origin "HEAD:refs/heads/dev-auto/$(hostname)/main" -q 2>/dev/null
+    }
+    trap '_dev_exit_save; exit' TERM
+    trap '_dev_exit_save' EXIT
+fi
+EXITSAVE
+
 # ── Allow dev user to use FUSE ───────────────────────────────────────────────
 chmod 666 /dev/fuse 2>/dev/null || true
 
@@ -233,6 +251,8 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
             ln -s "/opt/workspace/${_repo}" /workspace
         fi
         runuser -u dev -- git -C /workspace remote set-url origin \
+            "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git" 2>/dev/null \
+            || runuser -u dev -- git -C /workspace remote add origin \
             "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git"
         runuser -u dev -- git -C /workspace remote add upstream \
             "https://github.com/${_org}/${_repo}.git" 2>/dev/null || true
@@ -274,6 +294,8 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
             fi
         fi
         runuser -u dev -- git -C /workspace remote set-url origin \
+            "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git" 2>/dev/null \
+            || runuser -u dev -- git -C /workspace remote add origin \
             "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git"
         runuser -u dev -- git -C /workspace remote add upstream \
             "https://github.com/${_org}/${_repo}.git" 2>/dev/null || true
@@ -438,4 +460,4 @@ fuse-overlayfs \
     /var
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
-exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; exec "$@"' _ "${@:-bash --login}"
+exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; DEV_MAIN_SHELL=1 exec "$@"' _ "${@:-bash --login}"
