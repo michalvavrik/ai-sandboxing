@@ -235,7 +235,28 @@ fi
 echo "Firewall rules verified (IPv4 + IPv6)."
 
 # --------------------------------------------------------------------------
-# Step 6/10: Register krun runtime
+# Step 6/11: Raise host nofile limit for krun/virtiofsd
+# --------------------------------------------------------------------------
+_dev_step_header 6 11 "Host nofile limit for krun/virtiofsd"
+
+readonly _DEV_NOFILE_CONF="/etc/security/limits.d/91-dev-sandbox.conf"
+readonly _DEV_NOFILE_LIMIT=4194304
+
+if [[ -f "$_DEV_NOFILE_CONF" ]] && grep -q "$_DEV_NOFILE_LIMIT" "$_DEV_NOFILE_CONF"; then
+    echo "nofile limit already configured."
+else
+    sudo tee "$_DEV_NOFILE_CONF" > /dev/null <<LIMITS
+# krun/virtiofsd holds a host FD per cached guest inode.
+# Traversing large codebases (50K+ files) exhausts the default 524288 limit.
+${USER} soft nofile ${_DEV_NOFILE_LIMIT}
+${USER} hard nofile ${_DEV_NOFILE_LIMIT}
+LIMITS
+    echo "Set nofile limit to ${_DEV_NOFILE_LIMIT} for ${USER}."
+    echo "NOTE: log out and back in (or reboot) for the new limit to take effect."
+fi
+
+# --------------------------------------------------------------------------
+# Step 7/11: Register krun runtime
 # --------------------------------------------------------------------------
 _dev_step_header 6 10 "Register krun runtime"
 
@@ -268,9 +289,9 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 7/10: GHCR auth + image pull
+# Step 8/11: GHCR auth + image pull
 # --------------------------------------------------------------------------
-_dev_step_header 7 10 "GHCR authentication and image pull"
+_dev_step_header 8 11 "GHCR authentication and image pull"
 
 source "$(dirname "$0")/dev-common.sh"
 _dev_ensure_ghcr_auth
@@ -281,9 +302,9 @@ podman pull --policy missing "$DEV_IMAGE"
 echo "Dev image ready."
 
 # --------------------------------------------------------------------------
-# Step 8/10: Shell alias
+# Step 9/11: Shell alias
 # --------------------------------------------------------------------------
-_dev_step_header 8 10 "Shell alias"
+_dev_step_header 9 11 "Shell alias"
 
 readonly _DEV_ALIAS="alias dev=\"source ${_DEV_BASE_DIR}/scripts/dev.sh\""
 
@@ -326,9 +347,9 @@ COMP
 fi
 
 # --------------------------------------------------------------------------
-# Step 9/10: Sources directory
+# Step 10/11: Sources directory
 # --------------------------------------------------------------------------
-_dev_step_header 9 10 "Sources directory"
+_dev_step_header 10 11 "Sources directory"
 
 if [[ ! -d "$DEV_SOURCES_DIR" ]]; then
     mkdir -p "$DEV_SOURCES_DIR"
@@ -338,9 +359,9 @@ else
 fi
 
 # --------------------------------------------------------------------------
-# Step 10/10: Systemd user service for login-time image pull
+# Step 11/11: Systemd user service for login-time image pull
 # --------------------------------------------------------------------------
-_dev_step_header 10 10 "Systemd user service for login-time image pull"
+_dev_step_header 11 11 "Systemd user service for login-time image pull"
 
 readonly _DEV_SERVICE_DIR="${HOME}/.config/systemd/user"
 readonly _DEV_SERVICE_FILE="${_DEV_SERVICE_DIR}/dev-pull.service"
