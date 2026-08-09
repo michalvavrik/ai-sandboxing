@@ -416,6 +416,7 @@ _dev_create_container() {
         --runtime="$DEV_RUNTIME" \
         --name="$_dev_name" \
         --privileged \
+        --ulimit nofile=4194304:4194304 \
         --annotation "krun.ram_mib=${_dev_ram}" \
         --annotation "krun.cpus=${_dev_cpus}" \
         --annotation "krun.use_passt=1" \
