@@ -85,6 +85,7 @@ dev see fix-auth           # push from container, pull to host (squashes commits
 dev see --dont-squash      # same but keeps full commit history
 dev show fix-auth          # push host changes into container
 dev push fix-auth          # sync agent's work to original branch and push
+dev rebase fix-auth        # rebase container workspace on latest upstream main
 dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
 dev cp --to /workspace f.patch # copy into a specific container directory
 dev cpout pom.xml          # copy from container (relative to /workspace)
@@ -138,6 +139,9 @@ dev show                   # pushes host edits into the container
 dev .                      # alternative: re-syncs and re-enters
 
 # Repeat steps 2–4 as needed
+
+# If upstream main has advanced:
+dev rebase                 # fetch upstream main and rebase workspace on top of it
 
 # 5. Finish — land on your branch and push
 dev push                   # squashes to one commit on my-feature, pushes to your remote
