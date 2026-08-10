@@ -125,7 +125,7 @@ fi
 echo "Creating commit on '${_devpush_original_branch}'..."
 _devpush_new_commit=$(git -C "$_devpush_src_dir" commit-tree "$_devpush_agent_tree" \
     -p "$_devpush_merge_base" \
-    -m "$_devpush_original_msg")
+    -S -m "$_devpush_original_msg")
 
 git -C "$_devpush_src_dir" update-ref "refs/heads/${_devpush_original_branch}" "$_devpush_new_commit"
 
