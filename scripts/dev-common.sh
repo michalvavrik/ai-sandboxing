@@ -454,6 +454,13 @@ _dev_ssh_port() {
     podman port "$_dev_name" 2222/tcp 2>/dev/null | cut -d: -f2
 }
 
+_dev_sync_workspace() {
+    local _dev_name="$1"
+    local _dev_branch="$2"
+    _dev_ssh_cmd "$_dev_name" \
+        "cd /workspace && git add -A; _b=\$(git merge-base upstream/main HEAD 2>/dev/null || git merge-base origin/main HEAD 2>/dev/null || head -1 .git/shallow 2>/dev/null); [ -n \"\$_b\" ] && [ \"\$_b\" != \"\$(git rev-parse HEAD)\" ] && git reset --soft \$_b; git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_dev_branch}"
+}
+
 _dev_ssh_cmd() {
     local _dev_name="$1"
     shift

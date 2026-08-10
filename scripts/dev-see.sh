@@ -33,8 +33,7 @@ _dev_update_ssh_config "$_devsee_name"
 readonly _devsee_branch="dev-auto/${_devsee_name}/main"
 echo "Pushing changes to ${_devsee_branch}..."
 if [[ "$_devsee_squash" == true ]]; then
-    _dev_ssh_cmd "$_devsee_name" \
-        "cd /workspace && git add -A; _b=\$(git merge-base origin/main HEAD 2>/dev/null || head -1 .git/shallow 2>/dev/null); [ -n \"\$_b\" ] && [ \"\$_b\" != \"\$(git rev-parse HEAD)\" ] && git reset --soft \$_b; git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devsee_branch}"
+    _dev_sync_workspace "$_devsee_name" "$_devsee_branch"
 else
     _dev_ssh_cmd "$_devsee_name" \
         "cd /workspace && git add -A && git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devsee_branch}"

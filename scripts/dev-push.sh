@@ -80,8 +80,7 @@ if ! _dev_container_running "$_devpush_name"; then
     sleep 3
 fi
 _dev_update_ssh_config "$_devpush_name"
-_dev_ssh_cmd "$_devpush_name" \
-    "cd /workspace; git add -A; git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devpush_branch}" 2>/dev/null || true
+_dev_sync_workspace "$_devpush_name" "$_devpush_branch" 2>/dev/null || true
 if [[ "$_devpush_was_stopped" == true ]]; then
     podman stop "$_devpush_name" >/dev/null
 fi
