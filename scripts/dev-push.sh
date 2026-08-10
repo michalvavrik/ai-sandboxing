@@ -9,10 +9,9 @@ _devpush_usage() {
     echo "The original branch is recorded when the container is created via"
     echo "'dev .' or 'dev <pr-url>'."
     echo ""
-    echo "If the agent branch has uncommitted changes or multiple commits,"
-    echo "they are squashed into one commit first (git-s). The commit on the"
-    echo "original branch uses its tip commit message with your signoff and"
-    echo "authorship."
+    echo "The commit on the original branch uses the original commit message"
+    echo "with your signoff and authorship. Does not affect the current"
+    echo "working branch or checkout."
     echo ""
     echo "Options:"
     echo "  --local    Update the local branch without pushing to remote"
@@ -68,45 +67,50 @@ fi
 
 readonly _devpush_src_dir
 readonly _devpush_branch="dev-auto/${_devpush_name}/main"
+readonly _devpush_repo="${_devpush_template_key#*/}"
+readonly _devpush_remote_url="git@github.com:${DEV_AUTOMATION_USER}/${_devpush_repo}.git"
 
-if ! git -C "$_devpush_src_dir" rev-parse --verify "$_devpush_branch" &>/dev/null; then
-    echo "Error: branch '${_devpush_branch}' not found locally" >&2
-    echo "Run 'dev see ${_devpush_name}' first to sync agent changes to host." >&2
-    exit 1
+# Sync latest container state (commit + push workspace, then fetch to host)
+echo "Syncing agent branch from container..."
+_devpush_was_stopped=false
+if ! _dev_container_running "$_devpush_name"; then
+    _devpush_was_stopped=true
+    _dev_ensure_proxy
+    podman start "$_devpush_name" >/dev/null
+    sleep 3
+fi
+_dev_update_ssh_config "$_devpush_name"
+_dev_ssh_cmd "$_devpush_name" \
+    "cd /workspace; git add -A; git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devpush_branch}" 2>/dev/null || true
+if [[ "$_devpush_was_stopped" == true ]]; then
+    podman stop "$_devpush_name" >/dev/null
 fi
 
-if ! git -C "$_devpush_src_dir" rev-parse --verify "$_devpush_original_branch" &>/dev/null; then
-    echo "Error: original branch '${_devpush_original_branch}' not found locally" >&2
-    exit 1
+_devpush_remote="dev-automation"
+if ! git -C "$_devpush_src_dir" remote get-url "$_devpush_remote" &>/dev/null; then
+    git -C "$_devpush_src_dir" remote add "$_devpush_remote" "$_devpush_remote_url"
+elif [[ "$(git -C "$_devpush_src_dir" remote get-url "$_devpush_remote")" != "$_devpush_remote_url" ]]; then
+    git -C "$_devpush_src_dir" remote set-url "$_devpush_remote" "$_devpush_remote_url"
 fi
+
+# Fetch agent branch (read tree from ref, no checkout)
+git -C "$_devpush_src_dir" fetch "$_devpush_remote" "$_devpush_branch"
+_devpush_agent_ref=$(git -C "$_devpush_src_dir" rev-parse FETCH_HEAD)
+_devpush_agent_tree=$(git -C "$_devpush_src_dir" rev-parse "${_devpush_agent_ref}^{tree}")
+
+# Fetch latest upstream main so the merge base is current
+_devpush_main_remote=$(git -C "$_devpush_src_dir" config branch.main.remote 2>/dev/null || echo origin)
+git -C "$_devpush_src_dir" fetch "$_devpush_main_remote" main 2>/dev/null || true
 
 echo "Container:       ${_devpush_name}"
 echo "Agent branch:    ${_devpush_branch}"
 echo "Original branch: ${_devpush_original_branch}"
 
-# If currently on the agent branch, normalize to one clean commit (git-s)
-if [[ "$(git -C "$_devpush_src_dir" branch --show-current 2>/dev/null)" == "$_devpush_branch" ]]; then
-    _devpush_behind=$(git -C "$_devpush_src_dir" rev-list --count main.."$_devpush_branch")
-    _devpush_dirty=false
-    [[ -n "$(git -C "$_devpush_src_dir" status --porcelain)" ]] && _devpush_dirty=true
-
-    if [[ "$_devpush_dirty" == true || "$_devpush_behind" -gt 1 ]]; then
-        echo "Squashing agent branch to one commit..."
-        git -C "$_devpush_src_dir" add -A
-        if (( _devpush_behind > 0 )); then
-            git -C "$_devpush_src_dir" reset --soft "HEAD~${_devpush_behind}"
-        fi
-        git -C "$_devpush_src_dir" commit --signoff -am "wip"
-    fi
-fi
-
-_devpush_agent_tree=$(git -C "$_devpush_src_dir" rev-parse "${_devpush_branch}^{tree}")
-
 _devpush_original_msg=$(git -C "$_devpush_src_dir" log -1 --format=%B "$_devpush_original_branch")
 
-_devpush_merge_base=$(git -C "$_devpush_src_dir" merge-base main "$_devpush_original_branch" 2>/dev/null) || true
+_devpush_merge_base=$(git -C "$_devpush_src_dir" merge-base "${_devpush_main_remote}/main" "$_devpush_agent_ref" 2>/dev/null) || true
 if [[ -z "$_devpush_merge_base" ]]; then
-    echo "Error: could not find merge base between 'main' and '${_devpush_original_branch}'" >&2
+    echo "Error: could not find merge base between '${_devpush_main_remote}/main' and agent branch" >&2
     exit 1
 fi
 
