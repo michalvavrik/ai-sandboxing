@@ -454,6 +454,27 @@ _dev_ssh_port() {
     podman port "$_dev_name" 2222/tcp 2>/dev/null | cut -d: -f2
 }
 
+_DEV_WAS_STOPPED=false
+
+_dev_ensure_running() {
+    local _dev_name="$1"
+    _DEV_WAS_STOPPED=false
+    if ! _dev_container_running "$_dev_name"; then
+        _DEV_WAS_STOPPED=true
+        _dev_ensure_proxy
+        podman start "$_dev_name" >/dev/null
+        sleep 3
+    fi
+    _dev_update_ssh_config "$_dev_name"
+}
+
+_dev_stop_if_was_stopped() {
+    local _dev_name="$1"
+    if [[ "$_DEV_WAS_STOPPED" == true ]]; then
+        podman stop "$_dev_name" >/dev/null
+    fi
+}
+
 _dev_sync_workspace() {
     local _dev_name="$1"
     local _dev_branch="$2"

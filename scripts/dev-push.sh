@@ -76,14 +76,7 @@ echo "Agent branch:    ${_devpush_branch}"
 echo "Original branch: ${_devpush_original_branch}"
 
 # ── Step 1: Inside container — commit, rebase on upstream, push ─────────
-_devpush_was_stopped=false
-if ! _dev_container_running "$_devpush_name"; then
-    _devpush_was_stopped=true
-    _dev_ensure_proxy
-    podman start "$_devpush_name" >/dev/null
-    sleep 3
-fi
-_dev_update_ssh_config "$_devpush_name"
+_dev_ensure_running "$_devpush_name"
 
 echo "Committing workspace..."
 _dev_ssh_cmd "$_devpush_name" \
@@ -94,7 +87,7 @@ if ! _dev_ssh_cmd "$_devpush_name" \
     "cd /workspace && git fetch upstream main && git rebase upstream/main"; then
     _dev_ssh_cmd "$_devpush_name" "cd /workspace && git rebase --abort" 2>/dev/null || true
     echo "Rebase failed due to merge conflicts. Aborted." >&2
-    [[ "$_devpush_was_stopped" == true ]] && podman stop "$_devpush_name" >/dev/null
+    _dev_stop_if_was_stopped "$_devpush_name"
     exit 1
 fi
 
@@ -102,9 +95,7 @@ echo "Pushing to agent fork..."
 _dev_ssh_cmd "$_devpush_name" \
     "cd /workspace && git push -f origin HEAD:refs/heads/${_devpush_branch}"
 
-if [[ "$_devpush_was_stopped" == true ]]; then
-    podman stop "$_devpush_name" >/dev/null
-fi
+_dev_stop_if_was_stopped "$_devpush_name"
 
 # ── Step 2: On host — fetch, squash to one commit, push ─────────────────
 _devpush_remote="dev-automation"

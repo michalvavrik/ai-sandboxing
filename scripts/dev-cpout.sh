@@ -19,12 +19,7 @@ fi
 
 readonly _devcpout_name=$(_dev_resolve_name "")
 
-if ! _dev_container_running "$_devcpout_name"; then
-    echo "Error: container '${_devcpout_name}' is not running" >&2
-    exit 1
-fi
-
-_dev_update_ssh_config "$_devcpout_name"
+_dev_ensure_running "$_devcpout_name"
 mkdir -p "$_devcpout_dest"
 
 for _devcpout_path in "${_devcpout_paths[@]}"; do
@@ -34,4 +29,5 @@ for _devcpout_path in "${_devcpout_paths[@]}"; do
     scp -q -r "${_devcpout_name}:${_devcpout_path}" "$_devcpout_dest"
 done
 
+_dev_stop_if_was_stopped "$_devcpout_name"
 echo "Copied ${#_devcpout_paths[@]} item(s) to ${_devcpout_dest}/"

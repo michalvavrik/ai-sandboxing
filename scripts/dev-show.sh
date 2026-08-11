@@ -69,14 +69,7 @@ GIT_SSH_COMMAND="$_devshow_git_ssh" \
 
 _dev_ensure_proxy
 
-_devshow_was_stopped=false
-if ! _dev_container_running "$_devshow_name"; then
-    _devshow_was_stopped=true
-    podman start "$_devshow_name" >/dev/null
-    sleep 3
-fi
-
-_dev_update_ssh_config "$_devshow_name"
+_dev_ensure_running "$_devshow_name"
 
 _devshow_backup="dev-auto/${_devshow_name}/backup/show/$(date +%s)"
 echo "Backing up container state to ${_devshow_backup}..."
@@ -87,8 +80,6 @@ echo "Pulling inside container..."
 _dev_ssh_cmd "$_devshow_name" \
     "cd /workspace && git fetch origin ${_devshow_branch} && git checkout -B '${_devshow_branch}' FETCH_HEAD"
 
-if [[ "$_devshow_was_stopped" == true ]]; then
-    podman stop "$_devshow_name" >/dev/null
-fi
+_dev_stop_if_was_stopped "$_devshow_name"
 
 echo "Done. Container '${_devshow_name}' updated with host changes."

@@ -10,15 +10,7 @@ if ! _dev_container_exists "$_devrebase_name"; then
     exit 1
 fi
 
-_devrebase_was_stopped=false
-if ! _dev_container_running "$_devrebase_name"; then
-    _devrebase_was_stopped=true
-    _dev_ensure_proxy
-    podman start "$_devrebase_name" >/dev/null
-    sleep 3
-fi
-
-_dev_update_ssh_config "$_devrebase_name"
+_dev_ensure_running "$_devrebase_name"
 
 readonly _devrebase_branch="dev-auto/${_devrebase_name}/main"
 
@@ -29,7 +21,7 @@ _dev_ssh_cmd "$_devrebase_name" \
 echo "Fetching upstream main..."
 if ! _dev_ssh_cmd "$_devrebase_name" "cd /workspace && git fetch upstream main"; then
     echo "Error: could not fetch upstream main" >&2
-    [[ "$_devrebase_was_stopped" == true ]] && podman stop "$_devrebase_name" >/dev/null
+    _dev_stop_if_was_stopped "$_devrebase_name"
     exit 1
 fi
 
@@ -44,6 +36,4 @@ else
     echo "Your changes are safe on branch ${_devrebase_branch}."
 fi
 
-if [[ "$_devrebase_was_stopped" == true ]]; then
-    podman stop "$_devrebase_name" >/dev/null
-fi
+_dev_stop_if_was_stopped "$_devrebase_name"

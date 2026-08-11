@@ -18,14 +18,10 @@ fi
 
 readonly _devcp_name=$(_dev_resolve_name "")
 
-if ! _dev_container_running "$_devcp_name"; then
-    echo "Error: container '${_devcp_name}' is not running" >&2
-    exit 1
-fi
-
-_dev_update_ssh_config "$_devcp_name"
+_dev_ensure_running "$_devcp_name"
 _dev_ssh_cmd "$_devcp_name" "mkdir -p '${_devcp_dest}'"
 
 scp -q -r "${_devcp_paths[@]}" "${_devcp_name}:${_devcp_dest}/"
 
+_dev_stop_if_was_stopped "$_devcp_name"
 echo "Copied ${#_devcp_paths[@]} item(s) to ${_devcp_dest}/"

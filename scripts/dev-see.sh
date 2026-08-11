@@ -20,15 +20,7 @@ if ! _dev_container_exists "$_devsee_name"; then
     exit 1
 fi
 
-_devsee_was_stopped=false
-if ! _dev_container_running "$_devsee_name"; then
-    _devsee_was_stopped=true
-    _dev_ensure_proxy
-    podman start "$_devsee_name" >/dev/null
-    sleep 3
-fi
-
-_dev_update_ssh_config "$_devsee_name"
+_dev_ensure_running "$_devsee_name"
 
 readonly _devsee_branch="dev-auto/${_devsee_name}/main"
 echo "Pushing changes to ${_devsee_branch}..."
@@ -79,8 +71,6 @@ fi
 
 git checkout -B "$_devsee_branch" "${_devsee_remote}/${_devsee_branch}"
 
-if [[ "$_devsee_was_stopped" == true ]]; then
-    podman stop "$_devsee_name" >/dev/null
-fi
+_dev_stop_if_was_stopped "$_devsee_name"
 
 echo "Done."
