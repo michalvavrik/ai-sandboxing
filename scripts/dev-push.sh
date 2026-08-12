@@ -84,7 +84,7 @@ _dev_ssh_cmd "$_devpush_name" \
 
 echo "Rebasing on upstream main..."
 if ! _dev_ssh_cmd "$_devpush_name" \
-    "cd /workspace && git fetch upstream main && git rebase upstream/main"; then
+    "cd /workspace && git fetch upstream main && git stash -u && git rebase upstream/main; _rc=\$?; git stash pop 2>/dev/null; exit \$_rc"; then
     _dev_ssh_cmd "$_devpush_name" "cd /workspace && git rebase --abort" 2>/dev/null || true
     echo "Rebase failed due to merge conflicts. Aborted." >&2
     _dev_stop_if_was_stopped "$_devpush_name"
@@ -94,6 +94,8 @@ fi
 echo "Pushing to agent fork..."
 _dev_ssh_cmd "$_devpush_name" \
     "cd /workspace && git push -f origin HEAD:refs/heads/${_devpush_branch}"
+
+_devpush_parent=$(_dev_ssh_cmd "$_devpush_name" "git -C /workspace rev-parse upstream/main")
 
 _dev_stop_if_was_stopped "$_devpush_name"
 
@@ -108,12 +110,6 @@ fi
 git -C "$_devpush_src_dir" fetch "$_devpush_remote" "$_devpush_branch"
 _devpush_agent_ref=$(git -C "$_devpush_src_dir" rev-parse FETCH_HEAD)
 _devpush_agent_tree=$(git -C "$_devpush_src_dir" rev-parse "${_devpush_agent_ref}^{tree}")
-
-_devpush_merge_base=$(git -C "$_devpush_src_dir" merge-base main "$_devpush_agent_ref" 2>/dev/null) || true
-if [[ -z "$_devpush_merge_base" ]]; then
-    echo "Error: could not find merge base between 'main' and agent branch" >&2
-    exit 1
-fi
 
 _devpush_original_msg=$(git -C "$_devpush_src_dir" log -1 --format=%B "$_devpush_original_branch")
 
@@ -131,7 +127,7 @@ fi
 
 echo "Creating commit on '${_devpush_original_branch}'..."
 _devpush_new_commit=$(git -C "$_devpush_src_dir" commit-tree "$_devpush_agent_tree" \
-    -p "$_devpush_merge_base" \
+    -p "$_devpush_parent" \
     -S -m "$_devpush_original_msg")
 
 git -C "$_devpush_src_dir" update-ref "refs/heads/${_devpush_original_branch}" "$_devpush_new_commit"

@@ -39,6 +39,7 @@ case "$_dev_cmd" in
     "${_dev_dir}/dev-show.sh" "$DEV_LAST_CONTAINER"
     ;;
   push)
+    for _dev_a in "$@"; do [[ "$_dev_a" != --* ]] && DEV_LAST_CONTAINER="$_dev_a" && break; done
     DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-push.sh" "$@"
     ;;
   rebase)
