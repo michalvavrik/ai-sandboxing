@@ -91,6 +91,7 @@ dev cp --to /workspace f.patch # copy into a specific container directory
 dev cpout pom.xml          # copy from container (relative to /workspace)
 dev cpout /tmp/file.txt    # copy from container (absolute path)
 dev cpout --to ~/review src # copy from container into a specific host directory
+dev review fix-auth        # run headless agent review (--agent=claude|bob|agy)
 dev use fix-auth           # set current container without entering
 dev list                   # show all dev containers
 dev pull                   # pull newer image (runs in background on login)
