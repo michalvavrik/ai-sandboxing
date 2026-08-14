@@ -174,6 +174,42 @@ claude
 dev https://github.com/keycloak/keycloak/pull/50801
 ```
 
+## Headless review
+
+Run an AI review without entering the container — output streams to your terminal:
+
+```bash
+# Review a PR (sets up container like `dev <url>`, then runs agent)
+dev review https://github.com/keycloak/keycloak/pull/50801
+
+# Review in an existing container
+dev review keycloak-pr-50801
+
+# Review the current container
+dev review
+
+# Follow-up question (continues the review session)
+dev review "what about thread safety in the token store?"
+
+# Use a different agent
+dev review --agent=bob https://github.com/keycloak/keycloak/pull/50801
+dev review --agent=agy keycloak-pr-50801
+
+# Custom prompt (replaces agent-specific template, base kept)
+dev review --prompt "focus only on security issues"
+
+# Append to the default prompt
+dev review --append-to-prompt "also check for Java 21 API usage"
+```
+
+Review prompts use a two-layer system in `configs/review-prompts/`:
+- `base.txt` — shared context instructions (always included)
+- `claude.txt`, `bob.txt`, `agy.txt` — agent-specific personality/style
+
+Edit these files to improve prompts over time. `--prompt` replaces only the agent-specific part; `--append-to-prompt` appends to the combined prompt.
+
+For interactive follow-up (when headless isn't enough): `dev enter` then start the agent and `/resume` or use `-c` to continue the session.
+
 ## MCP server proxy
 
 The host proxy can reverse-proxy MCP SSE servers running on the host into containers. Only whitelisted servers are proxied (see `MCP_WHITELIST` in `scripts/dev-proxy.py`). The entrypoint auto-discovers available servers and injects the `mcpServers` config into the container's Claude Code settings at startup.

@@ -73,8 +73,12 @@ case "$_dev_cmd" in
     "${_dev_dir}/dev-issue.sh" "$_dev_cmd"
     DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     ;;
+  review)
+    "${_dev_dir}/dev-review.sh" "$@"
+    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
+    ;;
   help|*)
-    echo "Usage: dev {new|enter|recreate|delete|start|see|show|push|rebase|cp|cpout|use|list|pull|install|.|<url>}"
+    echo "Usage: dev {new|enter|recreate|delete|start|see|show|push|rebase|cp|cpout|use|list|pull|install|review|.|<url>}"
     echo ""
     echo "  new <name>     Create and enter a new dev container"
     echo "  enter [name]   Enter an existing container"
@@ -92,6 +96,7 @@ case "$_dev_cmd" in
     echo "  pull           Pull newer images and fetch project sources (runs on login)"
     echo "  install        Install prerequisites and configure"
     echo "  .              Create/enter container from current git project"
+    echo "  review [opts] [url|container-name|\"follow-up\"]  Headless agent review (--agent=claude|bob|agy)"
     echo "  <github-url>   Create/enter container for a GitHub issue/PR"
     ;;
 esac

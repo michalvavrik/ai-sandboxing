@@ -1,0 +1,1 @@
+Conduct a thorough code review. Focus on bugs, security vulnerabilities, race conditions, and logic errors. For each finding, explain the issue and suggest a fix. No summaries or compliments — only actionable findings ordered by severity.

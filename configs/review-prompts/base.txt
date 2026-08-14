@@ -1,0 +1,33 @@
+You are reviewing code in /workspace. Gather context before reviewing:
+- Examine the diff: `git diff $(git merge-base HEAD upstream/main 2>/dev/null || echo HEAD~1)..HEAD`
+- Read .issue if present (issue details)
+- Read relevant source files for deeper understanding
+
+If .pr exists (PR review):
+- Read .pr for PR details
+- Fetch all PR comments: `gh pr view --comments`, `gh pr review list`, and inline code comments via `gh api repos/{owner}/{repo}/pulls/{number}/comments`
+- Fetch Copilot review findings if any: `gh api repos/{owner}/{repo}/pulls/{number}/reviews` (look for bot/copilot authors)
+- Read the full diff and relevant source files
+
+If .pr does not exist (local code review):
+- Review the workspace changes against the upstream base
+- Skip PR-specific sections below
+
+## Output format
+
+### Findings
+For each finding, state file:line, severity (critical/major/minor/nit), the issue, and a concrete fix.
+If Copilot flagged the same or a related issue, note it with a direct link to Copilot's comment: "(also flagged by Copilot: <url>)".
+If reviewers commented on something related, link each relevant comment directly: (<reviewer>: <url>) and summarize the thread.
+
+### Disagreements
+If you disagree with any Copilot or reviewer finding, list it here with a direct link to the original comment and your reasoning.
+
+### Notable discussions
+If there are blockers, heated debates, or unresolved threads in the PR comments that are not bugs but the reviewer should be aware of, briefly summarize each with a direct link to the relevant comment.
+
+### CI failures
+If this is a PR, check CI status: `gh pr checks`. For any failing checks, list the test name, a one-line best guess of the cause, and a direct link to the failing action run. Do not investigate deeply — a quick smoke check is enough. If I need more, I will ask.
+
+### Overall assessment
+Summary, key risks, and whether the changes are ready to merge.

@@ -76,7 +76,7 @@ if _dev_container_exists "$_devissue_name"; then
             "cd /workspace && git fetch https://github.com/${_devissue_org}/${_devissue_repo}.git ${_devissue_branch} && git checkout -B 'dev-auto/${_devissue_name}' FETCH_HEAD"
     fi
 
-    _dev_ssh_cmd "$_devissue_name"
+    [[ "${DEV_SKIP_ENTER:-}" != "1" ]] && _dev_ssh_cmd "$_devissue_name"
     exit 0
 fi
 
@@ -96,5 +96,20 @@ fi
 
 _dev_create_container "$_devissue_name" "$_devissue_template_key"
 
-echo "Entering container '${_devissue_name}'..."
-exec podman start -ai "$_devissue_name"
+if [[ "${DEV_SKIP_ENTER:-}" == "1" ]]; then
+    echo "Starting container '${_devissue_name}'..."
+    podman start "$_devissue_name" >/dev/null
+    sleep 3
+    _dev_update_ssh_config "$_devissue_name"
+    _devissue_wait=0
+    while ! ssh -q -o ConnectTimeout=1 -o BatchMode=yes "$_devissue_name" true &>/dev/null && (( _devissue_wait < 120 )); do
+        sleep 2; _devissue_wait=$((_devissue_wait + 2))
+    done
+    if ! ssh -q -o ConnectTimeout=1 -o BatchMode=yes "$_devissue_name" true &>/dev/null; then
+        echo "Error: SSH not ready after 120s" >&2
+        exit 1
+    fi
+else
+    echo "Entering container '${_devissue_name}'..."
+    exec podman start -ai "$_devissue_name"
+fi
