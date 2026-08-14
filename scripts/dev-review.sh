@@ -118,15 +118,39 @@ fi
 echo "Running ${_devreview_agent} review in '${_devreview_name}'..."
 case "$_devreview_agent" in
     claude)
-        _dev_ssh_cmd "$_devreview_name" \
-            "cd /workspace && exec claude ${_devreview_continue} -p \"\$(cat /tmp/dev-review-prompt.txt)\""
+        ssh -q "$_devreview_name" \
+            "cd /workspace && claude ${_devreview_continue} -p --verbose --output-format stream-json \"\$(cat /tmp/dev-review-prompt.txt)\"" \
+            < /dev/null \
+        | while IFS= read -r _devreview_line; do
+            _devreview_evt=$(printf '%s' "$_devreview_line" | jq -r '.type // empty' 2>/dev/null) || continue
+            case "$_devreview_evt" in
+                assistant)
+                    _devreview_ct=$(printf '%s' "$_devreview_line" | jq -r '.message.content[-1].type // empty' 2>/dev/null)
+                    case "$_devreview_ct" in
+                        tool_use)
+                            _devreview_tool=$(printf '%s' "$_devreview_line" | jq -r '.message.content[-1].name // empty' 2>/dev/null)
+                            _devreview_input=$(printf '%s' "$_devreview_line" | jq -r '(.message.content[-1].input.command // .message.content[-1].input.file_path // .message.content[-1].input.query // "") | tostring | .[0:120]' 2>/dev/null)
+                            printf '  → %s %s\n' "$_devreview_tool" "$_devreview_input" >&2
+                            ;;
+                        thinking)
+                            _devreview_thought=$(printf '%s' "$_devreview_line" | jq -r '.message.content[-1].thinking // empty' 2>/dev/null)
+                            [[ -n "$_devreview_thought" ]] && printf '  ✦ %s\n' "$_devreview_thought" >&2
+                            ;;
+                        text)
+                            printf '%s' "$_devreview_line" | jq -rj '.message.content[-1].text // empty' 2>/dev/null
+                            ;;
+                    esac
+                    ;;
+            esac
+        done
+        echo
         ;;
     bob)
-        _dev_ssh_cmd "$_devreview_name" \
+        ssh -qt "$_devreview_name" \
             "cd /workspace && exec bob -p \"\$(cat /tmp/dev-review-prompt.txt)\""
         ;;
     agy)
-        _dev_ssh_cmd "$_devreview_name" \
+        ssh -qt "$_devreview_name" \
             "cd /workspace && exec agy ${_devreview_continue} -p \"\$(cat /tmp/dev-review-prompt.txt)\""
         ;;
 esac
