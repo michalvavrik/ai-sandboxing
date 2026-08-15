@@ -164,6 +164,7 @@ case "$_devreview_agent" in
         [[ -f "${_devreview_session_file}.tmp" ]] && mv "${_devreview_session_file}.tmp" "$_devreview_session_file"
         scp -q "$_devreview_host_tmp.out" "${_devreview_name}:${_devreview_review_file}" 2>/dev/null && \
             echo "Review saved to ${_devreview_review_file}" >&2
+        [[ -f "$_devreview_session_file" ]] && echo "Session: $(cat "$_devreview_session_file")" >&2
         ;;
     bob)
         ssh -qt "$_devreview_name" \
@@ -212,6 +213,7 @@ case "$_devreview_agent" in
         [[ -f "${_devreview_session_file}.tmp" ]] && mv "${_devreview_session_file}.tmp" "$_devreview_session_file"
         scp -q "$_devreview_host_tmp.out" "${_devreview_name}:${_devreview_review_file}" 2>/dev/null && \
             echo "Review saved to ${_devreview_review_file}" >&2
+        [[ -f "$_devreview_session_file" ]] && echo "Session: $(cat "$_devreview_session_file")" >&2
         ;;
 esac
 

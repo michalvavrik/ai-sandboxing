@@ -209,7 +209,7 @@ Review prompts use a two-layer system in `configs/review-prompts/`:
 
 Edit these files to improve prompts over time. `--prompt` replaces only the agent-specific part; `--append-to-prompt` appends to the combined prompt.
 
-For interactive follow-up (when headless isn't enough): `dev enter` then start the agent and `/resume` or use `-c` to continue the session.
+For interactive follow-up (when headless isn't enough): `dev enter` then `claude -r <session-id>` to resume the review session. The session ID is printed at the end of each review.
 
 ## MCP server proxy
 
@@ -237,7 +237,7 @@ cd ~/sources/camel-k && dev new bar  # → camel-k template (profiles: go,kind)
 Every container ships both Java and Go stacks:
 - **Java:** SDKMAN + JDK 21 Temurin, Maven
 - **Go:** Go SDK, kubectl, Kind, Helm, Terraform, golangci-lint, Delve, gotestfmt, govulncheck
-- **Shared:** Git, gcc/g++, Make, podman-compose, Claude Code, Bob Shell
+- **Shared:** Git, gcc/g++, Make, podman-compose, Claude Code, Bob Shell, Antigravity CLI
 
 Projects pre-baked into the image (keycloak, quarkus) start instantly. Other templates clone from the host source on first start.
 
