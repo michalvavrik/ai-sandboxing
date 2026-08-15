@@ -328,4 +328,4 @@ Every 30 seconds, a background process snapshots the workspace (including uncomm
 
 ## Known issues
 
-- After container re-entrance (e.g. after host restart), Podman running inside the container does not work with Testcontainers (`LogMessageWaitStrategy` is not working). Arguably, this happens because the logging driver which is usually `journald` is unset.
+- After container exit and start (e.g. after host restart), Podman running inside the container may not work with Testcontainers (`LogMessageWaitStrategy` is not working). Arguably, this happens because the logging driver which is usually `journald` is unset.
