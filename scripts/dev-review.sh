@@ -103,19 +103,26 @@ ${_devreview_append}"
 fi
 
 _devreview_host_tmp=$(mktemp /tmp/dev-review-prompt.XXXXXX)
-trap 'rm -f "$_devreview_host_tmp"' EXIT
+trap 'rm -f "$_devreview_host_tmp" "$_devreview_host_tmp.out" "${_devreview_session_file}.tmp"' EXIT
 printf '%s\n' "$_devreview_prompt" > "$_devreview_host_tmp"
 scp -q "$_devreview_host_tmp" "${_devreview_name}:/tmp/dev-review-prompt.txt"
 
+_devreview_session_file="/run/user/$(id -u)/dev-review-session-${_devreview_name}-${_devreview_agent}"
 _devreview_continue=""
-if [[ "$_devreview_mode" == "followup" ]]; then
+if [[ "$_devreview_mode" == "followup" && -f "$_devreview_session_file" ]]; then
+    _devreview_session_id=$(cat "$_devreview_session_file")
     case "$_devreview_agent" in
-        claude) _devreview_continue="-c" ;;
-        agy)    _devreview_continue="--continue" ;;
+        claude) _devreview_continue="-r ${_devreview_session_id}" ;;
+        agy)    _devreview_continue="--conversation ${_devreview_session_id}" ;;
     esac
 fi
 
+_devreview_ts=$(date +%Y%m%d-%H%M%S)
+_devreview_review_file="/workspace/.reviews/${_devreview_agent}/${_devreview_ts}.md"
+ssh -q "$_devreview_name" "mkdir -p /workspace/.reviews/${_devreview_agent} && grep -qxF '.reviews' /workspace/.git/info/exclude 2>/dev/null || echo '.reviews' >> /workspace/.git/info/exclude"
+
 echo "Running ${_devreview_agent} review in '${_devreview_name}'..."
+_devreview_header_shown=false
 case "$_devreview_agent" in
     claude)
         ssh -q "$_devreview_name" \
@@ -124,6 +131,10 @@ case "$_devreview_agent" in
         | while IFS= read -r _devreview_line; do
             _devreview_evt=$(printf '%s' "$_devreview_line" | jq -r '.type // empty' 2>/dev/null) || continue
             case "$_devreview_evt" in
+                system)
+                    _devreview_sub=$(printf '%s' "$_devreview_line" | jq -r '.subtype // empty' 2>/dev/null)
+                    [[ "$_devreview_sub" == "init" ]] && printf '  ⚡ agent ready\n' >&2
+                    ;;
                 assistant)
                     _devreview_ct=$(printf '%s' "$_devreview_line" | jq -r '.message.content[-1].type // empty' 2>/dev/null)
                     case "$_devreview_ct" in
@@ -137,21 +148,70 @@ case "$_devreview_agent" in
                             [[ -n "$_devreview_thought" ]] && printf '  ✦ %s\n' "$_devreview_thought" >&2
                             ;;
                         text)
-                            printf '%s' "$_devreview_line" | jq -rj '.message.content[-1].text // empty' 2>/dev/null
+                            printf '%s' "$_devreview_line" | jq -r '.message.content[-1].text // empty' 2>/dev/null >&2
                             ;;
                     esac
+                    ;;
+                result)
+                    printf '\n════════════════════ REVIEW ════════════════════\n\n' >&2
+                    printf '%s' "$_devreview_line" | jq -r '.result // empty' | tee "$_devreview_host_tmp.out"
+                    printf '%s' "$_devreview_line" | jq -r '.session_id // empty' > "${_devreview_session_file}.tmp"
+                    break
                     ;;
             esac
         done
         echo
+        [[ -f "${_devreview_session_file}.tmp" ]] && mv "${_devreview_session_file}.tmp" "$_devreview_session_file"
+        scp -q "$_devreview_host_tmp.out" "${_devreview_name}:${_devreview_review_file}" 2>/dev/null && \
+            echo "Review saved to ${_devreview_review_file}" >&2
         ;;
     bob)
         ssh -qt "$_devreview_name" \
-            "cd /workspace && exec bob -p \"\$(cat /tmp/dev-review-prompt.txt)\""
+            "cd /workspace && bob -p \"\$(cat /tmp/dev-review-prompt.txt)\"" \
+            | tee "$_devreview_host_tmp.out"
+        scp -q "$_devreview_host_tmp.out" "${_devreview_name}:${_devreview_review_file}" 2>/dev/null && \
+            echo "Review saved to ${_devreview_review_file}" >&2
         ;;
     agy)
-        ssh -qt "$_devreview_name" \
-            "cd /workspace && exec agy ${_devreview_continue} -p \"\$(cat /tmp/dev-review-prompt.txt)\""
+        ssh -q "$_devreview_name" \
+            "cd /workspace && agy ${_devreview_continue} -p --verbose --output-format stream-json \"\$(cat /tmp/dev-review-prompt.txt)\"" \
+            < /dev/null \
+        | while IFS= read -r _devreview_line; do
+            _devreview_evt=$(printf '%s' "$_devreview_line" | jq -r '.type // empty' 2>/dev/null) || continue
+            case "$_devreview_evt" in
+                system)
+                    _devreview_sub=$(printf '%s' "$_devreview_line" | jq -r '.subtype // empty' 2>/dev/null)
+                    [[ "$_devreview_sub" == "init" ]] && printf '  ⚡ agent ready\n' >&2
+                    ;;
+                assistant)
+                    _devreview_ct=$(printf '%s' "$_devreview_line" | jq -r '.message.content[-1].type // empty' 2>/dev/null)
+                    case "$_devreview_ct" in
+                        tool_use)
+                            _devreview_tool=$(printf '%s' "$_devreview_line" | jq -r '.message.content[-1].name // empty' 2>/dev/null)
+                            _devreview_input=$(printf '%s' "$_devreview_line" | jq -r '(.message.content[-1].input.command // .message.content[-1].input.file_path // .message.content[-1].input.query // "") | tostring | .[0:120]' 2>/dev/null)
+                            printf '  → %s %s\n' "$_devreview_tool" "$_devreview_input" >&2
+                            ;;
+                        thinking)
+                            _devreview_thought=$(printf '%s' "$_devreview_line" | jq -r '.message.content[-1].thinking // empty' 2>/dev/null)
+                            [[ -n "$_devreview_thought" ]] && printf '  ✦ %s\n' "$_devreview_thought" >&2
+                            ;;
+                        text)
+                            printf '%s' "$_devreview_line" | jq -r '.message.content[-1].text // empty' 2>/dev/null >&2
+                            ;;
+                    esac
+                    ;;
+                result)
+                    printf '\n════════════════════ REVIEW ════════════════════\n\n' >&2
+                    printf '%s' "$_devreview_line" | jq -r '.result // empty' | tee "$_devreview_host_tmp.out"
+                    printf '%s' "$_devreview_line" | jq -r '.session_id // empty' > "${_devreview_session_file}.tmp"
+                    break
+                    ;;
+            esac
+        done
+        echo
+        [[ -f "${_devreview_session_file}.tmp" ]] && mv "${_devreview_session_file}.tmp" "$_devreview_session_file"
+        scp -q "$_devreview_host_tmp.out" "${_devreview_name}:${_devreview_review_file}" 2>/dev/null && \
+            echo "Review saved to ${_devreview_review_file}" >&2
         ;;
 esac
 
