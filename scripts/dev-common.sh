@@ -411,6 +411,8 @@ _dev_create_container() {
     _dev_volumes+=(-v "${_dev_disk_img}:/opt/bounded-disk.img:rw")
     _dev_volumes+=(-v "${_dev_podman_img}:/opt/podman-disk.img:rw")
 
+    _dev_ensure_tracked_branch "$_dev_name" "$_dev_template_key"
+
     echo "Creating container '${_dev_name}'..."
     podman create -it \
         --runtime="$DEV_RUNTIME" \
@@ -715,6 +717,32 @@ _dev_prune_backup_branches() {
             git -C "$_dev_src_dir" branch -D "$_dev_ref" 2>/dev/null || true
         fi
     done < <(git -C "$_dev_src_dir" ls-remote "$DEV_GHCR_USER" "refs/heads/backup/*" 2>/dev/null | awk '{print $2}')
+}
+
+_dev_ensure_tracked_branch() {
+    local _dev_name="$1"
+    local _dev_tkey="$2"
+
+    [[ -n "${DEV_ORIGINAL_BRANCH:-}" ]] && return 0
+    [[ -z "$_dev_tkey" ]] && return 0
+
+    local _dev_repo="${_dev_tkey#*/}"
+    local _dev_src_dir
+    _dev_src_dir=$(_dev_resolve_src_dir "$_dev_tkey" 2>/dev/null) || return 0
+
+    local _dev_feature
+    _dev_feature=$(_dev_container_name_to_feature "$_dev_name" "$_dev_repo")
+    local _dev_wip="wip/${_dev_feature}"
+
+    if ! git -C "$_dev_src_dir" rev-parse --verify "$_dev_wip" &>/dev/null; then
+        local _dev_default
+        _dev_default=$(git -C "$_dev_src_dir" remote show origin 2>/dev/null \
+            | sed -n 's/.*HEAD branch: //p') || true
+        _dev_default="${_dev_default:-main}"
+        git -C "$_dev_src_dir" branch "$_dev_wip" "origin/${_dev_default}" 2>/dev/null || return 0
+    fi
+
+    export DEV_ORIGINAL_BRANCH="$_dev_wip"
 }
 
 _dev_resolve_src_dir() {

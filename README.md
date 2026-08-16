@@ -133,6 +133,10 @@ Branches follow a naming convention that enables automatic pruning of dead branc
 | `dev-auto/<container>/*` | Container working branches | `dev .`, `dev see` | Container doesn't exist |
 | `backup/<feature>/<type>/<timestamp>` | Safety backup of deleted branches | Automatic | Timestamp > 20 days old |
 
+### Tracked branch
+
+Every container tracks a branch. `dev .` and `dev <pr-url>` use the current/PR branch. `dev new` and `dev <issue-url>` automatically create `wip/<feature>` from `origin/main` in the source repo (ref only — no checkout, no working tree changes). This is what `dev merge` and `dev delete` sync to.
+
 ### How `<feature>` maps to container names
 
 The `<feature>` in `wip/<feature>` and `in-review/<feature>` is the branch suffix. When creating containers, the feature is sanitized and prefixed with the repo name if needed:

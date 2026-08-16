@@ -43,7 +43,9 @@ ${_devsync_cname}"
         fi
     done < <(git -C "$_devsync_src_dir" branch --list 'dev-auto/*' 2>/dev/null)
 
-    # ── 2. Delete wip/* where in-review/* exists ──────────────────────────
+    # ── 2. Delete wip/* where in-review/* exists or wip is stale ─────────
+    _devsync_now=$(date +%s)
+    _devsync_stale_age=$(( DEV_BACKUP_MAX_AGE_DAYS * 86400 ))
     while read -r _devsync_wip; do
         [[ -z "$_devsync_wip" ]] && continue
         _devsync_wip="${_devsync_wip#\* }"
@@ -51,6 +53,12 @@ ${_devsync_cname}"
         _devsync_feature="${_devsync_wip#wip/}"
         if git -C "$_devsync_src_dir" rev-parse --verify "in-review/${_devsync_feature}" &>/dev/null; then
             echo "  ${_devsync_wip} — in-review exists, deleting..."
+            _dev_backup_and_delete_branch "$_devsync_src_dir" "$_devsync_wip"
+            continue
+        fi
+        _devsync_last_commit=$(git -C "$_devsync_src_dir" log -1 --format=%ct "$_devsync_wip" 2>/dev/null) || continue
+        if (( _devsync_now - _devsync_last_commit > _devsync_stale_age )); then
+            echo "  ${_devsync_wip} — stale ($(( (_devsync_now - _devsync_last_commit) / 86400 )) days), deleting..."
             _dev_backup_and_delete_branch "$_devsync_src_dir" "$_devsync_wip"
         fi
     done < <(git -C "$_devsync_src_dir" branch --list 'wip/*' 2>/dev/null)

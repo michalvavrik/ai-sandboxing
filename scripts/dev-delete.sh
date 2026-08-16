@@ -56,13 +56,12 @@ if [[ -n "$_devdel_template_key" ]]; then
             _dev_backup_and_delete_branch "$_devdel_src_dir" "$_devdel_da"
         done < <(git -C "$_devdel_src_dir" branch --list "dev-auto/${_devdel_name}/*" 2>/dev/null)
 
-        # Delete wip branch (keep in-review if it exists)
-        if git -C "$_devdel_src_dir" rev-parse --verify "wip/${_devdel_feature}" &>/dev/null; then
-            _dev_backup_and_delete_branch "$_devdel_src_dir" "wip/${_devdel_feature}"
-        fi
-
+        # Delete wip branch only when in-review exists (work has progressed to review)
         if [[ "$_devdel_has_ir" == true ]]; then
-            echo "Kept in-review/${_devdel_feature} (has associated PR)."
+            if git -C "$_devdel_src_dir" rev-parse --verify "wip/${_devdel_feature}" &>/dev/null; then
+                _dev_backup_and_delete_branch "$_devdel_src_dir" "wip/${_devdel_feature}"
+            fi
+            echo "Kept in-review/${_devdel_feature}."
         fi
     fi
 fi
