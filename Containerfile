@@ -24,8 +24,9 @@ RUN passwd -l root \
     && chmod u+s /usr/bin/newuidmap /usr/bin/newgidmap
 
 # ── Inner Podman configuration ───────────────────────────────────────────────
-COPY configs/containers-storage.conf   /etc/containers/storage.conf
-COPY configs/containers-registries.conf /etc/containers/registries.conf
+COPY configs/containers-storage.conf      /etc/containers/storage.conf
+COPY configs/containers-registries.conf  /etc/containers/registries.conf
+COPY configs/containers-containers.conf  /etc/containers/containers.conf
 
 # ── Allow non-root fuse-overlayfs with allow_root ────────────────────────────
 RUN echo "user_allow_other" >> /etc/fuse.conf
