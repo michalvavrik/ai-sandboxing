@@ -42,7 +42,7 @@ export DOCKER_HOST=unix:///run/user/1000/podman/podman.sock
 export TESTCONTAINERS_RYUK_DISABLED=true
 export HISTFILE=/dev/null
 export CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS=true
-if ! infocmp "${TERM:-dumb}" &>/dev/null 2>&1; then export TERM=xterm-256color; fi
+if ! infocmp "\${TERM:-dumb}" &>/dev/null 2>&1; then export TERM=xterm-256color; fi
 DEVENV
 
 _has_profile() { [[ ",${DEV_PROFILES:-}," == *",$1,"* ]]; }
