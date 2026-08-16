@@ -7,7 +7,7 @@ echo "* soft nofile 196608" > /etc/security/limits.d/90-nofile.conf
 echo "* hard nofile 393216" >> /etc/security/limits.d/90-nofile.conf
 
 # ── Git identity (from host config.local, passed as env vars) ──────────────
-printf '[user]\n\temail = %s\n\tname = %s\n' \
+printf '[user]\n\temail = %s\n\tname = %s\n[gc]\n\tauto = 0\n' \
     "${DEV_AUTOMATION_EMAIL:-dev@sandbox.local}" \
     "${DEV_AUTOMATION_NAME:-Dev Automation}" \
     > /etc/gitconfig
