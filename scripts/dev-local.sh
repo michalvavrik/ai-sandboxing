@@ -22,22 +22,7 @@ if [[ -z "$_devlocal_branch" ]]; then
     exit 1
 fi
 
-if [[ "$_devlocal_branch" =~ ^dev-auto/([^/]+) ]]; then
-    _devlocal_name="${BASH_REMATCH[1]}"
-else
-    _devlocal_sanitized="${_devlocal_branch//\//-}"
-    _devlocal_sanitized="${_devlocal_sanitized#-}"
-    if [[ "$_devlocal_sanitized" == "${_devlocal_repo}" || "$_devlocal_sanitized" == "${_devlocal_repo}-"* ]]; then
-        _devlocal_name="$_devlocal_sanitized"
-    else
-        _devlocal_name="${_devlocal_repo}-${_devlocal_sanitized}"
-    fi
-fi
-
-if (( ${#_devlocal_name} > 40 )); then
-    _devlocal_name="${_devlocal_name:0:40}"
-    _devlocal_name="${_devlocal_name%-}"
-fi
+_devlocal_name=$(_dev_branch_to_container_name "$_devlocal_branch" "$_devlocal_repo")
 
 readonly _devlocal_name
 readonly _devlocal_push_branch="dev-auto/${_devlocal_name}/main"

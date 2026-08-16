@@ -2,9 +2,31 @@
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
-_devshow_name=$(_dev_resolve_name "${1:-}")
+_devshow_name="${1:-}"
+_devshow_remote="dev-automation"
+
+# ── Resolve container name ────────────────────────────────────────────────────
+if [[ -z "$_devshow_name" ]]; then
+    _devshow_name=$(_dev_resolve_name "" 2>/dev/null) || true
+fi
+
+if [[ -z "$_devshow_name" ]] && git rev-parse --is-inside-work-tree &>/dev/null; then
+    _devshow_tkey=$(_dev_detect_template_from_cwd 2>/dev/null) || true
+    if [[ -n "$_devshow_tkey" ]]; then
+        _devshow_cur=$(git branch --show-current 2>/dev/null) || true
+        if [[ -n "$_devshow_cur" ]]; then
+            _devshow_name=$(_dev_branch_to_container_name "$_devshow_cur" "${_devshow_tkey#*/}")
+        fi
+    fi
+fi
+
+if [[ -z "$_devshow_name" ]]; then
+    echo "Error: no container specified and could not determine from branch." >&2
+    echo "Use 'dev use <name>' first or provide a container name." >&2
+    exit 1
+fi
+
 readonly _devshow_name
-readonly _devshow_remote="dev-automation"
 
 if ! _dev_container_exists "$_devshow_name"; then
     echo "Error: container '${_devshow_name}' does not exist" >&2
@@ -37,11 +59,18 @@ fi
 readonly _devshow_branch="dev-auto/${_devshow_name}/main"
 _devshow_current=$(git -C "$_devshow_src_dir" branch --show-current 2>/dev/null)
 
-if [[ "$_devshow_current" != "$_devshow_branch" ]]; then
-    echo "Error: not on the agent's branch" >&2
+# ── Verify current branch matches the container ──────────────────────────────
+_devshow_current_maps_to=""
+if [[ -n "$_devshow_current" ]]; then
+    _devshow_current_maps_to=$(_dev_branch_to_container_name "$_devshow_current" "$_devshow_repo")
+fi
+
+if [[ "$_devshow_current_maps_to" != "$_devshow_name" ]]; then
+    echo "Error: current branch does not match container" >&2
     echo "  Current branch: ${_devshow_current:-detached HEAD}" >&2
-    echo "  Expected:       ${_devshow_branch}" >&2
-    echo "Run 'dev see ${_devshow_name}' first to check out the agent's branch." >&2
+    echo "  Container:      ${_devshow_name}" >&2
+    echo "  Expected one of: ${_devshow_branch}, wip/*, or in-review/* that maps to '${_devshow_name}'" >&2
+    echo "Run 'dev see ${_devshow_name}' or 'dev continue' first." >&2
     exit 1
 fi
 

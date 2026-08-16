@@ -336,6 +336,9 @@ _dev_completion() {
     if [[ "\${COMP_WORDS[1]}" == "cp" && \$COMP_CWORD -ge 2 ]]; then
         compopt -o filenames
         COMPREPLY=(\$(compgen -f -- "\$cur"))
+    elif [[ "\${COMP_WORDS[1]}" == "continue" && \$COMP_CWORD -eq 2 ]]; then
+        compopt -o nosort
+        COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur"))
     else
         [[ "\$prev" == "cpout" ]] && compopt -o nospace
         COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur"))
@@ -369,13 +372,13 @@ readonly _DEV_SERVICE_FILE="${_DEV_SERVICE_DIR}/dev-pull.service"
 mkdir -p "$_DEV_SERVICE_DIR"
 cat > "$_DEV_SERVICE_FILE" <<UNIT
 [Unit]
-Description=Pull dev sandbox image
+Description=Dev sandbox sync (pull images + prune branches)
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=${_DEV_BASE_DIR}/scripts/dev-pull.sh
+ExecStart=${_DEV_BASE_DIR}/scripts/dev-sync.sh
 
 [Install]
 WantedBy=default.target
@@ -383,7 +386,7 @@ UNIT
 
 systemctl --user daemon-reload
 systemctl --user enable dev-pull.service
-echo "Enabled dev-pull.service (runs on graphical login)."
+echo "Enabled dev-pull.service (runs on graphical login — executes dev sync)."
 echo "Logs: journalctl --user -u dev-pull"
 
 echo ""

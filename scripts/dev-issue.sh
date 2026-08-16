@@ -36,11 +36,22 @@ if [[ "$_devissue_type" == "tree" ]]; then
         _devissue_template_key=$(_dev_find_template_key_by_repo "$_devissue_repo") || true
     fi
     readonly _devissue_template_key="${_devissue_template_key:-${_devissue_org}/${_devissue_repo}}"
-    if [[ "$_devissue_branch" =~ ^dev-auto/([^/]+) ]]; then
-        readonly _devissue_name="${BASH_REMATCH[1]}"
-    else
-        readonly _devissue_name="${_devissue_repo}-${_devissue_branch//\//-}"
+    readonly _devissue_name=$(_dev_branch_to_container_name "$_devissue_branch" "$_devissue_repo")
+
+    # For in-review/wip branches from user's org, update local branch from remote
+    if [[ ("$_devissue_org" == "$DEV_AUTOMATION_USER" || "$_devissue_org" == "$DEV_GHCR_USER") \
+          && "$_devissue_branch" =~ ^(wip|in-review)/ ]]; then
+        _devissue_src_dir=$(_dev_resolve_src_dir "$_devissue_template_key" 2>/dev/null) || true
+        if [[ -n "$_devissue_src_dir" ]]; then
+            if git -C "$_devissue_src_dir" rev-parse --verify "$_devissue_branch" &>/dev/null; then
+                _dev_backup_and_delete_branch "$_devissue_src_dir" "$_devissue_branch"
+            fi
+            echo "Fetching ${_devissue_branch} from ${_devissue_org}/${_devissue_repo}..."
+            git -C "$_devissue_src_dir" fetch "https://github.com/${_devissue_org}/${_devissue_repo}.git" "$_devissue_branch" 2>/dev/null || true
+            git -C "$_devissue_src_dir" checkout -B "$_devissue_branch" FETCH_HEAD 2>/dev/null || true
+        fi
     fi
+
     echo "Branch ${_devissue_branch} in ${_devissue_org}/${_devissue_repo} (template: ${_devissue_template_key})"
 else
     readonly _devissue_template_key="${_devissue_org}/${_devissue_repo}"

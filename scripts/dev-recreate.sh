@@ -60,7 +60,8 @@ GIT_SSH_COMMAND="$_devrc_git_ssh" \
     git push "$_devrc_remote" "refs/heads/${_devrc_branch}:refs/heads/${_devrc_tmp_branch}" 2>/dev/null
 
 # Delete old container (cleans up dev-auto/name/* branches, revokes OAuth, removes disks)
-"${DEV_SCRIPTS_DIR}/dev-delete.sh" "$_devrc_name"
+# Skip lifecycle branch cleanup — we're preserving the workspace
+DEV_SKIP_BRANCH_CLEANUP=1 "${DEV_SCRIPTS_DIR}/dev-delete.sh" "$_devrc_name"
 
 # Restore branch and clean up temp
 GIT_SSH_COMMAND="$_devrc_git_ssh" \

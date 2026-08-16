@@ -5,13 +5,13 @@ source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 _devpush_usage() {
     echo "Usage: dev push [--local] [name]"
     echo ""
-    echo "Squash agent's work into one commit on the original branch and push."
+    echo "Squash agent's work into one commit and push."
     echo ""
     echo "Inside the container: commits all changes (including untracked),"
     echo "rebases onto latest upstream main, and pushes to the agent's fork."
     echo ""
     echo "On the host: fetches the rebased branch, creates a single signed"
-    echo "commit on the original branch with your identity, and pushes."
+    echo "commit, and pushes. wip/* branches are renamed to in-review/*."
     echo "Does not affect the current working branch or checkout."
     echo ""
     echo "Options:"
@@ -35,14 +35,6 @@ if ! _dev_container_exists "$_devpush_name"; then
     echo "Error: container '${_devpush_name}' does not exist" >&2
     exit 1
 fi
-
-_devpush_original_branch=$(podman inspect --format '{{index .Config.Labels "dev-original-branch"}}' "$_devpush_name" 2>/dev/null) || true
-if [[ -z "$_devpush_original_branch" || "$_devpush_original_branch" == "<no value>" ]]; then
-    echo "Error: container '${_devpush_name}' has no linked original branch" >&2
-    echo "Only containers created via 'dev .' or 'dev <pr-url>' support 'dev push'." >&2
-    exit 1
-fi
-readonly _devpush_original_branch
 
 _devpush_template_key=$(_dev_container_template_key "$_devpush_name")
 if [[ -z "$_devpush_template_key" ]]; then
@@ -71,9 +63,30 @@ readonly _devpush_branch="dev-auto/${_devpush_name}/main"
 readonly _devpush_repo="${_devpush_template_key#*/}"
 readonly _devpush_remote_url="git@github.com:${DEV_AUTOMATION_USER}/${_devpush_repo}.git"
 
+# ── Determine push target branch ──────────────────────────────────────────────
+_devpush_original_branch=$(podman inspect --format '{{index .Config.Labels "dev-original-branch"}}' "$_devpush_name" 2>/dev/null) || true
+[[ "$_devpush_original_branch" == "<no value>" ]] && _devpush_original_branch=""
+
+_devpush_push_branch="$_devpush_original_branch"
+_devpush_wip_to_delete=""
+if [[ "$_devpush_original_branch" == wip/* ]]; then
+    _devpush_push_branch="in-review/${_devpush_original_branch#wip/}"
+    _devpush_wip_to_delete="$_devpush_original_branch"
+elif [[ "$_devpush_original_branch" == dev-auto/* || -z "$_devpush_original_branch" ]]; then
+    _devpush_feature=$(_dev_container_name_to_feature "$_devpush_name" "$_devpush_repo")
+    _devpush_push_branch="in-review/${_devpush_feature}"
+elif [[ "$_devpush_original_branch" == in-review/* ]]; then
+    _devpush_push_branch="$_devpush_original_branch"
+fi
+
+if [[ -z "$_devpush_push_branch" ]]; then
+    echo "Error: could not determine push branch for container '${_devpush_name}'" >&2
+    exit 1
+fi
+
 echo "Container:       ${_devpush_name}"
 echo "Agent branch:    ${_devpush_branch}"
-echo "Original branch: ${_devpush_original_branch}"
+echo "Push branch:     ${_devpush_push_branch}"
 
 # ── Step 1: Inside container — commit, rebase on upstream, push ─────────
 _dev_ensure_running "$_devpush_name"
@@ -111,7 +124,14 @@ git -C "$_devpush_src_dir" fetch "$_devpush_remote" "$_devpush_branch"
 _devpush_agent_ref=$(git -C "$_devpush_src_dir" rev-parse FETCH_HEAD)
 _devpush_agent_tree=$(git -C "$_devpush_src_dir" rev-parse "${_devpush_agent_ref}^{tree}")
 
-_devpush_original_msg=$(git -C "$_devpush_src_dir" log -1 --format=%B "$_devpush_original_branch")
+_devpush_commit_msg=""
+if [[ -n "$_devpush_original_branch" ]] && \
+    git -C "$_devpush_src_dir" rev-parse --verify "$_devpush_original_branch" &>/dev/null; then
+    _devpush_commit_msg=$(git -C "$_devpush_src_dir" log -1 --format=%B "$_devpush_original_branch")
+fi
+if [[ -z "$_devpush_commit_msg" ]]; then
+    _devpush_commit_msg="dev push: ${_devpush_push_branch}"
+fi
 
 _devpush_user_name=$(git -C "$_devpush_src_dir" config user.name 2>/dev/null) || true
 _devpush_user_email=$(git -C "$_devpush_src_dir" config user.email 2>/dev/null) || true
@@ -121,23 +141,29 @@ if [[ -z "$_devpush_user_name" || -z "$_devpush_user_email" ]]; then
 fi
 
 _devpush_signoff="Signed-off-by: ${_devpush_user_name} <${_devpush_user_email}>"
-if ! printf '%s\n' "$_devpush_original_msg" | grep -qF "$_devpush_signoff"; then
-    _devpush_original_msg=$(printf '%s\n\n%s' "$_devpush_original_msg" "$_devpush_signoff")
+if ! printf '%s\n' "$_devpush_commit_msg" | grep -qF "$_devpush_signoff"; then
+    _devpush_commit_msg=$(printf '%s\n\n%s' "$_devpush_commit_msg" "$_devpush_signoff")
 fi
 
-echo "Creating commit on '${_devpush_original_branch}'..."
+echo "Creating commit on '${_devpush_push_branch}'..."
 _devpush_new_commit=$(git -C "$_devpush_src_dir" commit-tree "$_devpush_agent_tree" \
     -p "$_devpush_parent" \
-    -S -m "$_devpush_original_msg")
+    -S -m "$_devpush_commit_msg")
 
-git -C "$_devpush_src_dir" update-ref "refs/heads/${_devpush_original_branch}" "$_devpush_new_commit"
+git -C "$_devpush_src_dir" update-ref "refs/heads/${_devpush_push_branch}" "$_devpush_new_commit"
 
-if [[ "$_devpush_local" == true ]]; then
-    echo "Done. Branch '${_devpush_original_branch}' updated locally (not pushed)."
-else
-    echo "Pushing to ${DEV_GHCR_USER}..."
-    git -C "$_devpush_src_dir" push "$DEV_GHCR_USER" "$_devpush_original_branch" --force-with-lease
-    echo "Done. Branch '${_devpush_original_branch}' pushed to ${DEV_GHCR_USER}."
+# ── Step 3: Clean up wip branch if translating to in-review ───────────────
+if [[ -n "$_devpush_wip_to_delete" ]] && \
+    git -C "$_devpush_src_dir" rev-parse --verify "$_devpush_wip_to_delete" &>/dev/null; then
+    _dev_backup_and_delete_branch "$_devpush_src_dir" "$_devpush_wip_to_delete"
 fi
 
-echo "Commit: $(git -C "$_devpush_src_dir" log -1 --oneline "$_devpush_original_branch")"
+if [[ "$_devpush_local" == true ]]; then
+    echo "Done. Branch '${_devpush_push_branch}' updated locally (not pushed)."
+else
+    echo "Pushing to ${DEV_GHCR_USER}..."
+    git -C "$_devpush_src_dir" push "$DEV_GHCR_USER" "$_devpush_push_branch" --force-with-lease
+    echo "Done. Branch '${_devpush_push_branch}' pushed to ${DEV_GHCR_USER}."
+fi
+
+echo "Commit: $(git -C "$_devpush_src_dir" log -1 --oneline "$_devpush_push_branch")"

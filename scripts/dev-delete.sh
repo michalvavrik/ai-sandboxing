@@ -2,12 +2,27 @@
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
-_devdel_name=$(_dev_resolve_name "${1:-}")
+_devdel_sync=true
+_devdel_name_arg=""
+for _devdel_arg in "$@"; do
+    case "$_devdel_arg" in
+        --dont-merge) _devdel_sync=false ;;
+        *) _devdel_name_arg="$_devdel_arg" ;;
+    esac
+done
+
+_devdel_name=$(_dev_resolve_name "$_devdel_name_arg")
 readonly _devdel_name
 
 if ! _dev_container_exists "$_devdel_name"; then
     echo "Error: container '${_devdel_name}' does not exist" >&2
     exit 1
+fi
+
+# Merge container state into tracked branch before deleting (unless --dont-merge or recreate)
+if [[ "$_devdel_sync" == true && "${DEV_SKIP_BRANCH_CLEANUP:-}" != "1" ]]; then
+    "${DEV_SCRIPTS_DIR}/dev-merge.sh" "$_devdel_name" || \
+        echo "WARNING: merge failed — container state may not be saved to tracked branch" >&2
 fi
 
 # Delete remote branch if it was pushed
@@ -22,6 +37,33 @@ if [[ -n "$_devdel_template_key" ]]; then
     if [[ -n "$_devdel_refs" ]]; then
         GIT_SSH_COMMAND="$_devdel_git_ssh" \
             git push "$_devdel_remote" --delete $_devdel_refs 2>/dev/null || true
+    fi
+
+    # Clean up local lifecycle branches (dev-auto/*, wip/*)
+    # Keep in-review/* if it exists; delete wip/* and dev-auto/*
+    # Skipped during dev recreate (DEV_SKIP_BRANCH_CLEANUP=1)
+    _devdel_src_dir=$(_dev_resolve_src_dir "$_devdel_template_key" 2>/dev/null) || true
+    if [[ -n "$_devdel_src_dir" && "${DEV_SKIP_BRANCH_CLEANUP:-}" != "1" ]]; then
+        _devdel_feature=$(_dev_container_name_to_feature "$_devdel_name" "$_devdel_repo")
+        _devdel_has_ir=false
+        git -C "$_devdel_src_dir" rev-parse --verify "in-review/${_devdel_feature}" &>/dev/null && _devdel_has_ir=true
+
+        # Delete local dev-auto branches
+        while read -r _devdel_da; do
+            [[ -z "$_devdel_da" ]] && continue
+            _devdel_da="${_devdel_da#\* }"
+            _devdel_da="${_devdel_da## }"
+            _dev_backup_and_delete_branch "$_devdel_src_dir" "$_devdel_da"
+        done < <(git -C "$_devdel_src_dir" branch --list "dev-auto/${_devdel_name}/*" 2>/dev/null)
+
+        # Delete wip branch (keep in-review if it exists)
+        if git -C "$_devdel_src_dir" rev-parse --verify "wip/${_devdel_feature}" &>/dev/null; then
+            _dev_backup_and_delete_branch "$_devdel_src_dir" "wip/${_devdel_feature}"
+        fi
+
+        if [[ "$_devdel_has_ir" == true ]]; then
+            echo "Kept in-review/${_devdel_feature} (has associated PR)."
+        fi
     fi
 fi
 

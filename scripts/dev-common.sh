@@ -589,3 +589,145 @@ _dev_detect_template_from_cwd() {
 
     return 1
 }
+
+# ── Branch lifecycle functions ────────────────────────────────────────────────
+
+readonly DEV_BRANCH_META_DIR="/run/user/$(id -u)/dev-branch-meta"
+readonly DEV_BACKUP_MAX_AGE_DAYS=20
+
+_dev_branch_to_container_name() {
+    local _dev_branch="$1"
+    local _dev_repo="$2"
+    local _dev_name
+
+    if [[ "$_dev_branch" =~ ^dev-auto/([^/]+) ]]; then
+        _dev_name="${BASH_REMATCH[1]}"
+    else
+        local _dev_feature="$_dev_branch"
+        if [[ "$_dev_branch" =~ ^(wip|in-review)/(.*) ]]; then
+            _dev_feature="${BASH_REMATCH[2]}"
+        fi
+        local _dev_sanitized="${_dev_feature//\//-}"
+        _dev_sanitized="${_dev_sanitized#-}"
+        if [[ "$_dev_sanitized" == "${_dev_repo}" || "$_dev_sanitized" == "${_dev_repo}-"* ]]; then
+            _dev_name="$_dev_sanitized"
+        else
+            _dev_name="${_dev_repo}-${_dev_sanitized}"
+        fi
+    fi
+
+    if (( ${#_dev_name} > 40 )); then
+        _dev_name="${_dev_name:0:40}"
+        _dev_name="${_dev_name%-}"
+    fi
+
+    echo "$_dev_name"
+}
+
+_dev_strip_lifecycle_prefix() {
+    local _dev_branch="$1"
+    if [[ "$_dev_branch" =~ ^(wip|in-review)/(.*) ]]; then
+        echo "${BASH_REMATCH[2]}"
+    elif [[ "$_dev_branch" =~ ^dev-auto/([^/]+) ]]; then
+        echo "${BASH_REMATCH[1]}"
+    else
+        echo "$_dev_branch"
+    fi
+}
+
+_dev_container_name_to_feature() {
+    local _dev_cname="$1"
+    local _dev_repo="$2"
+    if [[ "$_dev_cname" == "${_dev_repo}-"* ]]; then
+        echo "${_dev_cname#${_dev_repo}-}"
+    else
+        echo "$_dev_cname"
+    fi
+}
+
+_dev_backup_and_delete_branch() {
+    local _dev_src_dir="$1" _dev_branch="$2"
+    local _dev_feature
+    _dev_feature=$(_dev_strip_lifecycle_prefix "$_dev_branch")
+    local _dev_ts
+    _dev_ts=$(date +%s)
+    local _dev_backup_branch
+
+    if [[ "$_dev_branch" == wip/* ]]; then
+        _dev_backup_branch="backup/${_dev_feature}/wip/${_dev_ts}"
+    elif [[ "$_dev_branch" == in-review/* ]]; then
+        _dev_backup_branch="backup/${_dev_feature}/in-review/${_dev_ts}"
+    elif [[ "$_dev_branch" == dev-auto/* ]]; then
+        _dev_backup_branch="backup/${_dev_feature}/dev-auto/${_dev_ts}"
+    else
+        _dev_backup_branch="backup/${_dev_feature}/other/${_dev_ts}"
+    fi
+
+    echo "Backing up ${_dev_branch} to ${_dev_backup_branch}..."
+    git -C "$_dev_src_dir" push "$DEV_GHCR_USER" \
+        "refs/heads/${_dev_branch}:refs/heads/${_dev_backup_branch}" 2>/dev/null || \
+        echo "WARNING: could not push backup to ${DEV_GHCR_USER} (remote may not exist)" >&2
+
+    git -C "$_dev_src_dir" branch -D "$_dev_branch" 2>/dev/null || true
+}
+
+_dev_get_branch_meta() {
+    local _dev_repo="$1" _dev_name="$2"
+    local _dev_file="${DEV_BRANCH_META_DIR}/${_dev_repo}.json"
+    [[ -f "$_dev_file" ]] || return 1
+    jq -r --arg n "$_dev_name" '.[$n] // empty' "$_dev_file" 2>/dev/null
+}
+
+_dev_set_branch_meta() {
+    local _dev_repo="$1" _dev_name="$2" _dev_number="$3" _dev_title="$4"
+    mkdir -p "$DEV_BRANCH_META_DIR"
+    local _dev_file="${DEV_BRANCH_META_DIR}/${_dev_repo}.json"
+    local _dev_json="{}"
+    [[ -f "$_dev_file" ]] && _dev_json=$(cat "$_dev_file")
+    echo "$_dev_json" | jq --arg n "$_dev_name" --arg num "$_dev_number" --arg t "$_dev_title" \
+        '. + {($n): {number: ($num | tonumber), title: $t}}' > "$_dev_file"
+}
+
+_dev_remove_branch_meta() {
+    local _dev_repo="$1" _dev_name="$2"
+    local _dev_file="${DEV_BRANCH_META_DIR}/${_dev_repo}.json"
+    [[ -f "$_dev_file" ]] || return 0
+    jq --arg n "$_dev_name" 'del(.[$n])' "$_dev_file" > "${_dev_file}.tmp" \
+        && mv "${_dev_file}.tmp" "$_dev_file"
+}
+
+_dev_prune_backup_branches() {
+    local _dev_src_dir="$1"
+    local _dev_now
+    _dev_now=$(date +%s)
+    local _dev_max_age=$(( DEV_BACKUP_MAX_AGE_DAYS * 86400 ))
+
+    local _dev_ref _dev_ts _dev_age
+    while read -r _dev_ref; do
+        [[ -z "$_dev_ref" ]] && continue
+        _dev_ref="${_dev_ref#refs/heads/}"
+        _dev_ts="${_dev_ref##*/}"
+        [[ "$_dev_ts" =~ ^[0-9]+$ ]] || continue
+        _dev_age=$(( _dev_now - _dev_ts ))
+        if (( _dev_age > _dev_max_age )); then
+            echo "  Pruning old backup: ${_dev_ref}"
+            git -C "$_dev_src_dir" push "$DEV_GHCR_USER" --delete "refs/heads/${_dev_ref}" 2>/dev/null || true
+            git -C "$_dev_src_dir" branch -D "$_dev_ref" 2>/dev/null || true
+        fi
+    done < <(git -C "$_dev_src_dir" ls-remote "$DEV_GHCR_USER" "refs/heads/backup/*" 2>/dev/null | awk '{print $2}')
+}
+
+_dev_resolve_src_dir() {
+    local _dev_tkey="$1"
+    local _dev_tmpl
+    _dev_tmpl=$(_dev_lookup_template "$_dev_tkey") || return 1
+    local _dev_src_dir
+    _dev_src_dir=$(echo "$_dev_tmpl" | cut -d'|' -f1)
+    if [[ -n "$_dev_src_dir" && "$_dev_src_dir" != /* ]]; then
+        _dev_src_dir="${DEV_SOURCES_DIR}/${_dev_src_dir}"
+    fi
+    if [[ -z "$_dev_src_dir" || ! -d "$_dev_src_dir/.git" ]]; then
+        return 1
+    fi
+    echo "$_dev_src_dir"
+}
