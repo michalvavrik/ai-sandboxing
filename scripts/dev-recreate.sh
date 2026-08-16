@@ -38,13 +38,17 @@ readonly _devrc_branch="dev-auto/${_devrc_name}/main"
 echo "Pushing workspace to ${_devrc_branch}..."
 _dev_sync_workspace "$_devrc_name" "$_devrc_branch"
 
-# Save Claude session (small — scp is fine)
+# Save Claude session and review history (small — scp is fine)
 readonly _devrc_staging="/tmp/dev-recreate-${_devrc_name}"
 rm -rf "$_devrc_staging"
+mkdir -p "$_devrc_staging"
 if _dev_ssh_cmd "$_devrc_name" "test -d /home/dev/.claude/projects" 2>/dev/null; then
     echo "Saving Claude session..."
-    mkdir -p "$_devrc_staging"
     DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cpout.sh" --to "$_devrc_staging" /home/dev/.claude/projects
+fi
+if _dev_ssh_cmd "$_devrc_name" "test -d /workspace/.reviews" 2>/dev/null; then
+    echo "Saving review history..."
+    DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cpout.sh" --to "$_devrc_staging" /workspace/.reviews
 fi
 
 # Move branch out of dev-auto/name/* before delete cleans it up
@@ -69,8 +73,8 @@ export DEV_FORK_ORG="$DEV_AUTOMATION_USER"
 export DEV_BRANCH_NAME="$_devrc_branch"
 _dev_create_container "$_devrc_name" "$_devrc_template_key"
 
-# Restore Claude session if saved
-if [[ -d "$_devrc_staging/projects" ]]; then
+# Restore saved data if any
+if [[ -d "$_devrc_staging/projects" || -d "$_devrc_staging/.reviews" ]]; then
     podman start "$_devrc_name" >/dev/null
     _dev_update_ssh_config "$_devrc_name"
     echo "Waiting for SSH..."
@@ -78,8 +82,15 @@ if [[ -d "$_devrc_staging/projects" ]]; then
     while ! ssh -q -o ConnectTimeout=1 -o BatchMode=yes "$_devrc_name" true &>/dev/null && (( _devrc_wait < 60 )); do
         sleep 2; _devrc_wait=$((_devrc_wait + 2))
     done
-    echo "Restoring Claude session..."
-    DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cp.sh" --to /home/dev/.claude "$_devrc_staging/projects"
+    if [[ -d "$_devrc_staging/projects" ]]; then
+        echo "Restoring Claude session..."
+        DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cp.sh" --to /home/dev/.claude "$_devrc_staging/projects"
+    fi
+    if [[ -d "$_devrc_staging/.reviews" ]]; then
+        echo "Restoring review history..."
+        DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cp.sh" --to /workspace "$_devrc_staging/.reviews"
+        _dev_ssh_cmd "$_devrc_name" "grep -qxF '.reviews' /workspace/.git/info/exclude 2>/dev/null || echo '.reviews' >> /workspace/.git/info/exclude"
+    fi
     rm -rf "$_devrc_staging"
     echo "Entering container '${_devrc_name}'..."
     _dev_ssh_cmd "$_devrc_name"
