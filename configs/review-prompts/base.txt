@@ -16,6 +16,8 @@ If .pr does not exist (local code review):
 
 ## Output format
 
+Write the complete review to `.reviews/claude/<ISO-timestamp>.md`.
+
 ### Findings
 For each finding, state file:line, severity (critical/major/minor/nit), the issue, and a concrete fix.
 If Copilot flagged the same or a related issue, note it with a direct link to Copilot's comment: "(also flagged by Copilot: <url>)".
