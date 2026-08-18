@@ -37,8 +37,17 @@ readonly _devmerge_remote_url="git@github.com:${DEV_AUTOMATION_USER}/${_devmerge
 echo "Container:      ${_devmerge_name}"
 echo "Tracked branch: ${_devmerge_tracked}"
 
-# ── Step 1: Container — commit all changes, push to dev-auto branch ──────────
+# ── Step 1: Container — check for changes, sync if any ───────────────────────
 _dev_ensure_running "$_devmerge_name"
+
+_devmerge_has_changes=$(_dev_ssh_cmd "$_devmerge_name" \
+    "cd /workspace && git add -A && git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet && echo no || echo yes") || true
+
+if [[ "$_devmerge_has_changes" != "yes" ]]; then
+    echo "No workspace changes — skipping merge."
+    _dev_stop_if_was_stopped "$_devmerge_name"
+    exit 0
+fi
 
 echo "Syncing container workspace..."
 _dev_sync_workspace "$_devmerge_name" "$_devmerge_branch"
