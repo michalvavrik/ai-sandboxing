@@ -77,8 +77,11 @@ if [[ -f "$_devdel_agy_disk" ]]; then
 fi
 
 _devdel_agy_used=false
-if [[ -f "$_devdel_agy_disk" ]] && ! debugfs -R "stat agy-used" "$_devdel_agy_disk" 2>&1 | grep -q "File not found"; then
-    _devdel_agy_used=true
+if [[ -f "$_devdel_agy_disk" ]]; then
+    _devdel_agy_stat=$(debugfs -R "stat agy-used" "$_devdel_agy_disk" 2>&1) || true
+    if echo "$_devdel_agy_stat" | grep -q "Type: regular"; then
+        _devdel_agy_used=true
+    fi
 fi
 
 if [[ -n "$_devdel_agy_refresh" ]]; then

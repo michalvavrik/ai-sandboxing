@@ -56,8 +56,14 @@ fi
 echo "Fetching ${_devmerge_branch}..."
 git -C "$_devmerge_src_dir" fetch "$_devmerge_remote" "$_devmerge_branch"
 
-# ── Step 3: Back up tracked branch if it exists locally ───────────────────────
+# ── Step 3: Back up tracked branch if it exists and differs from container ────
 if git -C "$_devmerge_src_dir" rev-parse --verify "$_devmerge_tracked" &>/dev/null; then
+    _devmerge_local_tree=$(git -C "$_devmerge_src_dir" rev-parse "${_devmerge_tracked}^{tree}" 2>/dev/null) || true
+    _devmerge_remote_tree=$(git -C "$_devmerge_src_dir" rev-parse "FETCH_HEAD^{tree}" 2>/dev/null) || true
+    if [[ -n "$_devmerge_local_tree" && "$_devmerge_local_tree" == "$_devmerge_remote_tree" ]]; then
+        echo "Tracked branch already matches container state — skipping."
+        exit 0
+    fi
     _dev_backup_and_delete_branch "$_devmerge_src_dir" "$_devmerge_tracked"
 fi
 
