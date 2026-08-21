@@ -80,11 +80,11 @@ if _dev_container_exists "$_devissue_name"; then
     if [[ "$_devissue_type" == "pull" ]]; then
         echo "Refreshing PR #${_devissue_number}..."
         _dev_ssh_cmd "$_devissue_name" \
-            "cd /workspace && gh pr checkout -f ${_devissue_number} --repo ${_devissue_template_key} && _pr=\$(git branch --show-current) && git checkout -B 'dev-auto/${_devissue_name}' && [ \"\$_pr\" != 'dev-auto/${_devissue_name}' ] && git branch -D \"\$_pr\" 2>/dev/null; true"
+            "cd /workspace && gh pr checkout -f ${_devissue_number} --repo ${_devissue_template_key} && _pr=\$(git branch --show-current) && git checkout -B 'dev-auto/${_devissue_name}/main' && [ \"\$_pr\" != 'dev-auto/${_devissue_name}/main' ] && git branch -D \"\$_pr\" 2>/dev/null; true"
     elif [[ "$_devissue_type" == "tree" ]]; then
         echo "Refreshing branch ${_devissue_branch}..."
         _dev_ssh_cmd "$_devissue_name" \
-            "cd /workspace && git fetch https://github.com/${_devissue_org}/${_devissue_repo}.git ${_devissue_branch} && git checkout -B 'dev-auto/${_devissue_name}' FETCH_HEAD"
+            "cd /workspace && git fetch https://github.com/${_devissue_org}/${_devissue_repo}.git ${_devissue_branch} && git checkout -B 'dev-auto/${_devissue_name}/main' FETCH_HEAD"
     fi
 
     [[ "${DEV_SKIP_ENTER:-}" != "1" ]] && _dev_ssh_cmd "$_devissue_name"
