@@ -28,7 +28,7 @@ if [[ "$_devsee_squash" == true ]]; then
     _dev_sync_workspace "$_devsee_name" "$_devsee_branch"
 else
     _dev_ssh_cmd "$_devsee_name" \
-        "cd /workspace && git add -A && git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync' && git push -f origin HEAD:refs/heads/${_devsee_branch}"
+        "cd /workspace && git add -A; git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync'; git push -f origin HEAD:refs/heads/${_devsee_branch}"
 fi
 echo "Branch: ${_devsee_branch}"
 

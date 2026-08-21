@@ -492,3 +492,8 @@ Result:
 ## Auto-backup
 
 Every 30 seconds, a background process snapshots the workspace (including uncommitted and untracked files) and pushes to `dev-auto/<name>/backup` on the remote without affecting the workspace.
+
+## Known issues
+
+- agy review doesn't print progress
+

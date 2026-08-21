@@ -481,7 +481,7 @@ _dev_sync_workspace() {
     local _dev_name="$1"
     local _dev_branch="$2"
     _dev_ssh_cmd "$_dev_name" \
-        "cd /workspace && git add -A; git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync'; git fetch upstream main 2>/dev/null && git rebase upstream/main 2>/dev/null || git rebase --abort 2>/dev/null; _b=\$(git rev-parse upstream/main 2>/dev/null); [ -n \"\$_b\" ] && [ \"\$_b\" != \"\$(git rev-parse HEAD)\" ] && git reset --soft \$_b && git commit -m 'WIP sync'; git push -f origin HEAD:refs/heads/${_dev_branch}"
+        "cd /workspace && git add -A; git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync'; git push -f origin HEAD:refs/heads/${_dev_branch}"
 }
 
 _dev_ssh_cmd() {
