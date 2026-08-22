@@ -307,7 +307,7 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
         }
 
         try:
-            conn = http.client.HTTPSConnection(UPSTREAM_HOST)
+            conn = http.client.HTTPSConnection(UPSTREAM_HOST, timeout=120)
             upstream_path = self.path if self.path.startswith("/v1/") else f"/v1{self.path}"
             conn.request("POST", upstream_path, body=raw_body, headers=upstream_headers)
             upstream_resp = conn.getresponse()
@@ -324,25 +324,25 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
 
         is_stream = "streamRawPredict" in self.path
 
-        if is_stream and 200 <= status < 300:
-            self.send_header("Connection", "close")
-            self.end_headers()
-            try:
+        try:
+            if is_stream and 200 <= status < 300:
+                self.send_header("Connection", "close")
+                self.end_headers()
                 while True:
                     chunk = upstream_resp.read1(65536)
                     if not chunk:
                         break
                     self.wfile.write(chunk)
                     self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-        else:
-            data = upstream_resp.read()
-            self.send_header("Content-Length", str(len(data)))
-            self.end_headers()
-            self.wfile.write(data)
-
-        conn.close()
+            else:
+                data = upstream_resp.read()
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+            pass
+        finally:
+            conn.close()
         log.info("POST %s status=%d stream=%s", self.path, status, is_stream)
 
     def _relay_sse(self, name):
