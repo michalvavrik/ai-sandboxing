@@ -18,9 +18,14 @@ case "$_dev_cmd" in
     ;;
   delete)
     _dev_del_name=""
-    for _dev_a in "$@"; do [[ "$_dev_a" != --* ]] && _dev_del_name="$_dev_a" && break; done
+    _dev_del_flags=()
+    for _dev_a in "$@"; do
+      if [[ "$_dev_a" == --* ]]; then _dev_del_flags+=("$_dev_a")
+      elif [[ -z "$_dev_del_name" ]]; then _dev_del_name="$_dev_a"
+      fi
+    done
     _dev_del_name="${_dev_del_name:-${DEV_LAST_CONTAINER:-}}"
-    DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-delete.sh" "$@"
+    "${_dev_dir}/dev-delete.sh" ${_dev_del_name:+"$_dev_del_name"} "${_dev_del_flags[@]+"${_dev_del_flags[@]}"}"
     if [[ "$_dev_del_name" == "${DEV_LAST_CONTAINER:-}" ]]; then
       unset DEV_LAST_CONTAINER
     fi
