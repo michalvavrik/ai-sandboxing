@@ -32,6 +32,7 @@ echo "Project: ${_devlocal_template_key}"
 echo "Branch: ${_devlocal_branch}"
 echo "Container: ${_devlocal_name}"
 echo "$_devlocal_name" > "/run/user/$(id -u)/dev-last-container"
+[[ -n "${_DEV_SHELL_PID:-}" ]] && echo "$_devlocal_name" > "/run/user/$(id -u)/dev-last-container.${_DEV_SHELL_PID}"
 
 _devlocal_had_wip=false
 if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then

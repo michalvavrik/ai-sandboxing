@@ -84,16 +84,19 @@ case "$_dev_cmd" in
     "${_dev_dir}/dev-install.sh"
     ;;
   .)
-    "${_dev_dir}/dev-local.sh"
-    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
+    _DEV_SHELL_PID=$$ "${_dev_dir}/dev-local.sh"
+    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container.$$" 2>/dev/null) || true
+    rm -f "/run/user/$(id -u)/dev-last-container.$$"
     ;;
   http*|https*)
-    "${_dev_dir}/dev-issue.sh" "$_dev_cmd"
-    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
+    _DEV_SHELL_PID=$$ "${_dev_dir}/dev-issue.sh" "$_dev_cmd"
+    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container.$$" 2>/dev/null) || true
+    rm -f "/run/user/$(id -u)/dev-last-container.$$"
     ;;
   review)
-    "${_dev_dir}/dev-review.sh" "$@"
-    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
+    _DEV_SHELL_PID=$$ "${_dev_dir}/dev-review.sh" "$@"
+    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container.$$" 2>/dev/null) || true
+    rm -f "/run/user/$(id -u)/dev-last-container.$$"
     ;;
   help|*)
     echo "Usage: dev {new|enter|recreate|delete|start|see|show|push|merge|rebase|cp|cpout|use|list|pull|sync|continue|install|review|.|<url>}"

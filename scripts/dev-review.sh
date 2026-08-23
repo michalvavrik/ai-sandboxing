@@ -47,8 +47,9 @@ if [[ -z "$_devreview_positional" ]]; then
     _devreview_name=$(_dev_resolve_name "")
 
 elif [[ "$_devreview_positional" =~ ^https?:// ]]; then
-    DEV_SKIP_ENTER=1 "${DEV_SCRIPTS_DIR}/dev-issue.sh" "$_devreview_positional"
-    _devreview_name=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
+    DEV_SKIP_ENTER=1 _DEV_SHELL_PID="${_DEV_SHELL_PID:-}" "${DEV_SCRIPTS_DIR}/dev-issue.sh" "$_devreview_positional"
+    _devreview_name=$(cat "/run/user/$(id -u)/dev-last-container.${_DEV_SHELL_PID:-}" 2>/dev/null) || true
+    [[ -z "$_devreview_name" ]] && _devreview_name=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
     if [[ -z "$_devreview_name" ]]; then
         echo "Error: container setup did not produce a container name" >&2
         exit 1
@@ -63,6 +64,7 @@ else
 fi
 
 echo "$_devreview_name" > "/run/user/$(id -u)/dev-last-container"
+[[ -n "${_DEV_SHELL_PID:-}" ]] && echo "$_devreview_name" > "/run/user/$(id -u)/dev-last-container.${_DEV_SHELL_PID}"
 
 if ! _dev_container_exists "$_devreview_name"; then
     echo "Error: container '${_devreview_name}' does not exist" >&2
