@@ -70,7 +70,6 @@ if [[ "${DEV_MAIN_SHELL:-}" == "1" ]]; then
         git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null
         git diff --cached --quiet 2>/dev/null && return
         git commit -m 'on-exit save' --no-verify -q 2>/dev/null
-        git push -f origin "HEAD:refs/heads/dev-auto/$(hostname)/main" -q 2>/dev/null
     }
     trap '_dev_exit_save; exit' TERM
     trap '_dev_exit_save' EXIT
