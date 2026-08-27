@@ -61,18 +61,14 @@ fi
 
 cat >> /etc/profile.d/dev-sandbox.sh <<'EXITSAVE'
 if [[ "${DEV_MAIN_SHELL:-}" == "1" ]]; then
-    _dev_exit_saved=false
-    _dev_exit_save() {
-        [[ "$_dev_exit_saved" == true ]] && return
-        _dev_exit_saved=true
-        cd /workspace 2>/dev/null || return
-        git add -A 2>/dev/null
-        git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null
-        git diff --cached --quiet 2>/dev/null && return
-        git commit -m 'on-exit save' --no-verify -q 2>/dev/null
+    _dev_exit_flushed=false
+    _dev_exit_flush() {
+        [[ "$_dev_exit_flushed" == true ]] && return
+        _dev_exit_flushed=true
+        sync
     }
-    trap '_dev_exit_save; exit' TERM
-    trap '_dev_exit_save' EXIT
+    trap '_dev_exit_flush; exit' TERM
+    trap '_dev_exit_flush' EXIT
 fi
 EXITSAVE
 
@@ -332,7 +328,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 - /opt/workspace/${_ref_name} — ${_ref_id} latest main (shallow, for browsing source)"
         done
 
-        runuser -u dev -- bash -c "cat > /workspace/AGENTS.md" <<AGENTSMD
+        runuser -u dev -- bash -c 'mkdir -p /home/dev/.claude /home/dev/.bob /home/dev/.gemini && tee /home/dev/.claude/CLAUDE.md /home/dev/.bob/AGENTS.md /home/dev/.gemini/GEMINI.md >/dev/null' <<AGENTSMD
 # Sandbox environment for ${_org}/${_repo}
 
 - /workspace is a shallow clone (1 commit). Work here.
@@ -358,8 +354,7 @@ Docker is NOT installed. Podman is the container runtime. Testcontainers works w
 - .pr — PR details (\`gh pr view\` output), present when working on a pull request
 - .issue — issue details (\`gh issue view\` output), present when working on an issue
 AGENTSMD
-        runuser -u dev -- bash -c 'ln -sf AGENTS.md /workspace/CLAUDE.md && ln -sf AGENTS.md /workspace/GEMINI.md'
-        runuser -u dev -- bash -c 'printf "AGENTS.md\nCLAUDE.md\nGEMINI.md\n.pr\n.issue\n.pnpm-store\n" >> /workspace/.git/info/exclude'
+        runuser -u dev -- bash -c 'printf ".pr\n.issue\n.pnpm-store\n" >> /workspace/.git/info/exclude'
         runuser -u dev -- git -C /workspace config core.untrackedCache true 2>/dev/null || true
         # Warm virtio-fs dentry cache for workspace + Claude Code binary (async)
         (runuser -u dev -- git -C /workspace status; cat /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe) &>/dev/null &

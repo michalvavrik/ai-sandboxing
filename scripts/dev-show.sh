@@ -103,7 +103,7 @@ _dev_ensure_running "$_devshow_name"
 _devshow_backup="dev-auto/${_devshow_name}/backup/show/$(date +%s)"
 echo "Backing up container state to ${_devshow_backup}..."
 _dev_ssh_cmd "$_devshow_name" \
-    "cd /workspace && git add -A && git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'backup'; git push origin HEAD:refs/heads/${_devshow_backup}" 2>/dev/null || true
+    "cd /workspace && git add -A && git reset HEAD -- .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'backup'; git push origin HEAD:refs/heads/${_devshow_backup}" 2>/dev/null || true
 
 echo "Pulling inside container..."
 _dev_ssh_cmd "$_devshow_name" \

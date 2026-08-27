@@ -93,7 +93,7 @@ _dev_ensure_running "$_devpush_name"
 
 echo "Committing workspace..."
 _dev_ssh_cmd "$_devpush_name" \
-    "cd /workspace; git add -A; git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'dev push sync'"
+    "cd /workspace; git add -A; git reset HEAD -- .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'dev push sync'"
 
 echo "Rebasing on upstream main..."
 if ! _dev_ssh_cmd "$_devpush_name" \

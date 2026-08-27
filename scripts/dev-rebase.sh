@@ -16,7 +16,7 @@ readonly _devrebase_branch="dev-auto/${_devrebase_name}/main"
 
 echo "Saving workspace..."
 _dev_ssh_cmd "$_devrebase_name" \
-    "cd /workspace; git add -A; git reset HEAD -- AGENTS.md CLAUDE.md GEMINI.md .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'pre-rebase save'; git push -f origin HEAD:refs/heads/${_devrebase_branch}" 2>/dev/null || true
+    "cd /workspace; git add -A; git reset HEAD -- .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'pre-rebase save'; git push -f origin HEAD:refs/heads/${_devrebase_branch}" 2>/dev/null || true
 
 echo "Fetching upstream main..."
 if ! _dev_ssh_cmd "$_devrebase_name" "cd /workspace && git fetch upstream main"; then
