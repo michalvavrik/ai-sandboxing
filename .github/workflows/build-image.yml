@@ -2,7 +2,7 @@ name: Build Dev Sandbox Image
 
 on:
   schedule:
-    - cron: '0 3 * * *'
+    - cron: '0 3 */3 * *'
   push:
     paths:
       - 'Containerfile'
