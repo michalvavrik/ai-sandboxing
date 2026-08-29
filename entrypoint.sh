@@ -185,6 +185,11 @@ ROOTSTORE
         kind create cluster --name dev-k8s --wait 120s --config=- <<KINDCFG
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
+networking:
+  # iptables mode is fully broken on the libkrun kernel (missing xt_comment/xt_conntrack);
+  # nftables mode gives working cluster DNS + basic Service routing. Multi-endpoint Service
+  # load-balancing stays limited (kernel lacks numgen) — not a full-fidelity e2e cluster.
+  kubeProxyMode: nftables
 containerdConfigPatches:
 - |-
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
