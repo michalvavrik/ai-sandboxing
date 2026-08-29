@@ -29,6 +29,17 @@ Ephemeral, microVM-isolated dev containers for AI-assisted development. Each con
 - **MCP whitelist** — only explicitly whitelisted MCP servers are proxied into containers (see `MCP_WHITELIST` in `scripts/dev-proxy.py`)
 - **Selective key mounting** — only specific key files are mounted into containers (container SSH pubkey, read-only GitHub PAT); host-only keys like `id_ed25519_dev_automation` never enter containers. The Bob API key is injected via `podman secret` (never volume-mounted)
 
+### The `kind` profile weakens in-VM isolation
+
+Containers using the `kind` profile (currently only camel-k) auto-create a Kubernetes cluster with **rootful podman inside the VM**. This is required, not a shortcut: the `kindest/node` image runs systemd, which needs a root-owned cgroup that the unprivileged `dev` user cannot create — this microVM has no systemd/cgroup delegation, so rootless Kind cannot boot here. (Also, the node's kubelet needs a real block device for its rootfs, so Kind/registry storage is pinned to the bounded podman disk rather than the virtiofs root.)
+
+**Consequence — for these containers, treat the `dev`-vs-root boundary *inside the VM* as gone.** Kind's kubeconfig is cluster-admin, so the agent has a practical, non-exploit path to VM-root (cluster-admin → privileged pod → node container, which runs as VM-root). That means:
+
+- The per-container disk caps and root-owned config (guest nftables firewall, `/etc`, `/opt`, the Bob API key file) are no longer protected from the agent.
+- **Residual host risk:** a VM-root agent can write to the container's *uncapped* writable rootfs layer on the host, which could fill the host disk (DoS). Kind/registry image storage itself stays capped (pinned to the bounded podman disk).
+
+**What is _not_ affected:** the KVM boundary still fully contains the VM. Your host filesystem, Google Vertex credentials, and the GitHub-write SSH key never enter the VM, so they remain protected even against a VM-root agent. Non-`kind` containers keep the full rootless posture described above.
+
 ## Prerequisites
 
 - Clone this repo to `~/sandboxing`: `git clone git@github.com:michalvavrik/ai-sandboxing.git ~/sandboxing`
@@ -416,7 +427,7 @@ The `profiles` field in `project-templates.conf` is a comma-separated list that 
 |---------|--------|
 | `java`  | Maven cache overlay from host `~/.m2/repository` |
 | `go`    | Sets GOPATH, GOBIN, adds `~/go/bin` to PATH |
-| `kind`  | Auto-creates a Kind cluster with local registry (`localhost:5001`) on first start, 12 GiB podman storage |
+| `kind`  | Auto-creates a **rootful** Kind cluster with local registry (`localhost:5001`) on first start; 20 GiB podman storage. **Weakens in-VM isolation — see [the `kind` profile security note](#the-kind-profile-weakens-in-vm-isolation).** |
 
 ```bash
 # camel-k (profiles: go,kind):
@@ -468,7 +479,7 @@ Host                              krun MicroVM
 └── dev-sandbox-disks/            └── bounded loopback disks (ext4, root:600 inside VM)
     ├── <name>.img (workspace)        ├── /mnt/bounded → /workspace, /home/dev, /tmp, /var
     └── <name>-podman.img             └── /mnt/podman  → rootless Podman storage
-        (6 GiB java, 12 GiB go)          (Testcontainers / Kind nodes)
+        (6 GiB default, 20 GiB kind)      (Testcontainers / rootful Kind nodes)
 ```
 
 ### Bob Shell credential isolation

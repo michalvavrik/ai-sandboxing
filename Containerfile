@@ -2,7 +2,7 @@ FROM registry.fedoraproject.org/fedora:44
 
 # ── System packages ──────────────────────────────────────────────────────────
 RUN dnf install -y --setopt=retries=5 \
-        git git-lfs curl wget jq zip unzip findutils procps-ng hostname \
+        git git-lfs curl wget jq yq zip unzip findutils procps-ng hostname \
         diffutils less iproute iptables openssh-server \
         podman fuse-overlayfs e2fsprogs maven nodejs npm gh \
         gcc gcc-c++ make java-devel podman-compose golang \

@@ -153,20 +153,36 @@ STCONF
     runuser -u dev -- bash -c 'cd /run/user/1000 && XDG_RUNTIME_DIR=/run/user/1000 podman system service --time=0 &'
 fi
 
-# ── Kind cluster (auto-create on first start when 'kind' profile is set) ────
+# ── Kind cluster (ROOTFUL — auto-create on first start when 'kind' profile set) ──
+# Runs as VM-root: root's CAP_DAC_OVERRIDE gets past the root-owned 555 /sys/fs/cgroup
+# so the kindest/node systemd can create its cgroups. The unprivileged dev user cannot
+# (this microVM has no systemd/cgroup delegation, so rootless Kind is impossible here).
+# Root podman storage is pinned to the bounded podman disk (loop-backed ext4): this caps
+# Kind/registry image growth AND gives kubelet/cAdvisor a real block device for the node
+# rootfs — a virtiofs root fails with "no partition info for device /dev/root".
+# SECURITY: kind-profile containers therefore run Kubernetes as VM-root, and the agent
+# can reach VM-root via the cluster (cluster-admin -> privileged pod -> node). See the
+# "kind profile" security note in README. The KVM boundary still contains everything.
 if _has_profile kind && command -v kind &>/dev/null; then
-    _kind_wait=0
-    while ! runuser -u dev -- podman info &>/dev/null && (( _kind_wait < 30 )); do
-        sleep 1; _kind_wait=$(( _kind_wait + 1 ))
-    done
+    # Kubernetes needs higher limits than the krun defaults (real guest kernel — settable).
+    sysctl -w fs.inotify.max_user_instances=512 fs.inotify.max_user_watches=1048576 \
+        kernel.pid_max=32768 >/dev/null 2>&1 || true
 
-    if runuser -u dev -- podman info &>/dev/null; then
-        if ! runuser -u dev -- bash -c 'export KIND_EXPERIMENTAL_PROVIDER=podman; kind get clusters 2>/dev/null' | grep -q "dev-k8s"; then
-            echo "Creating Kind cluster with local registry..."
-            runuser -u dev -- bash -c '
-                export KIND_EXPERIMENTAL_PROVIDER=podman
-                podman run -d --restart=always -p 127.0.0.1:5001:5000 --name kind-registry registry:2 2>/dev/null || true
-                cat <<KINDCFG | kind create cluster --name dev-k8s --wait 120s --config=-
+    mkdir -p /mnt/podman/root-storage /mnt/podman/root-run
+    cat > /etc/containers/kind-root-storage.conf <<'ROOTSTORE'
+[storage]
+driver = "overlay"
+graphroot = "/mnt/podman/root-storage"
+runroot = "/mnt/podman/root-run"
+ROOTSTORE
+    export CONTAINERS_STORAGE_CONF=/etc/containers/kind-root-storage.conf
+    export KIND_EXPERIMENTAL_PROVIDER=podman
+
+    # Returns kind's exit code, so success/failure is detected correctly.
+    _dev_kind_create() {
+        podman run -d --restart=always -p 127.0.0.1:5001:5000 \
+            --name kind-registry docker.io/library/registry:2 2>/dev/null || true
+        kind create cluster --name dev-k8s --wait 120s --config=- <<KINDCFG
 kind: Cluster
 apiVersion: kind.x-k8s.io/v1alpha4
 containerdConfigPatches:
@@ -174,16 +190,24 @@ containerdConfigPatches:
   [plugins."io.containerd.grpc.v1.cri".registry.mirrors."localhost:5001"]
     endpoint = ["http://kind-registry:5001"]
 KINDCFG
-                podman network connect kind kind-registry 2>/dev/null || true
-            ' && echo "Kind cluster ready. Registry at localhost:5001" \
-              || echo "WARNING: Kind cluster creation failed — create manually with: kind create cluster --name dev-k8s" >&2
+    }
+
+    if ! kind get clusters 2>/dev/null | grep -q "dev-k8s"; then
+        echo "Creating rootful Kind cluster with local registry..."
+        if _dev_kind_create; then
+            podman network connect kind kind-registry 2>/dev/null || true
+            install -o dev -g dev -d /home/dev/.kube
+            kind get kubeconfig --name dev-k8s > /home/dev/.kube/config
+            chown dev:dev /home/dev/.kube/config
+            echo "Kind cluster ready. Registry at localhost:5001"
         else
-            runuser -u dev -- bash -c 'podman start dev-k8s-control-plane kind-registry 2>/dev/null' || true
-            echo "Kind cluster already exists."
+            echo "WARNING: Kind cluster creation failed — create manually (as root): KIND_EXPERIMENTAL_PROVIDER=podman kind create cluster --name dev-k8s" >&2
         fi
     else
-        echo "WARNING: podman not ready, skipping Kind cluster setup" >&2
+        podman start dev-k8s-control-plane kind-registry 2>/dev/null || true
+        echo "Kind cluster already exists."
     fi
+    unset CONTAINERS_STORAGE_CONF
 fi
 
 # ── Maven cache (fuse-overlayfs as dev user) ────────────────────────────────

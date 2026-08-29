@@ -31,7 +31,8 @@ _dev_has_profile() {
 _dev_podman_storage_gib() {
     local _dev_profiles="${1:-java}"
     if _dev_has_profile "$_dev_profiles" "kind"; then
-        echo 12
+        # Shared by dev's rootless storage and root's Kind storage (see entrypoint.sh).
+        echo 20
     else
         echo 6
     fi
