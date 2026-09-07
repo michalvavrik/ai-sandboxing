@@ -459,6 +459,21 @@ _dev_ssh_port() {
 
 _DEV_WAS_STOPPED=false
 
+# Poll until the container answers SSH. A krun microVM boot + full entrypoint
+# (mounts, firewall, workspace, and sshd only at the very end) takes well over a
+# fixed short sleep, so commands must wait for readiness. Requires the SSH config
+# entry (Host <name>) to already exist.
+_dev_wait_ssh() {
+    local _dev_name="$1"
+    local _dev_max="${2:-120}"
+    local _dev_waited=0
+    while ! ssh -q -o ConnectTimeout=1 -o BatchMode=yes "$_dev_name" true &>/dev/null; do
+        (( _dev_waited >= _dev_max )) && return 1
+        sleep 2
+        _dev_waited=$(( _dev_waited + 2 ))
+    done
+}
+
 _dev_ensure_running() {
     local _dev_name="$1"
     _DEV_WAS_STOPPED=false
@@ -466,9 +481,14 @@ _dev_ensure_running() {
         _DEV_WAS_STOPPED=true
         _dev_ensure_proxy
         podman start "$_dev_name" >/dev/null
-        sleep 3
+        _dev_update_ssh_config "$_dev_name"
+        if ! _dev_wait_ssh "$_dev_name"; then
+            echo "Error: container '${_dev_name}' did not become reachable via SSH in time" >&2
+            return 1
+        fi
+    else
+        _dev_update_ssh_config "$_dev_name"
     fi
-    _dev_update_ssh_config "$_dev_name"
 }
 
 _dev_stop_if_was_stopped() {
