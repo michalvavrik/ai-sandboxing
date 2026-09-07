@@ -39,15 +39,23 @@ _dev_podman_storage_gib() {
 }
 
 _dev_pid_file() {
-    echo "/run/user/$(id -u)/dev-proxy.pid"
+    echo "${DEV_PROXY_PID_FILE:-/run/user/$(id -u)/dev-proxy.pid}"
 }
 
 _dev_port_file() {
-    echo "/run/user/$(id -u)/dev-proxy.port"
+    echo "${DEV_PROXY_PORT_FILE:-/run/user/$(id -u)/dev-proxy.port}"
 }
 
 _dev_proxy_mapping_file() {
-    echo "/run/user/$(id -u)/dev-proxy-ports.json"
+    echo "${DEV_PROXY_MAPPING_FILE:-$(dirname "$(_dev_pid_file)")/dev-proxy-ports.json}"
+}
+
+_dev_proxy_reload() {
+    local _dev_pf
+    _dev_pf="$(_dev_pid_file)"
+    if [[ -f "$_dev_pf" ]] && kill -0 "$(cat "$_dev_pf")" 2>/dev/null; then
+        kill -HUP "$(cat "$_dev_pf")" 2>/dev/null || true
+    fi
 }
 
 _dev_assign_proxy_port() {
@@ -60,6 +68,14 @@ _dev_assign_proxy_port() {
         _dev_mapping=$(cat "$_dev_mapfile")
     fi
 
+    local _dev_existing_port
+    _dev_existing_port=$(echo "$_dev_mapping" | jq -r --arg c "$_dev_container" \
+        'first(to_entries[] | select(.value.container == $c) | .key) // empty' 2>/dev/null) || true
+    if [[ -n "$_dev_existing_port" ]]; then
+        echo "$_dev_existing_port"
+        return 0
+    fi
+
     local _dev_port
     for (( _dev_port = DEV_PROXY_BASE_PORT + 1; _dev_port < DEV_PROXY_BASE_PORT + DEV_PROXY_PORT_COUNT; _dev_port++ )); do
         if ! echo "$_dev_mapping" | jq -e --arg p "$_dev_port" 'has($p)' &>/dev/null; then
@@ -67,17 +83,13 @@ _dev_assign_proxy_port() {
                 --arg c "$_dev_container" \
                 --arg b "dev-auto/${_dev_container}" \
                 '. + {($p): {container: $c, branch: $b}}' > "$_dev_mapfile"
-            local _dev_pf
-            _dev_pf="$(_dev_pid_file)"
-            if [[ -f "$_dev_pf" ]] && kill -0 "$(cat "$_dev_pf")" 2>/dev/null; then
-                kill -HUP "$(cat "$_dev_pf")" 2>/dev/null || true
-            fi
+            _dev_proxy_reload
             echo "$_dev_port"
             return 0
         fi
     done
 
-    echo "Error: all ${DEV_PROXY_PORT_COUNT} proxy port slots are in use. Delete a container first." >&2
+    echo "Error: all $(( DEV_PROXY_PORT_COUNT - 1 )) proxy port slots are in use. Delete a container first." >&2
     return 1
 }
 
@@ -90,18 +102,13 @@ _dev_release_proxy_port() {
         return 0
     fi
 
-    local _dev_port
-    _dev_port=$(jq -r --arg c "$_dev_container" \
-        'to_entries[] | select(.value.container == $c) | .key' "$_dev_mapfile" 2>/dev/null) || true
+    local _dev_updated
+    _dev_updated=$(jq --arg c "$_dev_container" \
+        'with_entries(select(.value.container != $c))' "$_dev_mapfile" 2>/dev/null) || return 0
 
-    if [[ -n "$_dev_port" ]]; then
-        jq --arg p "$_dev_port" 'del(.[$p])' "$_dev_mapfile" > "${_dev_mapfile}.tmp" \
-            && mv "${_dev_mapfile}.tmp" "$_dev_mapfile"
-        local _dev_pf
-        _dev_pf="$(_dev_pid_file)"
-        if [[ -f "$_dev_pf" ]] && kill -0 "$(cat "$_dev_pf")" 2>/dev/null; then
-            kill -HUP "$(cat "$_dev_pf")" 2>/dev/null || true
-        fi
+    if [[ "$_dev_updated" != "$(cat "$_dev_mapfile")" ]]; then
+        printf '%s\n' "$_dev_updated" > "$_dev_mapfile"
+        _dev_proxy_reload
     fi
 }
 
@@ -138,20 +145,16 @@ _dev_resolve_name() {
     echo "$_dev_name"
 }
 
-_dev_rebuild_port_mapping() {
+_dev_reconcile_port_mapping() {
     local _dev_mapfile
     _dev_mapfile="$(_dev_proxy_mapping_file)"
-
-    if [[ -f "$_dev_mapfile" ]]; then
-        return 0
-    fi
 
     local _dev_mapping="{}"
     local _dev_cname _dev_port
     while read -r _dev_cname; do
         [[ -z "$_dev_cname" ]] && continue
         _dev_port=$(podman inspect --format '{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$_dev_cname" 2>/dev/null \
-            | sed -n 's/^PROXY_PORT=//p')
+            | sed -n 's/^PROXY_PORT=//p') || _dev_port=""
         [[ -z "$_dev_port" ]] && continue
         _dev_mapping=$(echo "$_dev_mapping" | jq --arg p "$_dev_port" \
             --arg c "$_dev_cname" \
@@ -159,9 +162,15 @@ _dev_rebuild_port_mapping() {
             '. + {($p): {container: $c, branch: $b}}')
     done < <(podman ps -a --filter="label=${DEV_LABEL}" --format '{{.Names}}' 2>/dev/null)
 
-    if [[ "$_dev_mapping" != "{}" ]]; then
+    if [[ "$_dev_mapping" == "{}" && ! -f "$_dev_mapfile" ]]; then
+        return 0
+    fi
+
+    local _dev_old_norm=""
+    [[ -f "$_dev_mapfile" ]] && _dev_old_norm=$(jq -S . "$_dev_mapfile" 2>/dev/null) || true
+    if [[ "$(echo "$_dev_mapping" | jq -S .)" != "$_dev_old_norm" ]]; then
         echo "$_dev_mapping" > "$_dev_mapfile"
-        echo "Rebuilt proxy port mapping from existing containers."
+        _dev_proxy_reload
     fi
 }
 
@@ -170,7 +179,7 @@ _dev_ensure_proxy() {
     _dev_pf="$(_dev_pid_file)"
     _dev_ptf="$(_dev_port_file)"
 
-    _dev_rebuild_port_mapping
+    _dev_reconcile_port_mapping
 
     if [[ -f "$_dev_pf" ]] && kill -0 "$(cat "$_dev_pf")" 2>/dev/null; then
         return 0
@@ -195,13 +204,15 @@ _dev_ensure_proxy() {
 
 _dev_maybe_stop_proxy() {
     local _dev_count
-    _dev_count=$(podman ps -a --filter="label=${DEV_LABEL}" --format "{{.Names}}" 2>/dev/null | wc -l)
+    _dev_count=$(podman ps -a --filter="label=${DEV_LABEL}" --format "{{.Names}}" 2>/dev/null | grep -c . || true)
 
     if (( _dev_count == 0 )); then
-        local _dev_pf _dev_ptf
+        local _dev_pf _dev_ptf _dev_mapfile
         _dev_pf="$(_dev_pid_file)"
         _dev_ptf="$(_dev_port_file)"
+        _dev_mapfile="$(_dev_proxy_mapping_file)"
 
+        rm -f "$_dev_mapfile"
         if [[ -f "$_dev_pf" ]]; then
             kill "$(cat "$_dev_pf")" 2>/dev/null || true
             rm -f "$_dev_pf" "$_dev_ptf"
@@ -347,8 +358,6 @@ _dev_create_container() {
     fi
 
     _dev_ensure_proxy
-    local _dev_port
-    _dev_port=$(_dev_assign_proxy_port "$_dev_name")
 
     # Warn if image is stale (>4 days old)
     local _dev_img_date
@@ -414,8 +423,11 @@ _dev_create_container() {
 
     _dev_ensure_tracked_branch "$_dev_name" "$_dev_template_key"
 
+    local _dev_port
+    _dev_port=$(_dev_assign_proxy_port "$_dev_name") || return 1
+
     echo "Creating container '${_dev_name}'..."
-    podman create -it \
+    if ! podman create -it \
         --runtime="$DEV_RUNTIME" \
         --name="$_dev_name" \
         --privileged \
@@ -449,7 +461,10 @@ _dev_create_container() {
         -p "127.0.0.1::2222" \
         "${_dev_volumes[@]}" \
         "${_dev_bob_secret[@]}" \
-        "$DEV_IMAGE"
+        "$DEV_IMAGE"; then
+        _dev_release_proxy_port "$_dev_name"
+        return 1
+    fi
 }
 
 _dev_ssh_port() {
