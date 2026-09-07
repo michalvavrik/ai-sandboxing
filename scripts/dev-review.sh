@@ -116,6 +116,7 @@ if [[ "$_devreview_mode" == "followup" && -f "$_devreview_session_file" ]]; then
     case "$_devreview_agent" in
         claude) _devreview_continue="-r ${_devreview_session_id}" ;;
         agy)    _devreview_continue="--conversation ${_devreview_session_id}" ;;
+        bob)    _devreview_continue="-r ${_devreview_session_id}" ;;
     esac
 fi
 
