@@ -58,7 +58,7 @@ int main(int argc, char *argv[]) {
     }
     new_argv[0] = BOB_PATH;
     new_argv[1] = "--accept-license";
-    new_argv[2] = "--yolo";
+    new_argv[2] = "--auto-approve";
     for (int i = 1; i < argc; i++)
         new_argv[i + 2] = argv[i];
     new_argv[argc + 2] = NULL;
