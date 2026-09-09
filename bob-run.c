@@ -61,6 +61,7 @@ int main(int argc, char *argv[]) {
     int idx = 0;
     new_argv[idx++] = BOB_PATH;
     new_argv[idx++] = "--accept-license";
+    new_argv[idx++] = "--max-turns 500";
     if (!is_run)
         new_argv[idx++] = "--auto-approve";
     for (int i = 1; i < argc; i++)

@@ -1,5 +1,8 @@
 {
-  "/workspace": "TRUST_FOLDER",
-  "/opt/workspace/keycloak": "TRUST_FOLDER",
-  "/opt/workspace/quarkus": "TRUST_FOLDER"
+  "version": 1,
+  "folders": {
+    "/workspace": "TRUST_FOLDER",
+    "/opt/workspace/keycloak": "TRUST_FOLDER",
+    "/opt/workspace/quarkus": "TRUST_FOLDER"
+  }
 }
