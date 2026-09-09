@@ -51,17 +51,21 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    char **new_argv = malloc((argc + 3) * sizeof(char *));
+    int is_run = (argc > 1 && strcmp(argv[1], "run") == 0);
+    int extra = is_run ? 2 : 3;
+    char **new_argv = malloc((argc + extra) * sizeof(char *));
     if (!new_argv) {
         fprintf(stderr, "bob-run: malloc failed\n");
         return 1;
     }
-    new_argv[0] = BOB_PATH;
-    new_argv[1] = "--accept-license";
-    new_argv[2] = "--auto-approve";
+    int idx = 0;
+    new_argv[idx++] = BOB_PATH;
+    new_argv[idx++] = "--accept-license";
+    if (!is_run)
+        new_argv[idx++] = "--auto-approve";
     for (int i = 1; i < argc; i++)
-        new_argv[i + 2] = argv[i];
-    new_argv[argc + 2] = NULL;
+        new_argv[idx++] = argv[i];
+    new_argv[idx] = NULL;
 
     execv(BOB_PATH, new_argv);
 

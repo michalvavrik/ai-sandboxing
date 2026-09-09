@@ -171,10 +171,13 @@ case "$_devreview_agent" in
         ;;
     bob)
         ssh -qt "$_devreview_name" \
-            "cd /workspace && bob -p \"\$(cat /tmp/dev-review-prompt.txt)\"" \
+            "cd /workspace && bob run ${_devreview_continue} --format pretty \"\$(cat /tmp/dev-review-prompt.txt)\"" \
             | tee "$_devreview_host_tmp.out"
+        sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' "$_devreview_host_tmp.out" | awk '/Task ID:/ {id=$NF} END {if (id) print id}' > "${_devreview_session_file}.tmp"
+        [[ -s "${_devreview_session_file}.tmp" ]] && mv "${_devreview_session_file}.tmp" "$_devreview_session_file"
         scp -q "$_devreview_host_tmp.out" "${_devreview_name}:${_devreview_review_file}" 2>/dev/null && \
             echo "Review saved to ${_devreview_review_file}" >&2
+        [[ -f "$_devreview_session_file" ]] && echo "Session: $(cat "$_devreview_session_file")" >&2
         ;;
     agy)
         ssh -qt "$_devreview_name" \
