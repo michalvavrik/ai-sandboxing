@@ -171,7 +171,7 @@ case "$_devreview_agent" in
         ;;
     bob)
         ssh -qt "$_devreview_name" \
-            "cd /workspace && bob run ${_devreview_continue} \"\$(cat /tmp/dev-review-prompt.txt)\"" \
+            "cd /workspace && bob run ${_devreview_continue} -p \"\$(cat /tmp/dev-review-prompt.txt)\"" \
             | tee "$_devreview_host_tmp.out"
         sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' "$_devreview_host_tmp.out" | awk '/Task ID:/ {id=$NF} END {if (id) print id}' > "${_devreview_session_file}.tmp"
         [[ -s "${_devreview_session_file}.tmp" ]] && mv "${_devreview_session_file}.tmp" "$_devreview_session_file"
