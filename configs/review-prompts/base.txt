@@ -16,7 +16,7 @@ If .pr does not exist (local code review):
 
 ## Output format
 
-Write the complete review to `.reviews/<agent>/<ISO-timestamp>.md`.
+Write the complete review to `/workspace/.reviews/<agent>/<ISO-timestamp>.md`. When mentioning the review file to the user or writing it out, you MUST provide its full absolute path (e.g. `/workspace/.reviews/agy/2026-09-14T10-47-22Z.md`) rather than just the filename.
 
 ### Findings
 For each finding, state file:line, severity (critical/major/minor/nit), the issue, and a concrete fix.
