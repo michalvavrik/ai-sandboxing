@@ -108,7 +108,7 @@ dev cp --to /workspace f.patch # copy into a specific container directory
 dev cpout pom.xml          # copy from container (relative to /workspace)
 dev cpout /tmp/file.txt    # copy from container (absolute path)
 dev cpout --to ~/review src # copy from container into a specific host directory
-dev review fix-auth        # run headless agent review (--agent=claude|bob|agy)
+dev review fix-auth        # run headless agent review (--agent=claude|bob|agy, --model=flash|pro|opus)
 dev use fix-auth           # set current container without entering
 dev list                   # show all dev containers
 dev pull                   # pull newer images and fetch sources
@@ -372,9 +372,10 @@ dev review
 # Follow-up question (continues the review session)
 dev review "what about thread safety in the token store?"
 
-# Use a different agent
+# Use a different agent or model (model selection supported for agy: flash, pro, opus)
 dev review --agent=bob https://github.com/keycloak/keycloak/pull/50801
-dev review --agent=agy keycloak-pr-50801
+dev review --agent=agy --model=pro keycloak-pr-50801
+dev review --model=opus keycloak-pr-50801
 
 # Custom prompt (replaces agent-specific template, base kept)
 dev review --prompt "focus only on security issues"

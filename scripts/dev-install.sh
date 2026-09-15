@@ -338,10 +338,10 @@ _dev_completion() {
         COMPREPLY=(\$(compgen -f -- "\$cur"))
     elif [[ "\${COMP_WORDS[1]}" == "continue" && \$COMP_CWORD -eq 2 ]]; then
         compopt -o nosort
-        COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur"))
+        COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur" "\${COMP_WORDS[@]}"))
     else
         [[ "\$prev" == "cpout" ]] && compopt -o nospace
-        COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur"))
+        COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur" "\${COMP_WORDS[@]}"))
     fi
 }
 complete -F _dev_completion dev

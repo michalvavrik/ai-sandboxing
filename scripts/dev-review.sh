@@ -14,7 +14,7 @@ _devreview_usage() {
     echo ""
     echo "Options:"
     echo "  --agent=claude|bob|agy          Agent to use (default: agy)"
-    echo "  --model=flash|claude|pro        Model to use for the agent"
+    echo "  --model=flash|pro|opus          Model to use for the agent"
     echo '  --prompt "text"                 Replace agent-specific prompt (base kept)'
     echo '  --append-to-prompt "text"       Append to default prompt'
     echo "  -h, --help                      Show this help"
@@ -147,9 +147,9 @@ _devreview_run_agent() {
         
         # Map shortcuts to actual models with highest effort
         case "$model" in
-            pro)    model="gemini-3.1-pro-high" ;;
-            flash)  model="gemini-3.8-flash-high" ;;
-            claude) model="claude-opus-4-6-thinking" ;;
+            pro)         model="gemini-3.1-pro-high" ;;
+            flash)       model="gemini-3.8-flash-high" ;;
+            opus|claude) model="claude-opus-4-6-thinking" ;;
         esac
         model_arg="--model ${model}"
     fi

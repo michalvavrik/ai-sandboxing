@@ -120,7 +120,7 @@ case "$_dev_cmd" in
     echo "  continue [name] Check out an existing wip/in-review branch (tab-completes feature names)"
     echo "  install        Install prerequisites and configure"
     echo "  .              Create/enter container from current git project"
-    echo "  review [opts] [url|container-name|\"follow-up\"]  Headless agent review (--agent=claude|bob|agy)"
+    echo "  review [opts] [url|container-name|\"follow-up\"]  Headless agent review (--agent=claude|bob|agy, --model=flash|pro|opus)"
     echo "  <github-url>   Create/enter container for a GitHub issue/PR"
     ;;
 esac
