@@ -41,7 +41,7 @@ echo "Tracked branch: ${_devmerge_tracked}"
 _dev_ensure_running "$_devmerge_name"
 
 _devmerge_has_changes=$(_dev_ssh_cmd "$_devmerge_name" \
-    "cd /workspace && git add -A && git reset HEAD -- .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet && echo no || echo yes") || true
+    "if [[ -f /workspace/.git/index && ! -s /workspace/.git/index ]]; then rm -f /workspace/.git/index; git -C /workspace reset HEAD 2>/dev/null || true; fi; cd /workspace && git add -A && git reset HEAD -- .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet && echo no || echo yes") || true
 
 if [[ "$_devmerge_has_changes" != "yes" ]]; then
     echo "No workspace changes — skipping merge."
@@ -73,7 +73,10 @@ if git -C "$_devmerge_src_dir" rev-parse --verify "$_devmerge_tracked" &>/dev/nu
         echo "Tracked branch already matches container state — skipping."
         exit 0
     fi
-    _dev_backup_and_delete_branch "$_devmerge_src_dir" "$_devmerge_tracked"
+    if ! _dev_backup_and_delete_branch "$_devmerge_src_dir" "$_devmerge_tracked"; then
+        echo "WARNING: Skipping tracked branch update because it could not be deleted." >&2
+        exit 0
+    fi
 fi
 
 # ── Step 4: Recreate tracked branch from fetched content ──────────────────────

@@ -490,4 +490,6 @@ fuse-overlayfs \
     /var
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
-exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; DEV_MAIN_SHELL=1 exec "$@"' _ "${@:-bash --login}"
+trap 'sync; exit 0' TERM
+runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; DEV_MAIN_SHELL=1 exec "$@"' _ "${@:-bash --login}" &
+wait $!

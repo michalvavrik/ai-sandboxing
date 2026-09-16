@@ -517,7 +517,7 @@ _dev_sync_workspace() {
     local _dev_name="$1"
     local _dev_branch="$2"
     _dev_ssh_cmd "$_dev_name" \
-        "cd /workspace && git add -A; git reset HEAD -- .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync'; git push -f origin HEAD:refs/heads/${_dev_branch}"
+        "if [[ -f /workspace/.git/index && ! -s /workspace/.git/index ]]; then rm -f /workspace/.git/index; git -C /workspace reset HEAD 2>/dev/null || true; fi; cd /workspace && git add -A; git reset HEAD -- .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'WIP sync'; git push -f origin HEAD:refs/heads/${_dev_branch}"
 }
 
 _dev_ssh_cmd() {

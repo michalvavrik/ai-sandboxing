@@ -108,8 +108,9 @@ ${_devreview_append}"
     fi
 fi
 
+_devreview_session_file=""
 _devreview_host_tmp=$(mktemp /tmp/dev-review-prompt.XXXXXX)
-trap 'rm -f "$_devreview_host_tmp" "$_devreview_host_tmp.out" "${_devreview_session_file}.tmp"' EXIT
+trap 'rm -f "$_devreview_host_tmp" "$_devreview_host_tmp.out" 2>/dev/null; [[ -n "$_devreview_session_file" ]] && rm -f "${_devreview_session_file}.tmp" 2>/dev/null' EXIT
 printf '%s\n' "$_devreview_prompt" > "$_devreview_host_tmp"
 scp -q "$_devreview_host_tmp" "${_devreview_name}:/tmp/dev-review-prompt.txt"
 
@@ -117,6 +118,7 @@ _devreview_run_agent() {
     local agent="$1"
     local model="$2"
     local session_file="/run/user/$(id -u)/dev-review-session-${_devreview_name}-${agent}"
+    _devreview_session_file="$session_file"
     local agent_continue=""
     
     if [[ "$_devreview_mode" == "followup" && -f "$session_file" ]]; then
