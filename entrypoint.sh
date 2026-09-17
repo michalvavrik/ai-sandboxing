@@ -486,7 +486,7 @@ fi
 # ── Cap /var on bounded disk (close the /var/tmp world-writable gap) ────────
 mkdir -p /mnt/bounded/var-upper /mnt/bounded/var-work
 fuse-overlayfs \
-    -o "lowerdir=/var,upperdir=/mnt/bounded/var-upper,workdir=/mnt/bounded/var-work" \
+    -o "allow_other,lowerdir=/var,upperdir=/mnt/bounded/var-upper,workdir=/mnt/bounded/var-work" \
     /var
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
