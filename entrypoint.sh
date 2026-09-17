@@ -487,11 +487,10 @@ fi
 # so sshd must use a non-privileged port for port forwarding to work.
 (ssh-keygen -A &>/dev/null && /usr/sbin/sshd -p 2222 &>/dev/null) &
 
-# ── Cap /var on bounded disk (close the /var/tmp world-writable gap) ────────
-mkdir -p /mnt/bounded/var-upper /mnt/bounded/var-work
-fuse-overlayfs \
-    -o "allow_other,lowerdir=/var,upperdir=/mnt/bounded/var-upper,workdir=/mnt/bounded/var-work" \
-    /var
+# ── Cap /var/tmp on bounded disk (close the /var/tmp world-writable gap) ────
+mkdir -p /mnt/bounded/var-tmp
+chmod 1777 /mnt/bounded/var-tmp
+mount --bind /mnt/bounded/var-tmp /var/tmp
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
 trap 'sync; exit 0' TERM
