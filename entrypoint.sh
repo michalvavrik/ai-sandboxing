@@ -1,10 +1,14 @@
 #!/bin/bash
 set -euo pipefail
 
-ulimit -Hn 393216
-ulimit -Sn 196608
-echo "* soft nofile 196608" > /etc/security/limits.d/90-nofile.conf
-echo "* hard nofile 393216" >> /etc/security/limits.d/90-nofile.conf
+ulimit -Hn 393216 2>/dev/null || ulimit -Hn "$(ulimit -HH)" 2>/dev/null || true
+ulimit -Sn 196608 2>/dev/null || ulimit -Sn "$(ulimit -Hn)" 2>/dev/null || true
+
+MAX_HARD=$(ulimit -Hn)
+MAX_SOFT=$(ulimit -Sn)
+
+echo "* soft nofile ${MAX_SOFT}" > /etc/security/limits.d/90-nofile.conf
+echo "* hard nofile ${MAX_HARD}" >> /etc/security/limits.d/90-nofile.conf
 
 # ── Git identity (from host config.local, passed as env vars) ──────────────
 printf '[user]\n\temail = %s\n\tname = %s\n[gc]\n\tauto = 0\n' \
