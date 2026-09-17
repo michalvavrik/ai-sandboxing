@@ -7,6 +7,10 @@ ulimit -Sn 196608 2>/dev/null || ulimit -Sn "$(ulimit -Hn)" 2>/dev/null || true
 MAX_HARD=$(ulimit -Hn)
 MAX_SOFT=$(ulimit -Sn)
 
+# If ulimit returns 'unlimited', fall back to a safe integer cap (e.g. 1048576)
+[[ "$MAX_HARD" == "unlimited" ]] && MAX_HARD=1048576
+[[ "$MAX_SOFT" == "unlimited" ]] && MAX_SOFT=524288
+
 echo "* soft nofile ${MAX_SOFT}" > /etc/security/limits.d/90-nofile.conf
 echo "* hard nofile ${MAX_HARD}" >> /etc/security/limits.d/90-nofile.conf
 
@@ -493,6 +497,4 @@ chmod 1777 /mnt/bounded/var-tmp
 mount --bind /mnt/bounded/var-tmp /var/tmp
 
 # ── Drop to dev user ────────────────────────────────────────────────────────
-trap 'sync; exit 0' TERM
-runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; DEV_MAIN_SHELL=1 exec "$@"' _ "${@:-bash --login}" &
-wait $!
+exec runuser -u dev -- sh -c 'cd /workspace 2>/dev/null; DEV_MAIN_SHELL=1 exec "$@"' _ "${@:-bash --login}"
