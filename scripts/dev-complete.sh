@@ -75,10 +75,16 @@ elif [[ "$_comp_prev" == "review" || "${_comp_all_words[1]:-}" == "review" || "$
     compgen -W "$_comp_words" -- "$_comp_cur"
 elif [[ "$_comp_prev" =~ ^(--dont-squash|--dont-merge)$ ]]; then
     compgen -W "$(podman ps -a --filter=label=${DEV_LABEL} --format '{{.Names}}' 2>/dev/null)" -- "$_comp_cur"
-elif [[ "$_comp_prev" == "cpout" ]]; then
-    _comp_name=$(_dev_resolve_name "" 2>/dev/null) || exit 0
-    _dev_update_ssh_config "$_comp_name" 2>/dev/null || exit 0
-    _comp_prefix="/workspace/"
-    [[ "$_comp_cur" == /* ]] && _comp_prefix=""
-    ssh -q "$_comp_name" "ls -dp ${_comp_prefix}${_comp_cur}* 2>/dev/null" | sed "s|^${_comp_prefix}||"
+elif [[ "${_comp_all_words[1]:-}" == "cpout" ]]; then
+    if [[ "$_comp_prev" == "--to" ]]; then
+        compgen -d -- "$_comp_cur"
+    elif [[ "$_comp_cur" == -* ]]; then
+        compgen -W "--to --help" -- "$_comp_cur"
+    else
+        _comp_name=$(_dev_resolve_name "" 2>/dev/null) || exit 0
+        _dev_update_ssh_config "$_comp_name" 2>/dev/null || exit 0
+        _comp_prefix="/workspace/"
+        [[ "$_comp_cur" == /* ]] && _comp_prefix=""
+        ssh -q "$_comp_name" "ls -dp ${_comp_prefix}${_comp_cur}* 2>/dev/null" | sed "s|^${_comp_prefix}||"
+    fi
 fi

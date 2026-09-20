@@ -6,6 +6,10 @@ _devcp_dest="/tmp/workspace"
 _devcp_paths=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --help|-h|help)
+            echo "Usage: dev cp [--to <container-dir>] <path>..."
+            exit 0
+            ;;
         --to) _devcp_dest="$2"; shift 2 ;;
         *) _devcp_paths+=("$1"); shift ;;
     esac

@@ -46,6 +46,10 @@ if _dev_ssh_cmd "$_devrc_name" "test -d /home/dev/.claude/projects" 2>/dev/null;
     echo "Saving Claude session..."
     DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cpout.sh" --to "$_devrc_staging" /home/dev/.claude/projects
 fi
+if _dev_ssh_cmd "$_devrc_name" "test -d /home/dev/.gemini" 2>/dev/null; then
+    echo "Saving agy sessions..."
+    DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cpout.sh" --to "$_devrc_staging" /home/dev/.gemini
+fi
 if _dev_ssh_cmd "$_devrc_name" "test -d /workspace/.reviews" 2>/dev/null; then
     echo "Saving review history..."
     DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cpout.sh" --to "$_devrc_staging" /workspace/.reviews
@@ -75,7 +79,7 @@ export DEV_BRANCH_NAME="$_devrc_branch"
 _dev_create_container "$_devrc_name" "$_devrc_template_key"
 
 # Restore saved data if any
-if [[ -d "$_devrc_staging/projects" || -d "$_devrc_staging/.reviews" ]]; then
+if [[ -d "$_devrc_staging/projects" || -d "$_devrc_staging/.reviews" || -d "$_devrc_staging/.gemini" ]]; then
     podman start "$_devrc_name" >/dev/null
     _dev_update_ssh_config "$_devrc_name"
     echo "Waiting for SSH..."
@@ -86,6 +90,10 @@ if [[ -d "$_devrc_staging/projects" || -d "$_devrc_staging/.reviews" ]]; then
     if [[ -d "$_devrc_staging/projects" ]]; then
         echo "Restoring Claude session..."
         DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cp.sh" --to /home/dev/.claude "$_devrc_staging/projects"
+    fi
+    if [[ -d "$_devrc_staging/.gemini" ]]; then
+        echo "Restoring agy sessions..."
+        DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cp.sh" --to /home/dev "$_devrc_staging/.gemini"
     fi
     if [[ -d "$_devrc_staging/.reviews" ]]; then
         echo "Restoring review history..."

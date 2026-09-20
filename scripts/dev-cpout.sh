@@ -6,6 +6,11 @@ _devcpout_dest="."
 _devcpout_paths=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --help|-h|help)
+            echo "Usage: dev cpout [--to <local-dir>] <remote-path>..."
+            echo "Paths are relative to /workspace (e.g., dev cpout pom.xml src/main)"
+            exit 0
+            ;;
         --to) _devcpout_dest="$2"; shift 2 ;;
         *) _devcpout_paths+=("$1"); shift ;;
     esac

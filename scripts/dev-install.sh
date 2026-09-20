@@ -340,7 +340,7 @@ _dev_completion() {
         compopt -o nosort
         COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur" "\${COMP_WORDS[@]}"))
     else
-        [[ "\$prev" == "cpout" ]] && compopt -o nospace
+        [[ "\${COMP_WORDS[1]}" == "cpout" && "\$prev" != "--to" ]] && compopt -o nospace
         COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur" "\${COMP_WORDS[@]}"))
     fi
 }
