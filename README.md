@@ -475,6 +475,8 @@ dev recreate --auth-method=vertex fix-auth   # switch an existing container back
 
 On first use, `dev` asks for a token from `env -u CLAUDE_CODE_USE_VERTEX claude setup-token` (one browser login on the host) and saves it to `keys/claude-oauth-token` (mode 600). The method is fixed at creation (label `dev-auth-method`); `dev recreate` keeps it unless `--auth-method` is given.
 
+Model: Vertex containers use the `model` from `configs/claude-settings.json`. Subscription containers override it with `ANTHROPIC_MODEL`, default `opus` (always the latest Opus); set `DEV_SUBSCRIPTION_MODEL` in `config.local` to change it (e.g. `sonnet` or a full model name). `/model` inside a session still overrides both.
+
 The token works like the Vertex credentials: it **never enters the VM**. The container gets `ANTHROPIC_BASE_URL=http://host.internal:<port>/anthropic` and a placeholder `ANTHROPIC_AUTH_TOKEN`; `dev-proxy.py` replaces the auth with the real token and forwards to `api.anthropic.com`. Per-port rules: a container's port serves either Vertex or the subscription (never both), and only `/v1/messages`, `/v1/messages/count_tokens` and `/v1/models` are forwarded. The proxy reads the token file on every request, so rotation is just replacing the file.
 
 Caveats: a compromised agent can still spend subscription usage through the proxy while its container exists (same as Vertex), but cannot take the token with it. This relies on the API accepting subscription tokens with the `oauth-2025-04-20` beta header — not an officially documented setup, so it may break. Claude Code sees itself as API-key authenticated, so `/status` does not show plan usage; check it on claude.ai.

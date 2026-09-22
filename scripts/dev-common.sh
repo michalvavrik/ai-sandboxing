@@ -486,6 +486,7 @@ _dev_create_container() {
         _dev_auth_args=(
             -e "ANTHROPIC_BASE_URL=http://host.internal:${_dev_port}/anthropic"
             -e "ANTHROPIC_AUTH_TOKEN=sandbox-proxy"
+            -e "ANTHROPIC_MODEL=${DEV_SUBSCRIPTION_MODEL:-opus}"
         )
     else
         _dev_auth_args=(
