@@ -18,6 +18,14 @@ _devrc_env() { echo "$_devrc_envs" | sed -n "s/^${1}=//p"; }
 export DEV_ORIGINAL_BRANCH
 DEV_ORIGINAL_BRANCH=$(podman inspect --format '{{index .Config.Labels "dev-original-branch"}}' "$_devrc_name" 2>/dev/null) || true
 [[ "$DEV_ORIGINAL_BRANCH" == "<no value>" ]] && DEV_ORIGINAL_BRANCH=""
+
+# Keep the old container's Claude auth method unless --auth-method was given
+# (containers created before auth methods existed used Vertex)
+if [[ -z "${DEV_AUTH_METHOD_OVERRIDE:-}" ]]; then
+    _devrc_auth=$(podman inspect --format '{{index .Config.Labels "dev-auth-method"}}' "$_devrc_name" 2>/dev/null) || true
+    [[ -z "$_devrc_auth" || "$_devrc_auth" == "<no value>" ]] && _devrc_auth="vertex"
+    export DEV_AUTH_METHOD_OVERRIDE="$_devrc_auth"
+fi
 export DEV_PR_NUMBER=$(_devrc_env DEV_PR_NUMBER)
 export DEV_ISSUE_NUMBER=$(_devrc_env DEV_ISSUE_NUMBER)
 export DEV_FORK_ORG=$(_devrc_env DEV_FORK_ORG)

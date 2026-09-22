@@ -3,10 +3,34 @@ _dev_dir="$(dirname "${BASH_SOURCE[0]}")"
 _dev_cmd="${1:-help}"
 shift 2>/dev/null || true
 
+# Global option --auth-method=vertex|api-key (Claude Code only; applies when a
+# container is created). Stripped here so subcommands never see it.
+unset DEV_AUTH_METHOD_OVERRIDE
+_dev_rest=()
+for _dev_a in "$@"; do
+  case "$_dev_a" in
+    --auth-method=*) DEV_AUTH_METHOD_OVERRIDE="${_dev_a#--auth-method=}" ;;
+    *) _dev_rest+=("$_dev_a") ;;
+  esac
+done
+if [[ -n "${DEV_AUTH_METHOD_OVERRIDE:-}" ]]; then
+  case "$DEV_AUTH_METHOD_OVERRIDE" in
+    vertex|api-key) export DEV_AUTH_METHOD_OVERRIDE ;;
+    *)
+      echo "dev: unknown --auth-method '${DEV_AUTH_METHOD_OVERRIDE}' (use: vertex, api-key)" >&2
+      unset DEV_AUTH_METHOD_OVERRIDE _dev_rest _dev_a _dev_cmd _dev_dir
+      return 1 2>/dev/null || exit 1
+      ;;
+  esac
+fi
+
 if [[ -n "${DEV_LAST_CONTAINER:-}" ]] && ! podman container exists "$DEV_LAST_CONTAINER" 2>/dev/null; then
     unset DEV_LAST_CONTAINER
 fi
 
+# Dispatch in a function so the filtered args never touch the caller's
+# positional parameters (this file is sourced).
+_dev_dispatch() {
 case "$_dev_cmd" in
   new)
     DEV_LAST_CONTAINER="${1:?'Usage: dev new <name>'}"
@@ -122,7 +146,28 @@ case "$_dev_cmd" in
     echo "  .              Create/enter container from current git project"
     echo "  review [opts] [url|container-name|\"follow-up\"]  Headless agent review (--agent=claude|bob|agy, --model=flash|pro|opus)"
     echo "  <github-url>   Create/enter container for a GitHub issue/PR"
+    echo ""
+    echo "  --auth-method=vertex|api-key  Claude Code auth for newly created containers"
+    echo "                 (default: DEV_AUTH_METHOD from config.local, else vertex)"
     ;;
 esac
+}
+_dev_dispatch "${_dev_rest[@]+"${_dev_rest[@]}"}"
+unset -f _dev_dispatch
+unset _dev_rest
+
+# --auth-method only takes effect when a container is created; warn if an
+# existing container was reused with a different method.
+if [[ -n "${DEV_AUTH_METHOD_OVERRIDE:-}" && -n "${DEV_LAST_CONTAINER:-}" ]] \
+    && podman container exists "$DEV_LAST_CONTAINER" 2>/dev/null; then
+  _dev_auth_actual=$(podman inspect --format '{{index .Config.Labels "dev-auth-method"}}' "$DEV_LAST_CONTAINER" 2>/dev/null) || true
+  [[ -z "$_dev_auth_actual" || "$_dev_auth_actual" == "<no value>" ]] && _dev_auth_actual="vertex"
+  if [[ "$_dev_auth_actual" != "$DEV_AUTH_METHOD_OVERRIDE" ]]; then
+    echo "WARNING: '${DEV_LAST_CONTAINER}' uses --auth-method=${_dev_auth_actual} (set when it was created)." >&2
+    echo "         To switch: dev recreate --auth-method=${DEV_AUTH_METHOD_OVERRIDE} ${DEV_LAST_CONTAINER}" >&2
+  fi
+  unset _dev_auth_actual
+fi
+unset DEV_AUTH_METHOD_OVERRIDE
 
 unset _dev_cmd _dev_dir 2>/dev/null

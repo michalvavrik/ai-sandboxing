@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
-"""Dev sandbox proxy: Vertex AI auth + Git SSH bridge + MCP reverse proxy.
+"""Dev sandbox proxy: Vertex AI auth + Claude subscription auth + Git SSH bridge + MCP reverse proxy.
 
 - Vertex AI: adds Google auth token to Claude Code's API requests
+- Claude subscription (--auth-method=api-key): adds the host-only OAuth token
+  from `claude setup-token` to requests under /anthropic/ (never enters the VM)
 - Git: bridges HTTP smart protocol from containers to GitHub via SSH key
 - MCP: reverse-proxies host MCP SSE servers (e.g. JetBrains) into containers
 - Branch isolation: per-container ports restrict git push to allowed branches
@@ -34,6 +36,25 @@ MAPPING_FILE = os.path.join(os.path.dirname(PID_FILE), "dev-proxy-ports.json")
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _KEYS_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "keys")
 SSH_KEY = os.path.join(_KEYS_DIR, "id_ed25519_dev_automation")
+CLAUDE_TOKEN_FILE = os.path.join(_KEYS_DIR, "claude-oauth-token")
+
+ANTHROPIC_UPSTREAM_HOST = "api.anthropic.com"
+ANTHROPIC_PREFIX = "/anthropic"
+ANTHROPIC_OAUTH_BETA = "oauth-2025-04-20"
+# Only what Claude Code needs; everything else on the subscription is refused.
+ANTHROPIC_ALLOWED_PATHS = ("/v1/messages", "/v1/messages/count_tokens")
+ANTHROPIC_ALLOWED_PREFIXES = ("/v1/models/",)
+# Never forwarded upstream (auth is replaced; hop-by-hop headers are per-connection;
+# accept-encoding is dropped so responses can be relayed byte-for-byte).
+_ANTHROPIC_DROP_REQ = {
+    "authorization", "x-api-key", "host", "content-length", "connection",
+    "keep-alive", "proxy-authorization", "proxy-connection", "te", "trailer",
+    "transfer-encoding", "upgrade", "accept-encoding", "cookie",
+}
+_ANTHROPIC_DROP_RESP = {
+    "content-length", "connection", "keep-alive", "transfer-encoding",
+    "content-encoding", "set-cookie", "trailer", "upgrade",
+}
 
 if not PROJECT_ID:
     print("Error: ANTHROPIC_VERTEX_PROJECT_ID must be set", file=sys.stderr)
@@ -100,6 +121,25 @@ def _load_port_mapping():
         _port_mapping = new_mapping
 
     return new_mapping
+
+
+def _get_auth_method(port):
+    """Auth method recorded for a container port ("vertex" unless "api-key")."""
+    with _port_mapping_lock:
+        entry = _port_mapping.get(str(port))
+    if entry and entry.get("auth") == "api-key":
+        return "api-key"
+    return "vertex"
+
+
+def _read_claude_token():
+    """Read the subscription token on every request so rotation needs no restart."""
+    try:
+        with open(CLAUDE_TOKEN_FILE) as fh:
+            token = fh.read().strip()
+    except OSError:
+        return None
+    return token or None
 
 
 def _get_branch_prefix(port):
@@ -345,6 +385,90 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
             conn.close()
         log.info("POST %s status=%d stream=%s", self.path, status, is_stream)
 
+    def _forward_anthropic(self, method):
+        """Forward Claude Code API requests with the host-only subscription token."""
+        port = self.server.server_address[1]
+        if _get_auth_method(port) != "api-key":
+            self.send_error(403, "Claude subscription is not enabled for this container")
+            return
+
+        upstream_path = self.path[len(ANTHROPIC_PREFIX):] or "/"
+        path_only = upstream_path.split("?", 1)[0]
+        if (".." in path_only or "%" in path_only or "//" in path_only
+                or not (path_only in ANTHROPIC_ALLOWED_PATHS
+                        or path_only == "/v1/models"
+                        or path_only.startswith(ANTHROPIC_ALLOWED_PREFIXES))):
+            log.warning("Refused Anthropic path %s on port %d", path_only, port)
+            self.send_error(403, "Path not allowed")
+            return
+
+        token = _read_claude_token()
+        if not token:
+            self.send_error(503, f"Claude subscription token missing: {CLAUDE_TOKEN_FILE}")
+            return
+
+        content_length = int(self.headers.get("Content-Length", 0) or 0)
+        raw_body = self.rfile.read(content_length) if content_length else None
+
+        upstream_headers = {}
+        betas = []
+        for name, value in self.headers.items():
+            lname = name.lower()
+            if lname in _ANTHROPIC_DROP_REQ:
+                continue
+            if lname == "anthropic-beta":
+                betas.extend(b.strip() for b in value.split(",") if b.strip())
+                continue
+            upstream_headers[name] = value
+        if ANTHROPIC_OAUTH_BETA not in betas:
+            betas.append(ANTHROPIC_OAUTH_BETA)
+        upstream_headers["anthropic-beta"] = ",".join(betas)
+        upstream_headers["Authorization"] = f"Bearer {token}"
+        upstream_headers["Accept-Encoding"] = "identity"
+        if raw_body is not None:
+            upstream_headers["Content-Length"] = str(len(raw_body))
+
+        try:
+            conn = http.client.HTTPSConnection(ANTHROPIC_UPSTREAM_HOST, timeout=600)
+            conn.request(method, upstream_path, body=raw_body, headers=upstream_headers)
+            upstream_resp = conn.getresponse()
+        except Exception as exc:
+            log.error("Anthropic upstream connection failed: %s", exc)
+            self.send_error(502, f"Upstream error: {exc}")
+            return
+
+        status = upstream_resp.status
+        content_type = upstream_resp.getheader("Content-Type", "application/json")
+        is_stream = content_type.startswith("text/event-stream")
+
+        self.send_response(status)
+        for name, value in upstream_resp.getheaders():
+            if name.lower() not in _ANTHROPIC_DROP_RESP:
+                self.send_header(name, value)
+
+        try:
+            if is_stream and 200 <= status < 300:
+                self.send_header("Connection", "close")
+                self.end_headers()
+                while True:
+                    chunk = upstream_resp.read1(65536)
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                self.close_connection = True
+            else:
+                data = upstream_resp.read()
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
+        except (BrokenPipeError, ConnectionResetError, TimeoutError, OSError):
+            pass
+        finally:
+            conn.close()
+        log.info("%s %s status=%d stream=%s (subscription, port %d)",
+                 method, path_only, status, is_stream, port)
+
     def _relay_sse(self, name):
         if name not in MCP_SERVERS:
             self.send_error(404, f"Unknown MCP server: {name}")
@@ -436,6 +560,8 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/git/"):
             self._forward_git("GET")
+        elif self.path.startswith(ANTHROPIC_PREFIX + "/"):
+            self._forward_anthropic("GET")
         elif MCP_SERVERS and self.path == "/mcp/config":
             self._serve_mcp_config()
         elif MCP_SERVERS and self.path.startswith("/mcp/"):
@@ -450,6 +576,8 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path.startswith("/git/"):
             self._forward_git("POST")
+        elif self.path.startswith(ANTHROPIC_PREFIX + "/"):
+            self._forward_anthropic("POST")
         elif MCP_SERVERS and self.path.startswith("/mcp/"):
             path = self.path
             query = ""
@@ -460,6 +588,8 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
                 self._forward_mcp_message(parts[2], query)
             else:
                 self.send_error(404)
+        elif _get_auth_method(self.server.server_address[1]) == "api-key":
+            self.send_error(403, "Vertex AI is not enabled for this container")
         else:
             self._forward_vertex()
 
@@ -546,6 +676,8 @@ def main():
     log.info("Listening on 0.0.0.0:%d (base)", port)
     log.info("Git SSH key: %s", SSH_KEY)
     log.info("Vertex AI: %s", UPSTREAM_HOST)
+    log.info("Claude subscription: %s (token %s)", ANTHROPIC_UPSTREAM_HOST,
+             "present" if _read_claude_token() else "not configured")
     log.info("MCP servers: %s", list(MCP_SERVERS.keys()) or "none")
 
     server.serve_forever()

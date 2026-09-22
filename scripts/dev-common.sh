@@ -23,6 +23,7 @@ readonly DEV_DEFAULT_PROFILES="java"
 readonly DEV_DISK_DIR="${HOME}/.local/share/dev-sandbox-disks"
 readonly DEV_PROXY_BASE_PORT=9222
 readonly DEV_PROXY_PORT_COUNT="${DEV_PROXY_PORTS:-5}"
+readonly DEV_CLAUDE_TOKEN_FILE="${DEV_KEYS_DIR}/claude-oauth-token"
 
 _dev_has_profile() {
     [[ ",${1}," == *",${2},"* ]]
@@ -60,6 +61,7 @@ _dev_proxy_reload() {
 
 _dev_assign_proxy_port() {
     local _dev_container="$1"
+    local _dev_auth="${2:-vertex}"
     local _dev_mapfile
     _dev_mapfile="$(_dev_proxy_mapping_file)"
     local _dev_mapping="{}"
@@ -72,6 +74,9 @@ _dev_assign_proxy_port() {
     _dev_existing_port=$(echo "$_dev_mapping" | jq -r --arg c "$_dev_container" \
         'first(to_entries[] | select(.value.container == $c) | .key) // empty' 2>/dev/null) || true
     if [[ -n "$_dev_existing_port" ]]; then
+        echo "$_dev_mapping" | jq --arg p "$_dev_existing_port" --arg a "$_dev_auth" \
+            '.[$p].auth = $a' > "$_dev_mapfile"
+        _dev_proxy_reload
         echo "$_dev_existing_port"
         return 0
     fi
@@ -82,7 +87,8 @@ _dev_assign_proxy_port() {
             echo "$_dev_mapping" | jq --arg p "$_dev_port" \
                 --arg c "$_dev_container" \
                 --arg b "dev-auto/${_dev_container}" \
-                '. + {($p): {container: $c, branch: $b}}' > "$_dev_mapfile"
+                --arg a "$_dev_auth" \
+                '. + {($p): {container: $c, branch: $b, auth: $a}}' > "$_dev_mapfile"
             _dev_proxy_reload
             echo "$_dev_port"
             return 0
@@ -150,16 +156,19 @@ _dev_reconcile_port_mapping() {
     _dev_mapfile="$(_dev_proxy_mapping_file)"
 
     local _dev_mapping="{}"
-    local _dev_cname _dev_port
+    local _dev_cname _dev_port _dev_auth
     while read -r _dev_cname; do
         [[ -z "$_dev_cname" ]] && continue
         _dev_port=$(podman inspect --format '{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$_dev_cname" 2>/dev/null \
             | sed -n 's/^PROXY_PORT=//p') || _dev_port=""
         [[ -z "$_dev_port" ]] && continue
+        _dev_auth=$(podman inspect --format '{{index .Config.Labels "dev-auth-method"}}' "$_dev_cname" 2>/dev/null) || _dev_auth=""
+        [[ "$_dev_auth" == "api-key" ]] || _dev_auth="vertex"
         _dev_mapping=$(echo "$_dev_mapping" | jq --arg p "$_dev_port" \
             --arg c "$_dev_cname" \
             --arg b "dev-auto/${_dev_cname}" \
-            '. + {($p): {container: $c, branch: $b}}')
+            --arg a "$_dev_auth" \
+            '. + {($p): {container: $c, branch: $b, auth: $a}}')
     done < <(podman ps -a --filter="label=${DEV_LABEL}" --format '{{.Names}}' 2>/dev/null)
 
     if [[ "$_dev_mapping" == "{}" && ! -f "$_dev_mapfile" ]]; then
@@ -292,6 +301,35 @@ _dev_lookup_template() {
     return 1
 }
 
+# Claude subscription token (from `claude setup-token`). Stays on the host:
+# only dev-proxy.py reads it. Prompts on first use, stores it in keys/ (600).
+_dev_ensure_claude_token() {
+    if [[ ! -s "$DEV_CLAUDE_TOKEN_FILE" ]]; then
+        if [[ ! -t 0 ]]; then
+            echo "Error: ${DEV_CLAUDE_TOKEN_FILE} not found. Run 'env -u CLAUDE_CODE_USE_VERTEX claude setup-token' on the host and save the token there (mode 600)." >&2
+            return 1
+        fi
+        echo "No Claude subscription token found. One-time setup:"
+        echo ""
+        echo "  1. In another terminal on the host run:"
+        echo "       env -u CLAUDE_CODE_USE_VERTEX claude setup-token"
+        echo "  2. Approve access in the browser (Claude Pro/Max account)"
+        echo "  3. Paste the printed token below"
+        echo ""
+        local _dev_claude_token
+        read -rs -p "Token: " _dev_claude_token
+        echo ""
+        if [[ -z "$_dev_claude_token" ]]; then
+            echo "Error: empty token" >&2
+            return 1
+        fi
+        mkdir -p "$DEV_KEYS_DIR"
+        (umask 077 && printf '%s\n' "$_dev_claude_token" > "$DEV_CLAUDE_TOKEN_FILE")
+        echo "Token saved to ${DEV_CLAUDE_TOKEN_FILE}."
+    fi
+    chmod 600 "$DEV_CLAUDE_TOKEN_FILE"
+}
+
 _dev_create_container() {
     local _dev_name="$1"
     local _dev_template_key="${2:-}"
@@ -387,6 +425,24 @@ _dev_create_container() {
     if podman secret inspect bob-api-key &>/dev/null; then
         _dev_bob_secret=(--secret bob-api-key,mode=0400)
     fi
+
+    # Claude Code auth, both via the host proxy (credentials never enter the VM):
+    # vertex (default) or api-key (Claude subscription token). --auth-method on
+    # the command line wins over DEV_AUTH_METHOD from config.local.
+    # Bob and agy are not affected.
+    local _dev_auth_method="${DEV_AUTH_METHOD_OVERRIDE:-${DEV_AUTH_METHOD:-vertex}}"
+    local _dev_auth_args=()
+    case "$_dev_auth_method" in
+        vertex) ;;
+        api-key)
+            _dev_ensure_claude_token || return 1
+            echo "Claude Code auth: Claude subscription via host proxy (api-key)"
+            ;;
+        *)
+            echo "Error: unknown auth method '${_dev_auth_method}' (use: vertex, api-key)" >&2
+            return 1
+            ;;
+    esac
     if _dev_has_profile "$_dev_profiles" "java" && [[ -d "${HOME}/.m2/repository" ]]; then
         _dev_volumes+=(-v "${HOME}/.m2/repository:/opt/m2-base:ro")
     fi
@@ -424,7 +480,22 @@ _dev_create_container() {
     _dev_ensure_tracked_branch "$_dev_name" "$_dev_template_key"
 
     local _dev_port
-    _dev_port=$(_dev_assign_proxy_port "$_dev_name") || return 1
+    _dev_port=$(_dev_assign_proxy_port "$_dev_name" "$_dev_auth_method") || return 1
+
+    if [[ "$_dev_auth_method" == "api-key" ]]; then
+        _dev_auth_args=(
+            -e "ANTHROPIC_BASE_URL=http://host.internal:${_dev_port}/anthropic"
+            -e "ANTHROPIC_AUTH_TOKEN=sandbox-proxy"
+        )
+    else
+        _dev_auth_args=(
+            -e "CLAUDE_CODE_USE_VERTEX=1"
+            -e "CLAUDE_CODE_SKIP_VERTEX_AUTH=1"
+            -e "ANTHROPIC_VERTEX_BASE_URL=http://host.internal:${_dev_port}"
+            -e "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}"
+            -e "CLOUD_ML_REGION=${CLOUD_ML_REGION:-global}"
+        )
+    fi
 
     echo "Creating container '${_dev_name}'..."
     if ! podman create -it \
@@ -440,13 +511,10 @@ _dev_create_container() {
         --label="$DEV_LABEL" \
         --label="dev-source-dir=${_dev_source_dir}" \
         --label="dev-template-key=${_dev_template_key}" \
+        --label="dev-auth-method=${_dev_auth_method}" \
         ${DEV_ORIGINAL_BRANCH:+--label="dev-original-branch=${DEV_ORIGINAL_BRANCH}"} \
         -e "PROXY_PORT=${_dev_port}" \
-        -e "CLAUDE_CODE_USE_VERTEX=1" \
-        -e "CLAUDE_CODE_SKIP_VERTEX_AUTH=1" \
-        -e "ANTHROPIC_VERTEX_BASE_URL=http://host.internal:${_dev_port}" \
-        -e "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}" \
-        -e "CLOUD_ML_REGION=${CLOUD_ML_REGION:-global}" \
+        "${_dev_auth_args[@]}" \
         -e "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-max}" \
         -e "DEV_AUTOMATION_USER=${DEV_AUTOMATION_USER}" \
         -e "DEV_AUTOMATION_EMAIL=${DEV_AUTOMATION_EMAIL}" \

@@ -53,6 +53,19 @@ export CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS=true
 if ! infocmp "\${TERM:-dumb}" &>/dev/null 2>&1; then export TERM=xterm-256color; fi
 DEVENV
 
+# ── Claude Code via host proxy with Claude subscription (--auth-method=api-key) ─
+# The subscription token stays on the host; dev-proxy.py injects it. The VM only
+# gets the proxy URL and a placeholder token, persisted here for SSH sessions.
+if [[ -n "${ANTHROPIC_BASE_URL:-}" ]]; then
+    cat >> /etc/profile.d/dev-sandbox.sh <<CLAUDEPROXY
+unset CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_SKIP_VERTEX_AUTH ANTHROPIC_VERTEX_BASE_URL \\
+      ANTHROPIC_VERTEX_PROJECT_ID CLOUD_ML_REGION ANTHROPIC_API_KEY
+export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL}"
+export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-sandbox-proxy}"
+CLAUDEPROXY
+    echo "Claude Code auth: Claude subscription via host proxy"
+fi
+
 _has_profile() { [[ ",${DEV_PROFILES:-}," == *",$1,"* ]]; }
 
 if _has_profile go; then

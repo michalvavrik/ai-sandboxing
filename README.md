@@ -14,7 +14,7 @@ Ephemeral, microVM-isolated dev containers for AI-assisted development. Each con
 
 - **krun microVM** — hardware-isolated guest kernel
 - **Non-root agent** — Claude Code, Bob Shell, and Antigravity CLI run as unprivileged `dev` user, cannot modify iptables or escalate
-- **Host-side proxy** — Google Vertex AI credentials stay on the host; git push is bridged from container HTTP to GitHub SSH using the host's SSH key
+- **Host-side proxy** — Google Vertex AI credentials (and the optional Claude subscription token) stay on the host; git push is bridged from container HTTP to GitHub SSH using the host's SSH key
 - **Credential-free image** — only a read-only GitHub token, a container-only SSH key, and a Bob Shell API key are injected at runtime
 - **No write credentials in container** — git push goes through the host proxy which adds auth; container has zero GitHub write access
 - **Antigravity CLI OAuth tokens are exposed to the agent** — stored in plaintext on the container filesystem, readable by model-invoked tool calls. `dev delete` revokes the token automatically via Google's revocation endpoint. A setuid `agy-mark` binary writes a root-owned flag (`/mnt/bounded/agy-used`) on first launch — the agent cannot delete it, so `dev delete` reliably detects usage even if the agent deleted the token file (warns with manual revocation URL). The token is read from the bounded disk image via `debugfs` on the host — no VM restart needed
@@ -462,6 +462,22 @@ Token expiry warnings appear automatically when using `dev` commands.
 The Bob API key is injected via `podman secret` (never as a volume mount). Handled automatically by `dev install`.
 
 To rotate: `podman secret rm bob-api-key`, replace `keys/ibm_bob_shell_api.key`, re-run `dev install`.
+
+### Claude subscription (`--auth-method=api-key`)
+
+By default, Claude Code uses Google Vertex AI through the host proxy. To use a Claude Pro/Max subscription instead, pass `--auth-method=api-key` when a container is created (`dev new`, `dev .`, `dev <url>`, `dev review <url>`, `dev recreate`), or set `DEV_AUTH_METHOD=api-key` in `config.local` to make it the default. Bob Shell and Antigravity CLI ignore it.
+
+```
+dev new fix-auth --auth-method=api-key
+dev review --agent=claude --auth-method=api-key https://github.com/keycloak/keycloak/pull/50801
+dev recreate --auth-method=vertex fix-auth   # switch an existing container back
+```
+
+On first use, `dev` asks for a token from `env -u CLAUDE_CODE_USE_VERTEX claude setup-token` (one browser login on the host) and saves it to `keys/claude-oauth-token` (mode 600). The method is fixed at creation (label `dev-auth-method`); `dev recreate` keeps it unless `--auth-method` is given.
+
+The token works like the Vertex credentials: it **never enters the VM**. The container gets `ANTHROPIC_BASE_URL=http://host.internal:<port>/anthropic` and a placeholder `ANTHROPIC_AUTH_TOKEN`; `dev-proxy.py` replaces the auth with the real token and forwards to `api.anthropic.com`. Per-port rules: a container's port serves either Vertex or the subscription (never both), and only `/v1/messages`, `/v1/messages/count_tokens` and `/v1/models` are forwarded. The proxy reads the token file on every request, so rotation is just replacing the file.
+
+Caveats: a compromised agent can still spend subscription usage through the proxy while its container exists (same as Vertex), but cannot take the token with it. This relies on the API accepting subscription tokens with the `oauth-2025-04-20` beta header — not an officially documented setup, so it may break. Claude Code sees itself as API-key authenticated, so `/status` does not show plan usage; check it on claude.ai.
 
 ## How it works
 
