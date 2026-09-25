@@ -64,8 +64,7 @@ else
 fi
 
 echo "Container: ${_devissue_name}"
-echo "$_devissue_name" > "/run/user/$(id -u)/dev-last-container"
-[[ -n "${_DEV_SHELL_PID:-}" ]] && echo "$_devissue_name" > "/run/user/$(id -u)/dev-last-container.${_DEV_SHELL_PID}"
+_dev_remember_container "$_devissue_name"
 
 # Existing container — refresh and re-enter
 if _dev_container_exists "$_devissue_name"; then

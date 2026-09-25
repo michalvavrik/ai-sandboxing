@@ -1,0 +1,12 @@
+## Multi-model review loop
+
+This review is step {{STEP}} of {{TOTAL}} in a review loop ({{LOOP}}). You are {{SELF}}.
+Reviews already written in this loop:
+{{PREVIOUS}}
+
+These rules override the earlier instruction to read .reviews/ before reviewing:
+
+1. Do your own complete, independent review FIRST, without reading the reviews listed above. Older files in .reviews/ from previous runs may exist; treat them as context only, never copy their findings unverified.
+2. Only when your own findings are complete, read each review listed above and fact-check every finding in it against the actual code. Record each one as CONFIRMED (evidence: file:line and why), REJECTED (evidence why it is wrong, not applicable, or already handled) or UNVERIFIED (what stopped you). Point out anything important the previous reviewers missed.
+3. Write the complete review to {{REVIEW_FILE}} (this exact path replaces the path from the output-format section) with these sections in this order: Findings, Disagreements, Notable discussions, CI failures (as described above); then "## Verification of previous reviews" with one subsection per file listed above; then Overall assessment, which must take the verified previous findings into account. Print the same content as your final answer.
+4. Later reviewers in this loop will fact-check your findings the same way: give exact file:line evidence and a concrete fix for each finding, and report nothing you have not verified in the code.

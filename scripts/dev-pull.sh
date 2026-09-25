@@ -65,6 +65,17 @@ if [[ -n "$_devpull_repo" ]]; then
     fi
 fi
 
+# ── Claude Code baked into the image vs newest release ─────────────────────
+# New Claude models are gated on the client version (Opus 5.5 needs 2.1.280+),
+# so when the image lags, the opus/fable aliases lag with it.
+_devpull_img_claude=$(podman run --rm --pull=never --network none --entrypoint /usr/bin/claude "$DEV_IMAGE" --version 2>/dev/null \
+    | awk '{print $1}') || true
+_devpull_latest_claude=$(curl -fsSL --max-time 5 https://raw.githubusercontent.com/anthropics/claude-code/main/CHANGELOG.md 2>/dev/null \
+    | grep -m1 -oE '^## [0-9]+\.[0-9]+\.[0-9]+' | cut -d' ' -f2) || true
+if [[ -n "$_devpull_img_claude" && -n "$_devpull_latest_claude" && "$_devpull_img_claude" != "$_devpull_latest_claude" ]]; then
+    echo "NOTE: image has Claude Code ${_devpull_img_claude}, newest release is ${_devpull_latest_claude} (image rebuilds every 3 days; inside a container: claude install latest)"
+fi
+
 _devpull_current_tf=$(grep -oP 'TF_VERSION=\K[\d.]+' "$DEV_BASE_DIR/Containerfile" 2>/dev/null) || true
 if [[ -n "$_devpull_current_tf" ]]; then
     _devpull_latest_tf=$(curl -fsSL --max-time 5 https://api.github.com/repos/hashicorp/terraform/releases/latest 2>/dev/null \

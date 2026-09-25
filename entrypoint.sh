@@ -44,6 +44,8 @@ export CLAUDE_CODE_SKIP_VERTEX_AUTH="${CLAUDE_CODE_SKIP_VERTEX_AUTH:-}"
 export ANTHROPIC_VERTEX_BASE_URL="${ANTHROPIC_VERTEX_BASE_URL:-}"
 export ANTHROPIC_VERTEX_PROJECT_ID="${ANTHROPIC_VERTEX_PROJECT_ID:-}"
 export CLOUD_ML_REGION="${CLOUD_ML_REGION:-}"
+${ANTHROPIC_DEFAULT_OPUS_MODEL:+export ANTHROPIC_DEFAULT_OPUS_MODEL=\"${ANTHROPIC_DEFAULT_OPUS_MODEL}\"}
+${ANTHROPIC_DEFAULT_FABLE_MODEL:+export ANTHROPIC_DEFAULT_FABLE_MODEL=\"${ANTHROPIC_DEFAULT_FABLE_MODEL}\"}
 export CLAUDE_CODE_EFFORT_LEVEL="${CLAUDE_CODE_EFFORT_LEVEL:-max}"
 export XDG_RUNTIME_DIR=/run/user/1000
 export DOCKER_HOST=unix:///run/user/1000/podman/podman.sock
@@ -63,9 +65,47 @@ unset CLAUDE_CODE_USE_VERTEX CLAUDE_CODE_SKIP_VERTEX_AUTH ANTHROPIC_VERTEX_BASE_
 export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL}"
 export ANTHROPIC_AUTH_TOKEN="${ANTHROPIC_AUTH_TOKEN:-sandbox-proxy}"
 export ANTHROPIC_MODEL="${ANTHROPIC_MODEL:-opus}"
+export DEV_CLAUDE_DEFAULT_MODEL="${ANTHROPIC_MODEL:-opus}"
 CLAUDEPROXY
     echo "Claude Code auth: Claude subscription via host proxy"
 fi
+
+# ── Claude Code model shortcuts (all sessions, both auth methods) ────────────
+# `opus` / `fable` start Claude Code with the latest model of that family (they
+# are aliases, so nothing to update on new releases). `claude-model` switches the
+# default used by plain `claude` and by `dev review`; the choice is persisted on
+# the bounded disk so it survives restarts. Precedence in Claude Code:
+# --model > ANTHROPIC_MODEL > ~/.claude/settings.json.
+cat >> /etc/profile.d/dev-sandbox.sh <<'MODELS'
+if [[ -s /home/dev/.config/dev-sandbox/claude-model ]]; then
+    export ANTHROPIC_MODEL="$(< /home/dev/.config/dev-sandbox/claude-model)"
+fi
+fable() { claude --model fable "$@"; }
+opus()  { claude --model opus "$@"; }
+claude-model() {
+    local _f=/home/dev/.config/dev-sandbox/claude-model
+    case "${1:-}" in
+        "")
+            echo "Claude Code default model: ${ANTHROPIC_MODEL:-$(jq -r '.model // "(unset)"' /home/dev/.claude/settings.json 2>/dev/null)}"
+            echo "Usage: claude-model opus|fable|<model>|reset   (opus/fable = latest of that family)"
+            ;;
+        reset)
+            rm -f "$_f"
+            if [[ -n "${DEV_CLAUDE_DEFAULT_MODEL:-}" ]]; then
+                export ANTHROPIC_MODEL="$DEV_CLAUDE_DEFAULT_MODEL"
+            else
+                unset ANTHROPIC_MODEL
+            fi
+            echo "Claude Code default model reset to ${ANTHROPIC_MODEL:-the ~/.claude/settings.json model}"
+            ;;
+        *)
+            mkdir -p "${_f%/*}" && printf '%s\n' "$1" > "$_f"
+            export ANTHROPIC_MODEL="$1"
+            echo "Claude Code default model: $1 (this shell, new shells and dev review; 'claude-model reset' to undo)"
+            ;;
+    esac
+}
+MODELS
 
 _has_profile() { [[ ",${DEV_PROFILES:-}," == *",$1,"* ]]; }
 

@@ -1,128 +1,13 @@
-# Sourced via: alias dev="source <path>/scripts/dev.sh"
-_dev_dir="$(dirname "${BASH_SOURCE[0]}")"
-_dev_cmd="${1:-help}"
-shift 2>/dev/null || true
+# The `dev` command. Sourced by the dev() function from dev-shell-init.sh so
+# that DEV_LAST_CONTAINER (the remembered current container) lives in the
+# calling shell. Not meant to be executed directly.
+#
+# Global option (anywhere on the command line, never seen by subcommands):
+#   --auth-method=vertex|api-key   Claude Code auth for containers created by
+#                                  this command (default: DEV_AUTH_METHOD from
+#                                  config.local, else api-key)
 
-# Global option --auth-method=vertex|api-key (Claude Code only; applies when a
-# container is created). Stripped here so subcommands never see it.
-unset DEV_AUTH_METHOD_OVERRIDE
-_dev_rest=()
-for _dev_a in "$@"; do
-  case "$_dev_a" in
-    --auth-method=*) DEV_AUTH_METHOD_OVERRIDE="${_dev_a#--auth-method=}" ;;
-    *) _dev_rest+=("$_dev_a") ;;
-  esac
-done
-if [[ -n "${DEV_AUTH_METHOD_OVERRIDE:-}" ]]; then
-  case "$DEV_AUTH_METHOD_OVERRIDE" in
-    vertex|api-key) export DEV_AUTH_METHOD_OVERRIDE ;;
-    *)
-      echo "dev: unknown --auth-method '${DEV_AUTH_METHOD_OVERRIDE}' (use: vertex, api-key)" >&2
-      unset DEV_AUTH_METHOD_OVERRIDE _dev_rest _dev_a _dev_cmd _dev_dir
-      return 1 2>/dev/null || exit 1
-      ;;
-  esac
-fi
-
-if [[ -n "${DEV_LAST_CONTAINER:-}" ]] && ! podman container exists "$DEV_LAST_CONTAINER" 2>/dev/null; then
-    unset DEV_LAST_CONTAINER
-fi
-
-# Dispatch in a function so the filtered args never touch the caller's
-# positional parameters (this file is sourced).
-_dev_dispatch() {
-case "$_dev_cmd" in
-  new)
-    DEV_LAST_CONTAINER="${1:?'Usage: dev new <name>'}"
-    "${_dev_dir}/dev-new.sh" "$@"
-    ;;
-  recreate)
-    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
-    "${_dev_dir}/dev-recreate.sh" "$DEV_LAST_CONTAINER"
-    ;;
-  delete)
-    _dev_del_name=""
-    _dev_del_flags=()
-    for _dev_a in "$@"; do
-      if [[ "$_dev_a" == --* ]]; then _dev_del_flags+=("$_dev_a")
-      elif [[ -z "$_dev_del_name" ]]; then _dev_del_name="$_dev_a"
-      fi
-    done
-    _dev_del_name="${_dev_del_name:-${DEV_LAST_CONTAINER:-}}"
-    "${_dev_dir}/dev-delete.sh" ${_dev_del_name:+"$_dev_del_name"} "${_dev_del_flags[@]+"${_dev_del_flags[@]}"}"
-    if [[ "$_dev_del_name" == "${DEV_LAST_CONTAINER:-}" ]]; then
-      unset DEV_LAST_CONTAINER
-    fi
-    ;;
-  merge)
-    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
-    "${_dev_dir}/dev-merge.sh" "$DEV_LAST_CONTAINER"
-    ;;
-  enter)
-    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
-    "${_dev_dir}/dev-enter.sh" "$DEV_LAST_CONTAINER"
-    ;;
-  start)
-    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
-    "${_dev_dir}/dev-start.sh" "$DEV_LAST_CONTAINER"
-    ;;
-  see)
-    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
-    "${_dev_dir}/dev-see.sh" "$DEV_LAST_CONTAINER"
-    ;;
-  show)
-    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
-    "${_dev_dir}/dev-show.sh" "$DEV_LAST_CONTAINER"
-    ;;
-  push)
-    for _dev_a in "$@"; do [[ "$_dev_a" != --* ]] && DEV_LAST_CONTAINER="$_dev_a" && break; done
-    DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-push.sh" "$@"
-    ;;
-  rebase)
-    DEV_LAST_CONTAINER="${1:-${DEV_LAST_CONTAINER:-}}"
-    "${_dev_dir}/dev-rebase.sh" "$DEV_LAST_CONTAINER"
-    ;;
-  cp)
-    DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-cp.sh" "$@"
-    ;;
-  cpout)
-    DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/dev-cpout.sh" "$@"
-    ;;
-  use)
-    DEV_LAST_CONTAINER="${1:?'Usage: dev use <name>'}"
-    echo "Using: ${DEV_LAST_CONTAINER}"
-    ;;
-  list)
-    "${_dev_dir}/dev-list.sh"
-    ;;
-  pull)
-    "${_dev_dir}/dev-pull.sh"
-    ;;
-  sync)
-    "${_dev_dir}/dev-sync.sh"
-    ;;
-  continue)
-    "${_dev_dir}/dev-continue.sh" "$@"
-    ;;
-  install)
-    "${_dev_dir}/dev-install.sh"
-    ;;
-  .)
-    _DEV_SHELL_PID=$$ "${_dev_dir}/dev-local.sh"
-    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container.$$" 2>/dev/null) || true
-    rm -f "/run/user/$(id -u)/dev-last-container.$$"
-    ;;
-  http*|https*)
-    _DEV_SHELL_PID=$$ "${_dev_dir}/dev-issue.sh" "$_dev_cmd"
-    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container.$$" 2>/dev/null) || true
-    rm -f "/run/user/$(id -u)/dev-last-container.$$"
-    ;;
-  review)
-    _DEV_SHELL_PID=$$ "${_dev_dir}/dev-review.sh" "$@"
-    DEV_LAST_CONTAINER=$(cat "/run/user/$(id -u)/dev-last-container.$$" 2>/dev/null) || true
-    rm -f "/run/user/$(id -u)/dev-last-container.$$"
-    ;;
-  help|*)
+_dev_usage() {
     echo "Usage: dev {new|enter|recreate|delete|start|see|show|push|merge|rebase|cp|cpout|use|list|pull|sync|continue|install|review|.|<url>}"
     echo ""
     echo "  new <name>     Create and enter a new dev container"
@@ -142,32 +27,158 @@ case "$_dev_cmd" in
     echo "  pull           Pull newer images and fetch project sources"
     echo "  sync           Pull images/sources + prune dead branches (wip, in-review, dev-auto)"
     echo "  continue [name] Check out an existing wip/in-review branch (tab-completes feature names)"
-    echo "  install        Install prerequisites and configure"
+    echo "  install        Install prerequisites and configure (--shell: only the ~/.bashrc line)"
     echo "  .              Create/enter container from current git project"
-    echo "  review [opts] [url|container-name|\"follow-up\"]  Headless agent review (--agent=claude|bob|agy, --model=flash|pro|opus)"
+    echo "  review [opts] [url|container-name|\"follow-up\"]  Headless agent review"
+    echo "                 (--agent=claude|bob|agy, --model=opus|fable|flash|pro, --loop[=normal|best|all|list])"
     echo "  <github-url>   Create/enter container for a GitHub issue/PR"
+    echo "  <github-url> --loop[=profile]  Set up the container and run a multi-model review loop"
     echo ""
     echo "  --auth-method=vertex|api-key  Claude Code auth for newly created containers"
-    echo "                 (default: DEV_AUTH_METHOD from config.local, else vertex)"
-    ;;
-esac
+    echo "                 (default: DEV_AUTH_METHOD from config.local, else api-key)"
+    echo ""
+    echo "The container a command works with is remembered per terminal: after 'dev new foo'"
+    echo "or 'dev enter foo', 'dev see', 'dev review', 'dev cp' ... apply to foo."
 }
-_dev_dispatch "${_dev_rest[@]+"${_dev_rest[@]}"}"
-unset -f _dev_dispatch
-unset _dev_rest
 
-# --auth-method only takes effect when a container is created; warn if an
-# existing container was reused with a different method.
-if [[ -n "${DEV_AUTH_METHOD_OVERRIDE:-}" && -n "${DEV_LAST_CONTAINER:-}" ]] \
-    && podman container exists "$DEV_LAST_CONTAINER" 2>/dev/null; then
-  _dev_auth_actual=$(podman inspect --format '{{index .Config.Labels "dev-auth-method"}}' "$DEV_LAST_CONTAINER" 2>/dev/null) || true
-  [[ -z "$_dev_auth_actual" || "$_dev_auth_actual" == "<no value>" ]] && _dev_auth_actual="vertex"
-  if [[ "$_dev_auth_actual" != "$DEV_AUTH_METHOD_OVERRIDE" ]]; then
-    echo "WARNING: '${DEV_LAST_CONTAINER}' uses --auth-method=${_dev_auth_actual} (set when it was created)." >&2
-    echo "         To switch: dev recreate --auth-method=${DEV_AUTH_METHOD_OVERRIDE} ${DEV_LAST_CONTAINER}" >&2
-  fi
-  unset _dev_auth_actual
-fi
-unset DEV_AUTH_METHOD_OVERRIDE
+# Run a subcommand script. _DEV_SHELL_PID lets the script report the container
+# it worked with (see _dev_remember_container in dev-common.sh); the remembered
+# container is passed through the environment so scripts can resolve "no name".
+_dev_sub() {
+    local _dev_script="$1"
+    shift
+    _DEV_SHELL_PID=$$ DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/${_dev_script}" "$@"
+}
 
-unset _dev_cmd _dev_dir 2>/dev/null
+_dev_dispatch() {
+    local _dev_cmd="$1"
+    shift
+    case "$_dev_cmd" in
+        new|enter|recreate|delete|start|see|show|push|merge|rebase|cp|cpout|review|continue)
+            _dev_sub "dev-${_dev_cmd}.sh" "$@"
+            ;;
+        use)
+            if [[ -z "${1:-}" ]]; then
+                echo "Usage: dev use <name>" >&2
+                return 1
+            fi
+            if ! podman container exists "$1" 2>/dev/null; then
+                echo "dev: container '$1' does not exist" >&2
+                return 1
+            fi
+            DEV_LAST_CONTAINER="$1"
+            echo "Using: ${DEV_LAST_CONTAINER}"
+            ;;
+        list|pull|sync)
+            "${_dev_dir}/dev-${_dev_cmd}.sh"
+            ;;
+        install)
+            "${_dev_dir}/dev-install.sh" "$@"
+            ;;
+        .)
+            _dev_sub dev-local.sh "$@"
+            ;;
+        http://*|https://*)
+            # `dev <url>` creates/enters the container. With review options it
+            # runs a headless review there instead (same as `dev review <url> ...`).
+            local _dev_review=false _dev_a
+            for _dev_a in "$@"; do
+                case "$_dev_a" in
+                    --loop|--loop=*|--agent|--agent=*|--model|--model=*|--prompt|--append-to-prompt)
+                        _dev_review=true ;;
+                esac
+            done
+            if [[ "$_dev_review" == true ]]; then
+                _dev_sub dev-review.sh "$@" "$_dev_cmd"
+            elif (( $# > 0 )); then
+                echo "dev: unexpected arguments after <url>: $* (use --loop to run a review)" >&2
+                return 1
+            else
+                _dev_sub dev-issue.sh "$_dev_cmd"
+            fi
+            ;;
+        help|--help|-h)
+            _dev_usage
+            ;;
+        *)
+            echo "dev: unknown command '${_dev_cmd}'" >&2
+            _dev_usage >&2
+            return 1
+            ;;
+    esac
+}
+
+_dev_main() {
+    local _dev_dir _dev_cmd _dev_rest=() _dev_a _dev_state _dev_rc _dev_new _dev_auth_actual
+    _dev_dir="$(dirname "${BASH_SOURCE[0]}")"
+    _dev_cmd="${1:-help}"
+    shift 2>/dev/null || true
+
+    unset DEV_AUTH_METHOD_OVERRIDE
+    for _dev_a in "$@"; do
+        case "$_dev_a" in
+            --auth-method=*) DEV_AUTH_METHOD_OVERRIDE="${_dev_a#--auth-method=}" ;;
+            *) _dev_rest+=("$_dev_a") ;;
+        esac
+    done
+    if [[ "$_dev_cmd" == --auth-method=* ]]; then
+        DEV_AUTH_METHOD_OVERRIDE="${_dev_cmd#--auth-method=}"
+        _dev_cmd="${_dev_rest[0]:-help}"
+        _dev_rest=("${_dev_rest[@]:1}")
+    fi
+    if [[ -n "${DEV_AUTH_METHOD_OVERRIDE:-}" ]]; then
+        case "$DEV_AUTH_METHOD_OVERRIDE" in
+            vertex|api-key) export DEV_AUTH_METHOD_OVERRIDE ;;
+            *)
+                echo "dev: unknown --auth-method '${DEV_AUTH_METHOD_OVERRIDE}' (use: vertex, api-key)" >&2
+                unset DEV_AUTH_METHOD_OVERRIDE
+                return 1
+                ;;
+        esac
+    fi
+
+    # Forget a remembered container that no longer exists (deleted elsewhere).
+    if [[ -n "${DEV_LAST_CONTAINER:-}" ]] && ! podman container exists "$DEV_LAST_CONTAINER" 2>/dev/null; then
+        unset DEV_LAST_CONTAINER
+    fi
+
+    # Subcommands report the container they actually worked with through this
+    # per-shell file (names resolved from cwd, created from a URL, ...). Only a
+    # successful report changes the remembered container, so a failed or
+    # aborted command never clears it.
+    _dev_state="/run/user/$(id -u)/dev-last-container.$$"
+    rm -f "$_dev_state"
+
+    _dev_dispatch "$_dev_cmd" "${_dev_rest[@]+"${_dev_rest[@]}"}"
+    _dev_rc=$?
+
+    if [[ -s "$_dev_state" ]]; then
+        _dev_new=$(<"$_dev_state")
+        if [[ -n "$_dev_new" ]] && podman container exists "$_dev_new" 2>/dev/null; then
+            DEV_LAST_CONTAINER="$_dev_new"
+        fi
+    fi
+    rm -f "$_dev_state"
+    if [[ -n "${DEV_LAST_CONTAINER:-}" ]] && ! podman container exists "$DEV_LAST_CONTAINER" 2>/dev/null; then
+        unset DEV_LAST_CONTAINER
+    fi
+
+    # --auth-method only takes effect when a container is created; warn if an
+    # existing container was reused with a different method.
+    if [[ -n "${DEV_AUTH_METHOD_OVERRIDE:-}" && -n "${DEV_LAST_CONTAINER:-}" ]] \
+        && podman container exists "$DEV_LAST_CONTAINER" 2>/dev/null; then
+        _dev_auth_actual=$(podman inspect --format '{{index .Config.Labels "dev-auth-method"}}' "$DEV_LAST_CONTAINER" 2>/dev/null) || true
+        [[ -z "$_dev_auth_actual" || "$_dev_auth_actual" == "<no value>" ]] && _dev_auth_actual="vertex"
+        if [[ "$_dev_auth_actual" != "$DEV_AUTH_METHOD_OVERRIDE" ]]; then
+            echo "WARNING: '${DEV_LAST_CONTAINER}' uses --auth-method=${_dev_auth_actual} (set when it was created)." >&2
+            echo "         To switch: dev recreate --auth-method=${DEV_AUTH_METHOD_OVERRIDE} ${DEV_LAST_CONTAINER}" >&2
+        fi
+    fi
+    unset DEV_AUTH_METHOD_OVERRIDE
+    return "$_dev_rc"
+}
+
+_dev_main "$@"
+_dev_main_rc=$?
+unset -f _dev_main _dev_dispatch _dev_sub _dev_usage
+eval "unset _dev_main_rc; return ${_dev_main_rc} 2>/dev/null || exit ${_dev_main_rc}"

@@ -31,8 +31,7 @@ readonly _devlocal_git_ssh="ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o 
 echo "Project: ${_devlocal_template_key}"
 echo "Branch: ${_devlocal_branch}"
 echo "Container: ${_devlocal_name}"
-echo "$_devlocal_name" > "/run/user/$(id -u)/dev-last-container"
-[[ -n "${_DEV_SHELL_PID:-}" ]] && echo "$_devlocal_name" > "/run/user/$(id -u)/dev-last-container.${_DEV_SHELL_PID}"
+_dev_remember_container "$_devlocal_name"
 
 _devlocal_had_wip=false
 if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then

@@ -118,6 +118,21 @@ _dev_release_proxy_port() {
     fi
 }
 
+# Report the container a command works with. dev.sh reads the per-shell file
+# (dev-last-container.<shell pid>) after each command to update
+# DEV_LAST_CONTAINER in the calling shell; the global file lets
+# `dev review <url>` find the container dev-issue.sh set up. Tab completion
+# sets _DEV_NO_REMEMBER so it never changes state.
+_dev_remember_container() {
+    local _dev_name="${1:-}"
+    [[ -z "$_dev_name" || -n "${_DEV_NO_REMEMBER:-}" ]] && return 0
+    local _dev_run="/run/user/$(id -u)"
+    echo "$_dev_name" > "${_dev_run}/dev-last-container" 2>/dev/null || true
+    if [[ -n "${_DEV_SHELL_PID:-}" ]]; then
+        echo "$_dev_name" > "${_dev_run}/dev-last-container.${_DEV_SHELL_PID}" 2>/dev/null || true
+    fi
+}
+
 _dev_resolve_name() {
     local _dev_name="${1:-${DEV_LAST_CONTAINER:-}}"
     if [[ -z "$_dev_name" ]]; then
@@ -148,7 +163,27 @@ _dev_resolve_name() {
             fi
         fi
     fi
+    _dev_remember_container "$_dev_name"
     echo "$_dev_name"
+}
+
+# Model to use for a Claude alias (opus, fable) in a Vertex container, where
+# the alias itself may resolve to a model the project cannot use. Configure
+# DEV_VERTEX_OPUS_MODEL / DEV_VERTEX_FABLE_MODEL in config.local; opus falls
+# back to the image default from configs/claude-settings.json.
+_dev_vertex_model() {
+    local _dev_model=""
+    case "$1" in
+        opus)
+            _dev_model="${DEV_VERTEX_OPUS_MODEL:-}"
+            if [[ -z "$_dev_model" ]]; then
+                _dev_model=$(jq -r '.model // empty' "${DEV_CONFIGS_DIR}/claude-settings.json" 2>/dev/null) || true
+            fi
+            ;;
+        fable) _dev_model="${DEV_VERTEX_FABLE_MODEL:-}" ;;
+    esac
+    [[ -n "$_dev_model" ]] || return 1
+    echo "$_dev_model"
 }
 
 _dev_reconcile_port_mapping() {
@@ -427,10 +462,10 @@ _dev_create_container() {
     fi
 
     # Claude Code auth, both via the host proxy (credentials never enter the VM):
-    # vertex (default) or api-key (Claude subscription token). --auth-method on
+    # api-key (Claude subscription token, default) or vertex. --auth-method on
     # the command line wins over DEV_AUTH_METHOD from config.local.
     # Bob and agy are not affected.
-    local _dev_auth_method="${DEV_AUTH_METHOD_OVERRIDE:-${DEV_AUTH_METHOD:-vertex}}"
+    local _dev_auth_method="${DEV_AUTH_METHOD_OVERRIDE:-${DEV_AUTH_METHOD:-api-key}}"
     local _dev_auth_args=()
     case "$_dev_auth_method" in
         vertex) ;;
@@ -496,6 +531,16 @@ _dev_create_container() {
             -e "ANTHROPIC_VERTEX_PROJECT_ID=${ANTHROPIC_VERTEX_PROJECT_ID}"
             -e "CLOUD_ML_REGION=${CLOUD_ML_REGION:-global}"
         )
+        # Pin what the `opus` / `fable` aliases (used by the in-container
+        # shortcuts and `dev review --model=`) mean on Vertex, where the newest
+        # model of a family may not be enabled for the project.
+        local _dev_vertex_model
+        if _dev_vertex_model=$(_dev_vertex_model opus); then
+            _dev_auth_args+=(-e "ANTHROPIC_DEFAULT_OPUS_MODEL=${_dev_vertex_model}")
+        fi
+        if _dev_vertex_model=$(_dev_vertex_model fable); then
+            _dev_auth_args+=(-e "ANTHROPIC_DEFAULT_FABLE_MODEL=${_dev_vertex_model}")
+        fi
     fi
 
     echo "Creating container '${_dev_name}'..."
@@ -534,6 +579,7 @@ _dev_create_container() {
         _dev_release_proxy_port "$_dev_name"
         return 1
     fi
+    _dev_remember_container "$_dev_name"
 }
 
 _dev_ssh_port() {

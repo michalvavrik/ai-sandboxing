@@ -14,7 +14,7 @@ Ephemeral, microVM-isolated dev containers for AI-assisted development. Each con
 
 - **krun microVM** — hardware-isolated guest kernel
 - **Non-root agent** — Claude Code, Bob Shell, and Antigravity CLI run as unprivileged `dev` user, cannot modify iptables or escalate
-- **Host-side proxy** — Google Vertex AI credentials (and the optional Claude subscription token) stay on the host; git push is bridged from container HTTP to GitHub SSH using the host's SSH key
+- **Host-side proxy** — the Claude subscription token and Google Vertex AI credentials stay on the host; git push is bridged from container HTTP to GitHub SSH using the host's SSH key
 - **Credential-free image** — only a read-only GitHub token, a container-only SSH key, and a Bob Shell API key are injected at runtime
 - **No write credentials in container** — git push goes through the host proxy which adds auth; container has zero GitHub write access
 - **Antigravity CLI OAuth tokens are exposed to the agent** — stored in plaintext on the container filesystem, readable by model-invoked tool calls. `dev delete` revokes the token automatically via Google's revocation endpoint. A setuid `agy-mark` binary writes a root-owned flag (`/mnt/bounded/agy-used`) on first launch — the agent cannot delete it, so `dev delete` reliably detects usage even if the agent deleted the token file (warns with manual revocation URL). The token is read from the bounded disk image via `debugfs` on the host — no VM restart needed
@@ -59,6 +59,11 @@ All machine-specific values live in `config.local` (gitignored). The install scr
 | `DEV_IMAGE`            | Container image to pull and run               |
 | `DEV_SOURCES_DIR`      | Parent directory for project source checkouts |
 | `DEV_PROXY_PORTS`      | Number of proxy ports (default 5, = 4 container slots). Re-run `dev install` after changing to update firewall rules |
+| `DEV_AUTH_METHOD`      | Claude Code auth for new containers: `api-key` (default, Claude subscription) or `vertex`. See [Claude auth and models](#claude-auth-and-models) |
+| `DEV_SUBSCRIPTION_MODEL` | Default Claude model in `api-key` containers (default `opus` = latest Opus) |
+| `DEV_VERTEX_OPUS_MODEL`, `DEV_VERTEX_FABLE_MODEL` | What `opus` / `fable` mean in `vertex` containers (opus defaults to the model in `configs/claude-settings.json`; fable has no default, so Fable is skipped on Vertex unless set) |
+| `DEV_AGY_FLASH_MODEL`, `DEV_AGY_PRO_MODEL` | Pin the Antigravity models behind `flash` / `pro` (default: newest `*-flash-high` / `*-pro-high` from `agy models`) |
+| `DEV_LOOP_NORMAL`, `DEV_LOOP_BEST`, `DEV_LOOP_ALL` | Override the review loop profiles (comma-separated reviewer lists) |
 
 Project-specific source dirs in `configs/project-templates.conf` are relative to `DEV_SOURCES_DIR`.
 
@@ -79,6 +84,8 @@ Run `dev sync` manually to force an immediate update and branch cleanup.
 ~/sandboxing/scripts/dev-install.sh
 source ~/.bashrc
 ```
+
+The install script adds one line to `~/.bashrc` — `source ~/sandboxing/scripts/dev-shell-init.sh` — which defines the `dev` command and its tab completion. Both live in the repo, so `git pull` updates them; `~/.bashrc` never needs editing again. Older inline alias/completion blocks are migrated automatically; to do only that step, run `~/sandboxing/scripts/dev-install.sh --shell` (or `dev install --shell`).
 
 The install script walks you through each step. Manual actions required (browser):
 1. Add SSH key to GitHub (must be a different GitHub account than you use for your own work)
@@ -108,7 +115,8 @@ dev cp --to /workspace f.patch # copy into a specific container directory
 dev cpout pom.xml          # copy from container (relative to /workspace)
 dev cpout /tmp/file.txt    # copy from container (absolute path)
 dev cpout --to ~/review src # copy from container into a specific host directory
-dev review fix-auth        # run headless agent review (--agent=claude|bob|agy, --model=flash|pro|opus)
+dev review fix-auth        # headless review (default: claude; --agent=claude|bob|agy, --model=opus|fable|flash|pro)
+dev review --loop          # multi-model review loop (normal = bob, flash, opus; also best, all, or a list)
 dev use fix-auth           # set current container without entering
 dev list                   # show all dev containers
 dev pull                   # pull newer images and fetch sources
@@ -122,16 +130,21 @@ cd ~/sources/keycloak && dev .   # detect template, push local HEAD to container
 dev https://github.com/keycloak/keycloak/issues/50167
 dev https://github.com/keycloak/keycloak/pull/50801
 dev https://github.com/your-user/keycloak-client/tree/my-branch
+dev https://github.com/keycloak/keycloak/pull/50801 --loop        # set up the container and run the review loop
+dev https://github.com/keycloak/keycloak/pull/50801 --loop=best   # opus, gemini pro, fable
 
 # Inside the container:
 claude                     # start Claude Code (permissions bypassed via env var)
+opus                       # Claude Code with the latest Opus  (= claude --model opus)
+fable                      # Claude Code with the latest Fable (= claude --model fable)
+claude-model fable         # make fable the default for `claude` and `dev review` (reset: claude-model reset)
 bob                        # start Bob Shell (API key injected securely)
 agy                        # start Antigravity CLI (Google Gemini models)
 ```
 
-Container name is remembered — after `dev new foo`, just `dev enter`, `dev see`, `dev cp`, etc.
+The current container is remembered per terminal: whatever a `dev` command worked with — created by `dev new`/`dev .`/`dev <url>`, named explicitly, or resolved from the cwd — becomes the target of the following `dev enter`, `dev see`, `dev cp`, `dev review`, ... in that terminal. A failed command never clears it, and flags (`dev see --dont-squash`) are never mistaken for names.
 Use `dev use <name>` to set the current container from a different terminal.
-When multiple containers exist, commands resolve by cwd: `cd ~/sources/quarkus && dev see` picks the quarkus container if exactly one matches.
+When nothing is remembered and multiple containers exist, commands resolve by cwd: `cd ~/sources/quarkus && dev see` picks the quarkus container if exactly one matches.
 
 ## Branch lifecycle
 
@@ -372,10 +385,11 @@ dev review
 # Follow-up question (continues the review session)
 dev review "what about thread safety in the token store?"
 
-# Use a different agent or model (model selection supported for agy: flash, pro, opus)
+# Use a different agent or model (default agent: claude with the container's default model)
 dev review --agent=bob https://github.com/keycloak/keycloak/pull/50801
-dev review --agent=agy --model=pro keycloak-pr-50801
-dev review --model=opus keycloak-pr-50801
+dev review --model=fable keycloak-pr-50801          # claude, latest Fable
+dev review --model=pro keycloak-pr-50801            # agy (implied by flash/pro), latest Gemini Pro, highest effort
+dev review --agent=agy --model=flash keycloak-pr-50801
 
 # Custom prompt (replaces agent-specific template, base kept)
 dev review --prompt "focus only on security issues"
@@ -384,13 +398,39 @@ dev review --prompt "focus only on security issues"
 dev review --append-to-prompt "also check for Java 21 API usage"
 ```
 
+Model shortcuts always mean the newest model available, so they never need updating: `opus` / `fable` are Claude Code aliases for the latest model of each family (on Vertex they are pinned by `DEV_VERTEX_OPUS_MODEL` / `DEV_VERTEX_FABLE_MODEL`), and `flash` / `pro` pick the newest `gemini-*-flash-high` / `gemini-*-pro-high` from `agy models` (pin with `DEV_AGY_FLASH_MODEL` / `DEV_AGY_PRO_MODEL`).
+
 Review prompts use a two-layer system in `configs/review-prompts/`:
 - `base.txt` — shared context instructions (always included)
 - `claude.txt`, `bob.txt`, `agy.txt` — agent-specific personality/style
+- `loop.txt` — extra instructions for review loops (see below)
 
 Edit these files to improve prompts over time. `--prompt` replaces only the agent-specific part; `--append-to-prompt` appends to the combined prompt.
 
 For interactive follow-up (when headless isn't enough): `dev enter` then `claude -r <session-id>` to resume the review session. The session ID is printed at the end of each review.
+
+### Review loop (`--loop`)
+
+`--loop` runs several reviewers one after another in the same container. Every reviewer first does its own independent review, then fact-checks each earlier review of the loop (CONFIRMED / REJECTED / UNVERIFIED per finding, with evidence) and writes both into `/workspace/.reviews/<agent>/<timestamp>-<model>.md`. The last reviewer therefore verifies everything before it.
+
+```bash
+dev https://github.com/keycloak/keycloak/pull/50801 --loop      # set up container + normal loop
+dev review --loop                                               # normal loop in the current container
+dev review --loop=best keycloak-pr-50801
+dev review --loop=bob,pro,fable                                 # any list, in this order
+dev review --loop=normal,fable                                  # profiles can be mixed into a list
+dev review --loop --append-to-prompt "focus on the token store"
+```
+
+| Profile  | Reviewers, in order                                    |
+|----------|--------------------------------------------------------|
+| `normal` | `bob`, `flash` (Gemini Flash, highest effort), `opus`  |
+| `best`   | `opus`, `pro` (Gemini Pro, highest effort), `fable`    |
+| `all`    | `bob`, `pro`, `opus`, `flash`, `fable`                 |
+
+List entries: `bob`, `flash`, `pro`, `opus`, `fable`; `gemini` means `flash`, `claude` means `opus`, and `agent:model` (e.g. `agy:pro`, `claude:fable`) also works. Ran out of Bob credits? Leave `bob` out: `--loop=flash,opus`. Profiles can be redefined with `DEV_LOOP_NORMAL`, `DEV_LOOP_BEST`, `DEV_LOOP_ALL` in `config.local`.
+
+When a Gemini reviewer is in the loop and Antigravity is not signed in yet in the container, the sign-in (Google URL + code) is triggered before the loop starts, so you don't have to wait for Bob to finish and then paste a code; later runs reuse the token. A failing reviewer (e.g. no Bob credits) is reported and the loop continues with the next one; the summary at the end lists every review file. In `vertex` containers, `fable` is skipped unless `DEV_VERTEX_FABLE_MODEL` is set.
 
 ## MCP server proxy
 
@@ -463,19 +503,25 @@ The Bob API key is injected via `podman secret` (never as a volume mount). Handl
 
 To rotate: `podman secret rm bob-api-key`, replace `keys/ibm_bob_shell_api.key`, re-run `dev install`.
 
-### Claude subscription (`--auth-method=api-key`)
+### Claude auth and models
 
-By default, Claude Code uses Google Vertex AI through the host proxy. To use a Claude Pro/Max subscription instead, pass `--auth-method=api-key` when a container is created (`dev new`, `dev .`, `dev <url>`, `dev review <url>`, `dev recreate`), or set `DEV_AUTH_METHOD=api-key` in `config.local` to make it the default. Bob Shell and Antigravity CLI ignore it.
+Claude Code authenticates through the host proxy either with a Claude Pro/Max subscription token (`api-key`, the default) or with Google Vertex AI (`vertex`). Pass `--auth-method=vertex|api-key` when a container is created (`dev new`, `dev .`, `dev <url>`, `dev review <url>`, `dev recreate`), or set `DEV_AUTH_METHOD` in `config.local` to change the default. Bob Shell and Antigravity CLI ignore it.
 
 ```
-dev new fix-auth --auth-method=api-key
-dev review --agent=claude --auth-method=api-key https://github.com/keycloak/keycloak/pull/50801
-dev recreate --auth-method=vertex fix-auth   # switch an existing container back
+dev new fix-auth --auth-method=vertex
+dev review --agent=claude --auth-method=vertex https://github.com/keycloak/keycloak/pull/50801
+dev recreate --auth-method=api-key fix-auth   # switch an existing container
 ```
 
-On first use, `dev` asks for a token from `env -u CLAUDE_CODE_USE_VERTEX claude setup-token` (one browser login on the host) and saves it to `keys/claude-oauth-token` (mode 600). The method is fixed at creation (label `dev-auth-method`); `dev recreate` keeps it unless `--auth-method` is given.
+On first `api-key` use, `dev` asks for a token from `env -u CLAUDE_CODE_USE_VERTEX claude setup-token` (one browser login on the host) and saves it to `keys/claude-oauth-token` (mode 600). The method is fixed at creation (label `dev-auth-method`); `dev recreate` keeps it unless `--auth-method` is given.
 
-Model: Vertex containers use the `model` from `configs/claude-settings.json`. Subscription containers override it with `ANTHROPIC_MODEL`, default `opus` (always the latest Opus); set `DEV_SUBSCRIPTION_MODEL` in `config.local` to change it (e.g. `sonnet` or a full model name). `/model` inside a session still overrides both.
+**Models.** Claude Code picks the model in this order: `--model` > `ANTHROPIC_MODEL` > `model` in `~/.claude/settings.json`. The aliases `opus` and `fable` always mean the latest model of that family, so they never need updating.
+
+**What "latest" means.** An alias resolves to the newest model of that family *known to the installed Claude Code*, and the API refuses newer models from older clients (Opus 5.5 needs 2.1.280+; a 2.1.267 client gets `400 ... version 2.1.280 or newer is required` even with the full model ID). So the Claude Code version in the image decides how new `opus`/`fable` can be. The image installs Claude Code from the `latest` RPM channel (`stable` trails new-model releases by weeks) and is rebuilt every 3 days; `dev pull` / `dev sync` print a note when the image's Claude Code is older than the newest release. To update a single running container without waiting for a new image, run `claude install latest` inside it (installs into `~/.local/bin`, which precedes `/usr/bin` in PATH).
+
+- Subscription containers set `ANTHROPIC_MODEL=opus` (change with `DEV_SUBSCRIPTION_MODEL` in `config.local`).
+- Vertex containers use the `model` from `configs/claude-settings.json` and pin the aliases with `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_FABLE_MODEL` (from `DEV_VERTEX_OPUS_MODEL` / `DEV_VERTEX_FABLE_MODEL`), because the newest model of a family may not be enabled for the Vertex project.
+- Inside a container, `opus` and `fable` start Claude Code with that model (`opus -r <session>` etc. pass arguments through), and `claude-model opus|fable|<model>` changes the default for plain `claude` and for `dev review` in that container (persisted; `claude-model reset` restores the container default, `claude-model` shows it). `/model` inside a session still overrides everything for that session.
 
 The token works like the Vertex credentials: it **never enters the VM**. The container gets `ANTHROPIC_BASE_URL=http://host.internal:<port>/anthropic` and a placeholder `ANTHROPIC_AUTH_TOKEN`; `dev-proxy.py` replaces the auth with the real token and forwards to `api.anthropic.com`. Per-port rules: a container's port serves either Vertex or the subscription (never both), and only `/v1/messages`, `/v1/messages/count_tokens` and `/v1/models` are forwarded. The proxy reads the token file on every request, so rotation is just replacing the file.
 

@@ -14,6 +14,37 @@ _dev_step_header() {
     echo ""
 }
 
+# ~/.bashrc only sources scripts/dev-shell-init.sh; the dev command and its tab
+# completion live in the repo, so updates never require editing ~/.bashrc again.
+# Also available on its own: dev install --shell
+_dev_install_shell_integration() {
+    local _dev_bashrc="${HOME}/.bashrc"
+    local _dev_line="source ${_DEV_BASE_DIR}/scripts/dev-shell-init.sh"
+
+    # Migrate the inline alias + completion function written by older versions
+    if grep -qE '^alias dev=' "$_dev_bashrc" 2>/dev/null; then
+        sed -i -e '/^# Dev sandbox CLI$/d' -e '/^alias dev=/d' "$_dev_bashrc"
+        echo "Removed old 'dev' alias from ~/.bashrc."
+    fi
+    if grep -qF '_dev_completion() {' "$_dev_bashrc" 2>/dev/null; then
+        sed -i '/^_dev_completion() {$/,/^complete -F _dev_completion dev$/d' "$_dev_bashrc"
+        echo "Removed old inline tab completion from ~/.bashrc."
+    fi
+
+    if grep -qF 'scripts/dev-shell-init.sh' "$_dev_bashrc" 2>/dev/null; then
+        echo "Shell integration already present in ~/.bashrc."
+    else
+        printf '\n# Dev sandbox CLI (dev command + tab completion)\n%s\n' "$_dev_line" >> "$_dev_bashrc"
+        echo "Added to ~/.bashrc: ${_dev_line}"
+    fi
+}
+
+if [[ "${1:-}" == "--shell" ]]; then
+    _dev_install_shell_integration
+    echo "Run 'source ~/.bashrc' (or open a new terminal) to load it."
+    exit 0
+fi
+
 # --------------------------------------------------------------------------
 # Step 0: config.local validation
 # --------------------------------------------------------------------------
@@ -258,7 +289,7 @@ fi
 # --------------------------------------------------------------------------
 # Step 7/11: Register krun runtime
 # --------------------------------------------------------------------------
-_dev_step_header 6 10 "Register krun runtime"
+_dev_step_header 7 11 "Register krun runtime"
 
 readonly _DEV_CONTAINERS_CONF="${HOME}/.config/containers/containers.conf"
 
@@ -302,20 +333,11 @@ podman pull --policy missing "$DEV_IMAGE"
 echo "Dev image ready."
 
 # --------------------------------------------------------------------------
-# Step 9/11: Shell alias
+# Step 9/11: Shell integration
 # --------------------------------------------------------------------------
-_dev_step_header 9 11 "Shell alias"
+_dev_step_header 9 11 "Shell integration"
 
-readonly _DEV_ALIAS="alias dev=\"source ${_DEV_BASE_DIR}/scripts/dev.sh\""
-
-if grep -qF 'alias dev=' "${HOME}/.bashrc" 2>/dev/null; then
-    echo "Shell alias already present in ~/.bashrc."
-else
-    echo "" >> "${HOME}/.bashrc"
-    echo "# Dev sandbox CLI" >> "${HOME}/.bashrc"
-    echo "$_DEV_ALIAS" >> "${HOME}/.bashrc"
-    echo "Alias added to ~/.bashrc."
-fi
+_dev_install_shell_integration
 
 
 # SSH config Include for container access (dev enter, dev see, dev cp)
@@ -325,28 +347,6 @@ if ! grep -qF 'dev-sandbox-ssh' "${HOME}/.ssh/config" 2>/dev/null; then
     echo "SSH config Include added."
 else
     echo "SSH config Include already present."
-fi
-
-
-if ! grep -qF '_dev_completion' "${HOME}/.bashrc" 2>/dev/null; then
-    cat >> "${HOME}/.bashrc" <<COMP
-_dev_completion() {
-    local cur="\${COMP_WORDS[COMP_CWORD]}"
-    local prev="\${COMP_WORDS[COMP_CWORD-1]}"
-    if [[ "\${COMP_WORDS[1]}" == "cp" && \$COMP_CWORD -ge 2 ]]; then
-        compopt -o filenames
-        COMPREPLY=(\$(compgen -f -- "\$cur"))
-    elif [[ "\${COMP_WORDS[1]}" == "continue" && \$COMP_CWORD -eq 2 ]]; then
-        compopt -o nosort
-        COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur" "\${COMP_WORDS[@]}"))
-    else
-        [[ "\${COMP_WORDS[1]}" == "cpout" && "\$prev" != "--to" ]] && compopt -o nospace
-        COMPREPLY=(\$(${_DEV_BASE_DIR}/scripts/dev-complete.sh "\$COMP_CWORD" "\$prev" "\$cur" "\${COMP_WORDS[@]}"))
-    fi
-}
-complete -F _dev_completion dev
-COMP
-    echo "Tab completion added to ~/.bashrc."
 fi
 
 # --------------------------------------------------------------------------
@@ -393,7 +393,7 @@ echo ""
 echo "=== Setup complete ==="
 echo ""
 echo "Next steps:"
-echo "  1. source ~/.bashrc   (or open a new terminal)"
+echo "  1. source ~/.bashrc   (or open a new terminal) — loads the dev command and tab completion"
 echo "  2. dev list            (should show no containers)"
 echo "  3. dev new my-sandbox  (create your first container)"
 echo ""

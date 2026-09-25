@@ -32,7 +32,11 @@ COPY configs/containers-containers.conf  /etc/containers/containers.conf
 RUN echo "user_allow_other" >> /etc/fuse.conf
 
 # ── Claude Code (via official dnf repo) ──────────────────────────────────────
-RUN printf '[claude-code]\nname=Claude Code\nbaseurl=https://downloads.claude.ai/claude-code/rpm/stable\nenabled=1\ngpgcheck=1\ngpgkey=https://downloads.claude.ai/keys/claude-code.asc\n' \
+# The `latest` channel, not `stable`: new Claude models are gated on the client
+# version (the API refuses e.g. Opus 5.5 from anything older than 2.1.280), and
+# `stable` trails new-model releases by weeks, which would make the opus/fable
+# aliases point at the previous generation.
+RUN printf '[claude-code]\nname=Claude Code\nbaseurl=https://downloads.claude.ai/claude-code/rpm/latest\nenabled=1\ngpgcheck=1\ngpgkey=https://downloads.claude.ai/keys/claude-code.asc\n' \
         > /etc/yum.repos.d/claude-code.repo \
     && dnf install -y --setopt=retries=5 claude-code && dnf clean all
 
