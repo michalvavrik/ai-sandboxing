@@ -85,7 +85,7 @@ Run `dev sync` manually to force an immediate update and branch cleanup.
 source ~/.bashrc
 ```
 
-The install script adds one line to `~/.bashrc` — `source ~/sandboxing/scripts/dev-shell-init.sh` — which defines the `dev` command and its tab completion. Both live in the repo, so `git pull` updates them; `~/.bashrc` never needs editing again. Older inline alias/completion blocks are migrated automatically; to do only that step, run `~/sandboxing/scripts/dev-install.sh --shell` (or `dev install --shell`).
+The install script adds one line to `~/.bashrc` — `source ~/sandboxing/scripts/dev-shell-init.sh` — which defines the `dev` command and its tab completion. Both live in the repo, so `git pull` updates them; `~/.bashrc` never needs editing again.
 
 The install script walks you through each step. Manual actions required (browser):
 1. Add SSH key to GitHub (must be a different GitHub account than you use for your own work)

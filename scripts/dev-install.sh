@@ -14,37 +14,6 @@ _dev_step_header() {
     echo ""
 }
 
-# ~/.bashrc only sources scripts/dev-shell-init.sh; the dev command and its tab
-# completion live in the repo, so updates never require editing ~/.bashrc again.
-# Also available on its own: dev install --shell
-_dev_install_shell_integration() {
-    local _dev_bashrc="${HOME}/.bashrc"
-    local _dev_line="source ${_DEV_BASE_DIR}/scripts/dev-shell-init.sh"
-
-    # Migrate the inline alias + completion function written by older versions
-    if grep -qE '^alias dev=' "$_dev_bashrc" 2>/dev/null; then
-        sed -i -e '/^# Dev sandbox CLI$/d' -e '/^alias dev=/d' "$_dev_bashrc"
-        echo "Removed old 'dev' alias from ~/.bashrc."
-    fi
-    if grep -qF '_dev_completion() {' "$_dev_bashrc" 2>/dev/null; then
-        sed -i '/^_dev_completion() {$/,/^complete -F _dev_completion dev$/d' "$_dev_bashrc"
-        echo "Removed old inline tab completion from ~/.bashrc."
-    fi
-
-    if grep -qF 'scripts/dev-shell-init.sh' "$_dev_bashrc" 2>/dev/null; then
-        echo "Shell integration already present in ~/.bashrc."
-    else
-        printf '\n# Dev sandbox CLI (dev command + tab completion)\n%s\n' "$_dev_line" >> "$_dev_bashrc"
-        echo "Added to ~/.bashrc: ${_dev_line}"
-    fi
-}
-
-if [[ "${1:-}" == "--shell" ]]; then
-    _dev_install_shell_integration
-    echo "Run 'source ~/.bashrc' (or open a new terminal) to load it."
-    exit 0
-fi
-
 # --------------------------------------------------------------------------
 # Step 0: config.local validation
 # --------------------------------------------------------------------------
@@ -337,7 +306,16 @@ echo "Dev image ready."
 # --------------------------------------------------------------------------
 _dev_step_header 9 11 "Shell integration"
 
-_dev_install_shell_integration
+# ~/.bashrc only sources scripts/dev-shell-init.sh; the dev command and its tab
+# completion live in the repo, so updates never require editing ~/.bashrc again.
+readonly _DEV_SHELL_LINE="source ${_DEV_BASE_DIR}/scripts/dev-shell-init.sh"
+
+if grep -qF 'scripts/dev-shell-init.sh' "${HOME}/.bashrc" 2>/dev/null; then
+    echo "Shell integration already present in ~/.bashrc."
+else
+    printf '\n# Dev sandbox CLI (dev command + tab completion)\n%s\n' "$_DEV_SHELL_LINE" >> "${HOME}/.bashrc"
+    echo "Added to ~/.bashrc: ${_DEV_SHELL_LINE}"
+fi
 
 
 # SSH config Include for container access (dev enter, dev see, dev cp)

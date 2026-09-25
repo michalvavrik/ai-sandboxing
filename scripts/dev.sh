@@ -27,7 +27,7 @@ _dev_usage() {
     echo "  pull           Pull newer images and fetch project sources"
     echo "  sync           Pull images/sources + prune dead branches (wip, in-review, dev-auto)"
     echo "  continue [name] Check out an existing wip/in-review branch (tab-completes feature names)"
-    echo "  install        Install prerequisites and configure (--shell: only the ~/.bashrc line)"
+    echo "  install        Install prerequisites and configure"
     echo "  .              Create/enter container from current git project"
     echo "  review [opts] [url|container-name|\"follow-up\"]  Headless agent review"
     echo "                 (--agent=claude|bob|agy, --model=opus|fable|flash|pro, --loop[=normal|best|all|list])"
@@ -69,11 +69,8 @@ _dev_dispatch() {
             DEV_LAST_CONTAINER="$1"
             echo "Using: ${DEV_LAST_CONTAINER}"
             ;;
-        list|pull|sync)
+        list|pull|sync|install)
             "${_dev_dir}/dev-${_dev_cmd}.sh"
-            ;;
-        install)
-            "${_dev_dir}/dev-install.sh" "$@"
             ;;
         .)
             _dev_sub dev-local.sh "$@"
