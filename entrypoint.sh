@@ -419,6 +419,13 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 - /opt/workspace/${_ref_name} — ${_ref_id} latest main (shallow, for browsing source)"
         done
 
+        _fmt_section=''
+        if [[ "$DEV_TEMPLATE_KEY" == "keycloak/keycloak" ]]; then
+            _fmt_section='
+## Code formatting
+Formatting is part of finishing a change here. Whenever you run the tests or report a change as done, also run `mvn spotless:apply` from /workspace — a change is not done until it is formatted.'
+        fi
+
         runuser -u dev -- bash -c 'mkdir -p /home/dev/.claude /home/dev/.bob /home/dev/.gemini && tee /home/dev/.claude/CLAUDE.md /home/dev/.bob/AGENTS.md /home/dev/.gemini/GEMINI.md >/dev/null' <<AGENTSMD
 # Sandbox environment for ${_org}/${_repo}
 
@@ -443,6 +450,7 @@ Never reference any GitHub PR or issue inside a Git commit message. Do not commi
 
 ## Testing
 Docker is NOT installed. Podman is the container runtime. Testcontainers works with Podman out of the box (already configured via DOCKER_HOST). Always try running tests before claiming they can't run.
+${_fmt_section}
 
 ## Task context
 - .pr — PR details (\`gh pr view\` output), present when working on a pull request
