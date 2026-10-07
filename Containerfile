@@ -109,7 +109,7 @@ RUN sed -i 's|export GPG_TTY=$(tty)|export GPG_TTY=$(tty 2>/dev/null)|' /etc/pro
 
 # ── Claude Code sandbox settings ─────────────────────────────────────────────
 COPY --chown=dev:dev configs/claude-settings.json /home/dev/.claude/settings.json
-RUN echo '{"hasCompletedOnboarding":true,"hasAcceptedTerms":true,"hasSeenTasksHint":true,"hasSeenAutoDefaultNotice":true,"hasResetAutoModeOptInForDefaultOffer":true,"hasSeenAutoModeEntryWarning":true,"hasSeenAutoModeOutsideReadPrompt":true,"numStartups":1,"autoUpdates":false,"effortLevel":"max","projects":{"/workspace":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/keycloak":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/quarkus":{"allowedTools":[],"hasTrustDialogAccepted":true}}}' > /home/dev/.claude.json \
+RUN echo '{"hasCompletedOnboarding":true,"hasAcceptedTerms":true,"hasSeenTasksHint":true,"hasSeenAutoDefaultNotice":true,"hasSeenAutoDefaultNudge":true,"hasResetAutoModeOptInForDefaultOffer":true,"hasSeenAutoModeEntryWarning":true,"hasSeenAutoModeOutsideReadPrompt":true,"numStartups":1,"autoUpdates":false,"effortLevel":"max","projects":{"/workspace":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/keycloak":{"allowedTools":[],"hasTrustDialogAccepted":true},"/opt/workspace/quarkus":{"allowedTools":[],"hasTrustDialogAccepted":true}}}' > /home/dev/.claude.json \
     && chown dev:dev /home/dev/.claude.json
 
 # ── Antigravity CLI sandbox settings ─────────────────────────────────────────
