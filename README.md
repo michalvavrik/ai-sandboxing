@@ -72,8 +72,7 @@ Project-specific source dirs in `configs/project-templates.conf` are relative to
 A systemd user service (`dev-pull.service`) runs on graphical login and executes `dev sync`, which:
 1. Pulls newer container images for all language variants
 2. Fetches latest sources for all template projects under `DEV_SOURCES_DIR`
-3. Prunes dead branches (see [Branch lifecycle](#branch-lifecycle) below)
-4. Updates cached PR metadata for `in-review/*` branches
+3. Prunes dead branches on the host and on the automation fork (see [Branch lifecycle](#branch-lifecycle) below)
 
 This means `dev new` never waits for a pull — it uses whatever image and source are already local.
 Run `dev sync` manually to force an immediate update and branch cleanup.
@@ -98,17 +97,14 @@ The install script also configures a firewall rule to block external access to t
 
 ```bash
 dev new fix-auth           # create container, enter it (detects project from cwd)
-dev enter fix-auth         # re-enter an existing container
-dev stop fix-auth          # stop (preserves state)
-dev start fix-auth         # resume stopped container
+dev enter fix-auth         # (re-)enter an existing container, starting it if stopped
 dev recreate fix-auth      # fresh container, preserves workspace and Claude session
-dev delete fix-auth        # merge to tracked branch, then remove (--dont-merge to skip merge)
-dev see fix-auth           # push from container, pull to host (squashes commits)
-dev see --dont-squash      # same but keeps full commit history
-dev show fix-auth          # push host changes into container (works from wip/*, in-review/*, dev-auto/*)
-dev push fix-auth          # sync agent's work to push branch (wip/* becomes in-review/*)
-dev push --local           # same but skip remote push
-dev merge fix-auth         # sync container state to tracked branch without deleting
+dev delete fix-auth        # save workspace to dev-auto/<name>/main, then remove (--dont-sync to skip)
+dev see fix-auth           # fetch the container's workspace, check out dev-auto/<name>/main on the host
+dev show fix-auth          # push the host's current branch into the container (dev-auto/*, in-review/*, wip/*)
+dev merge                  # one new commit by you on in-review/<feature> from the last dev see (asks for the message)
+dev merge -m "message"     # same, message given
+dev squash                 # fold the last dev see into the HEAD commit of in-review/<feature>
 dev rebase fix-auth        # rebase container workspace on latest upstream main
 dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
 dev cp --to /workspace f.patch # copy into a specific container directory
@@ -120,8 +116,7 @@ dev review --loop          # multi-model review loop (normal = bob, flash, opus;
 dev use fix-auth           # set current container without entering
 dev list                   # show all dev containers
 dev pull                   # pull newer images and fetch sources
-dev sync                   # pull + prune dead branches + update PR metadata
-dev continue [name]        # check out a wip/in-review branch (tab-completes feature names)
+dev sync                   # pull + prune dead branches (host and automation fork)
 
 # From the current git project directory:
 cd ~/sources/keycloak && dev .   # detect template, push local HEAD to container
@@ -137,33 +132,91 @@ dev https://github.com/keycloak/keycloak/pull/50801 --loop=best   # opus, gemini
 claude                     # start Claude Code (permissions bypassed via env var)
 opus                       # Claude Code with the latest Opus  (= claude --model opus)
 fable                      # Claude Code with the latest Fable (= claude --model fable)
+claude-resume              # resume the Claude session of the last `dev review` (or the newest session)
 claude-model fable         # make fable the default for `claude` and `dev review` (reset: claude-model reset)
 bob                        # start Bob Shell (API key injected securely)
 agy                        # start Antigravity CLI (Google Gemini models)
 ```
 
-The current container is remembered per terminal: whatever a `dev` command worked with — created by `dev new`/`dev .`/`dev <url>`, named explicitly, or resolved from the cwd — becomes the target of the following `dev enter`, `dev see`, `dev cp`, `dev review`, ... in that terminal. A failed command never clears it, and flags (`dev see --dont-squash`) are never mistaken for names.
+The current container is remembered per terminal: whatever a `dev` command worked with — created by `dev new`/`dev .`/`dev <url>`, named explicitly, or resolved from the cwd — becomes the target of the following `dev enter`, `dev see`, `dev cp`, `dev review`, ... in that terminal. A failed command never clears it, and flags (`dev delete --dont-sync`) are never mistaken for names.
 Use `dev use <name>` to set the current container from a different terminal.
 When nothing is remembered and multiple containers exist, commands resolve by cwd: `cd ~/sources/quarkus && dev see` picks the quarkus container if exactly one matches.
 
+## Development flow
+
+The flow is always the same four commands; nothing rebases, nothing merges upstream, nothing pushes to GitHub on your behalf:
+
+```
+dev see      container → host     fetch the agent's workspace, check out dev-auto/<container>/main
+dev show     host → container     push the host branch you are on into the container
+dev merge    dev see → in-review  one new commit by you on in-review/<feature> (you type the message)
+dev squash   dev see → in-review  fold the changes into the HEAD commit of in-review/<feature>
+```
+
+```bash
+# 1. Work on an issue (or `dev new`, or `dev .` from a branch)
+dev https://github.com/keycloak/keycloak/issues/53157     # container keycloak-53157
+
+# 2. Agent works; review on the host
+dev see                    # host is now on dev-auto/keycloak-53157/main — review in the IDE
+dev show                   # edited something? push it back and let the agent continue
+dev see                    # ...
+
+# 3. Looks good: make it your commit and open the PR
+dev merge                  # editor opens for the message; creates in-review/53157, checks it out
+git push -u michalvavrik in-review/53157      # (the exact command is printed)
+# open the PR from in-review/53157
+
+# 4. Review comments: the agent works on top of the PR branch
+git checkout in-review/53157 && dev show     # PR branch → container (commit messages are copied without issue links, see below)
+# tell the agent what to change ...
+dev see                    # review the result
+dev squash                 # reviewers are fine with amending: fold into the PR commit
+dev merge                  # reviewers want separate commits: new commit on top (asks for the message)
+git push --force-with-lease michalvavrik in-review/53157     # (printed by dev squash / dev merge)
+```
+
+### `dev see`
+
+Commits whatever the container's workspace has (as the sandbox identity), pushes it to `dev-auto/<container>/main` on the automation fork, fetches it and checks it out in the project's source directory. Commits are kept as they are; the previous host state of that branch is backed up to `dev-auto/<container>/backup/see/<timestamp>` on the automation fork first.
+
+### `dev show`
+
+Pushes the host's current branch into the container, from any branch that belongs to the container: `dev-auto/<container>/main`, `in-review/<feature>`, `wip/<feature>` or the branch the container was created from. Uncommitted changes are committed first (`sync from host`). The container's previous state is backed up to `dev-auto/<container>/backup/show/<timestamp>`. See [Commit messages and issue links](#commit-messages-and-issue-links) for what exactly is pushed.
+
+### `dev merge` and `dev squash`
+
+Both take **what the last `dev see` fetched** (the host branch `dev-auto/<container>/main` — not the container, so you only ever merge what you reviewed) and record the agent's changes on `in-review/<feature>` as a commit of your host git identity (`user.name`/`user.email` of the source repo; `-S` when `commit.gpgsign` is set). Nothing is pushed; `in-review/<feature>` is checked out when done and the push command is printed.
+
+- `dev merge [-m <message>]` — one new commit. Without `-m` your git editor opens (like `git commit`, with the diff stat as comments; an empty message aborts). `Signed-off-by` is added. If `in-review/<feature>` does not exist yet it is created; its first commit starts where the container's work started (the newest commit on the agent branch that was not made by the sandbox), or at the branch the container was created from with `dev .`.
+- `dev squash` — the changes are folded into the current HEAD commit of `in-review/<feature>` (message and author date kept, like `git commit --amend`). The branch must exist.
+
+The target branch is the branch the container was created from with `dev .` (`main` → `main`, `feature-x` → `feature-x`; `wip/x` graduates to `in-review/x`). Containers created from an issue, a PR or by `dev new` target `in-review/<feature>` (`keycloak-53157` → `in-review/53157`, `keycloak-pr-51877` → `in-review/pr-51877`); a `dev <pr-url>` container of your own PR has the PR's `in-review/*` head branch as its label and targets that. The target is printed before anything happens.
+
+The target branch is the base the container's commits are added to, and it is expected not to change behind the container's back: the container works on top of exactly what is on it (that is what `dev show` pushed), so the result is simply the container's tree. If the base did change on the host since (no commit in the container has its current content), both commands abort without touching anything and print how to continue by hand — `dev show` the current branch into the container and let the agent redo its changes, or cherry-pick the container's commits yourself. If the container has changes that `dev see` did not fetch yet, a warning is printed.
+
+### Commit messages and issue links
+
+GitHub links every pushed commit whose message mentions an issue or PR (`closes: https://github.com/org/repo/issues/123`, `#123`, `org/repo#123`, `GH-123`) to that issue — so your PR commit, pushed to the automation fork by `dev show`, used to show up in the issue's timeline under the automation account. Therefore no `dev` command pushes such a commit to the automation fork, and no container ever has one:
+
+- `dev show` and `dev .` copy the branch's own commits (those not on origin) through `scripts/dev-git-sanitize.sh` before pushing: same trees, authors and dates, but `https://github.com/…` becomes `github.com/…`, `#123` becomes `issue 123`, `org/repo#123` becomes `org/repo issue 123`, `GH-123` becomes `GH 123`. Your host branch is not changed. Commits without references keep their ids, so `dev show` from a clean `dev-auto` branch pushes exactly what it fetched.
+- `dev <pr-url>` and `dev <tree-url>` (container creation and refresh) rewrite the commits fetched from GitHub the same way right after the checkout, using GitHub's own list of the PR's / branch's commits.
+- Agents are told never to reference issues or PRs in commit messages.
+
+Because the sanitized copy has the same tree, `dev merge` and `dev squash` work as if the container had the real commit. Upstream commits (anything on origin's branches or tags) are never rewritten — `dev show` fetches origin first to be sure of that, and refuses to continue if the fetch fails or if more than 100 commits would be rewritten.
+
 ## Branch lifecycle
 
-Branches follow a naming convention that enables automatic pruning of dead branches. This is an optional workflow — you can still use arbitrary branch names, but lifecycle-managed branches get automatic cleanup.
+| Branch | Created by | Pruned by `dev sync` when |
+|--------|-----------|-------------|
+| `in-review/<feature>` (host, your fork) | `dev merge` | no open PR has this head |
+| `wip/<feature>` (host) | you, optionally (`git checkout -b wip/x && dev .`) | `in-review/<feature>` exists, or no commit for 20 days |
+| `dev-auto/<container>/main` (host, automation fork) | `dev see`, `dev show`, `dev .`, `dev delete` | the container does not exist |
+| `dev-auto/<container>/backup/{see,show}/<ts>` (automation fork) | `dev see`, `dev show` | the container does not exist, or older than 20 days |
+| `dev-auto/<container>/backup` (automation fork) | the container's auto-backup (every 30 s) | the container does not exist |
+| `backup/<feature>/<type>/<timestamp>` (your fork) | before any host branch is deleted | older than 20 days |
 
-### Branch types
-
-| Prefix | Meaning | Created by | Pruned when |
-|--------|---------|-----------|-------------|
-| `wip/<feature>` | Active work in progress | You (manual) | `in-review/<feature>` exists |
-| `in-review/<feature>` | Pushed for PR review | `dev push` | No open PR associated |
-| `dev-auto/<container>/*` | Container working branches | `dev .`, `dev see` | Container doesn't exist |
-| `backup/<feature>/<type>/<timestamp>` | Safety backup of deleted branches | Automatic | Timestamp > 20 days old |
-
-### Tracked branch
-
-Every container tracks a branch. `dev .` and `dev <pr-url>` use the current/PR branch. `dev new` and `dev <issue-url>` automatically create `wip/<feature>` from `origin/main` in the source repo (ref only — no checkout, no working tree changes). This is what `dev merge` and `dev delete` sync to.
-
-### How `<feature>` maps to container names
+### How branches map to container names
 
 The `<feature>` in `wip/<feature>` and `in-review/<feature>` is the branch suffix. When creating containers, the feature is sanitized and prefixed with the repo name if needed:
 
@@ -171,134 +224,36 @@ The `<feature>` in `wip/<feature>` and `in-review/<feature>` is the branch suffi
 - `in-review/fix-auth` in keycloak repo → same container `keycloak-fix-auth`
 - `fix-auth` (no prefix) → same container `keycloak-fix-auth`
 
-All three branch forms map to the same container and the same `dev-auto` working branch.
-
-### Workflow example
-
-```bash
-# 1. Start working on a feature
-cd ~/sources/keycloak
-git checkout -b wip/fix-auth
-# ... make initial changes ...
-
-# 2. Push to a container for agent work
-dev .
-# → creates container keycloak-fix-auth
-# → original branch label: wip/fix-auth
-
-# 3. Agent works, you review with dev see/show cycle
-dev see                    # pull agent changes to host (checks out dev-auto/keycloak-fix-auth/main)
-# ... review, edit ...
-dev show                   # push edits back to container
-
-# 4. Ready for review — push creates in-review branch
-dev push
-# → squashes agent work
-# → creates in-review/fix-auth (pushed to your remote)
-# → backs up and deletes wip/fix-auth
-
-# 5. Continue working from the in-review branch
-dev continue fix-auth
-# → checks out in-review/fix-auth
-
-# 6. Automatic cleanup (runs on login via dev sync)
-# → wip/fix-auth deleted (in-review exists)
-# → in-review/fix-auth deleted if PR is merged/closed
-# → dev-auto/keycloak-fix-auth/* deleted if container is gone
-# → backup/* deleted after 20 days
-```
-
-### `dev continue`
-
-Resume work on a feature branch. Tab-completes feature names from `wip/*` and `in-review/*` branches in the current repo.
-
-```bash
-cd ~/sources/keycloak
-dev continue               # list all continuable branches with PR details
-dev continue fix<tab>      # tab-complete feature names
-dev continue fix-auth      # check out in-review/fix-auth (or wip/fix-auth if no in-review)
-```
-
-Priority when multiple branch types exist for the same feature:
-1. `in-review/<feature>` — preferred (has associated PR)
-2. `wip/<feature>` — fallback (work in progress)
-3. `dev-auto/<container>/*` — last resort (container working branch)
-
-The display shows PR details when available:
-```
-fix-auth                                 (GitHub PR #1234) Fix auth bug
-other-feature                            WIP
-new-thing                                PR details loading
-```
-
-PR metadata is cached by `dev sync` in `/run/user/<uid>/dev-branch-meta/` (cleared on reboot, refreshed by next `dev sync`). If metadata isn't available yet (e.g., right after `dev push`), `dev continue` shows "PR details loading" and `dev sync` is started to fetch it.
+All three branch forms map to the same container and the same `dev-auto` working branch. The `dev-original-branch` label records the host branch a container was created from (`dev .`), the PR's head branch (`dev <pr-url>`), or `in-review/<feature>` for containers created from an issue or by `dev new`; `dev merge` / `dev squash` derive their target from it (see above).
 
 ### `dev sync`
 
 Superset of `dev pull`. Pulls images and sources, then prunes dead branches across all template projects:
 
-1. **`dev-auto/<x>/*`** — deleted when no container `<x>` exists
-2. **`wip/<x>`** — deleted when `in-review/<x>` exists
+1. **`dev-auto/<x>/*`** on the host — deleted when no container `<x>` exists
+2. **`wip/<x>`** — deleted when `in-review/<x>` exists or the branch had no commit for 20 days
 3. **`in-review/<x>`** — deleted when no open PR is associated (checked via `gh pr list`)
-4. **`backup/*/<timestamp>`** — deleted when timestamp is older than 20 days
+4. **`backup/*/<timestamp>`** on your fork — deleted when timestamp is older than 20 days
+5. **`dev-auto/<x>/*`** on the automation fork — deleted when no container `<x>` exists; `dev-auto/<x>/backup/{see,show}/<timestamp>` of existing containers deleted after 20 days
 
-Before any deletion, the branch is backed up to `backup/<feature>/<type>/<timestamp>` on the `DEV_GHCR_USER` remote (your GitHub fork).
+Before any host branch deletion, the branch is backed up to `backup/<feature>/<type>/<timestamp>` on the `DEV_GHCR_USER` remote (your GitHub fork).
 
-Runs automatically on login via a systemd user service. Run manually with `dev sync`.
-
-### `dev push` behavior
-
-`dev push` creates a signed squash commit and pushes to the appropriate branch:
-
-| Original branch | Push target | Side effects |
-|----------------|-------------|--------------|
-| `wip/<feature>` | `in-review/<feature>` | Backs up and deletes `wip/<feature>` |
-| `dev-auto/<container>/*` | `in-review/<feature>` | — |
-| `in-review/<feature>` | `in-review/<feature>` | Updates in place |
-| Anything else (`feat/x`, `my-branch`) | Same branch | No lifecycle management |
-
-### `dev show` behavior
-
-`dev show` pushes host changes into a container. It now accepts being on any branch that maps to the container:
-
-- `dev-auto/<container>/main` — original behavior
-- `wip/<feature>` — maps to container via feature→container name translation
-- `in-review/<feature>` — same mapping
-
-### `dev merge`
-
-Syncs container state to the tracked branch without deleting the container:
-
-1. Commits all changes inside the container
-2. Pushes to `dev-auto/<container>/main` on the automation fork
-3. Fetches the agent's branch to the host
-4. Backs up the current local tracked branch (wip/*, in-review/*, etc.)
-5. Recreates the local tracked branch pointing at the fetched agent work
-
-```bash
-dev merge fix-auth         # update wip/fix-auth (or whatever the tracked branch is) from container
-```
+Runs automatically on login via a systemd user service. Run manually with `dev sync` — safe at any time: while a container is being created or recreated (`dev .`, `dev <url>`, `dev new`, `dev recreate`), its branch exists before the container does, so branch cleanup is skipped for that run (a lock in `/run/user/<uid>/dev-containers.lock`), and a container creation that starts during cleanup waits for it.
 
 ### `dev delete` behavior
 
-By default, `dev delete` calls `dev merge` first — so the tracked branch (wip/*, in-review/*) is updated with the container's latest state before the container is removed. Use `--dont-merge` to skip:
+`dev delete` first saves the container's workspace to the host branch `dev-auto/<container>/main` (same as `dev see`, without checking it out), then removes the container, its disks, its branches on the automation fork and its local `dev-auto/<container>/*` branches — each local branch is backed up to your fork as `backup/<feature>/dev-auto/<timestamp>` first, so the container's last state stays recoverable for 20 days. `wip/<feature>` is backed up and deleted only when `in-review/<feature>` exists; `in-review/*` branches are never touched. `--dont-sync` skips saving the workspace.
 
 ```bash
-dev delete fix-auth            # merge to tracked branch, then delete
-dev delete --dont-merge fix-auth # delete without updating tracked branch
+dev delete fix-auth              # save workspace, then delete
+dev delete --dont-sync fix-auth  # delete without saving the workspace
 ```
 
-After merging, lifecycle branches are cleaned up:
-
-- `dev-auto/<container>/*` local branches — backed up and deleted
-- `wip/<feature>` — backed up and deleted (if `in-review/<feature>` exists, it's kept)
-- `in-review/<feature>` — kept (has associated PR)
-
-During `dev recreate`, both merge and lifecycle branch cleanup are skipped (workspace is preserved across the recreate cycle).
+During `dev recreate`, both the workspace save and the lifecycle branch cleanup are skipped (workspace is preserved across the recreate cycle).
 
 ### Backup safety
 
-Nothing is ever deleted without a backup. Before any branch deletion:
+Nothing is ever deleted without a backup. Before any host branch deletion:
 1. The branch is pushed to `backup/<feature>/<type>/<timestamp>` on your remote (`DEV_GHCR_USER`)
 2. Only then is the local branch deleted
 
@@ -323,7 +278,7 @@ dev .
 claude
 
 # 3. Review — pull agent's changes to host
-dev see                    # syncs to dev-auto/keycloak-my-feature/main
+dev see                    # checks out dev-auto/keycloak-my-feature/main
 
 # 4. Edit locally, then push back to the container
 dev show                   # pushes host edits into the container (works from wip/*, in-review/*, dev-auto/*)
@@ -334,24 +289,19 @@ dev .                      # alternative: re-syncs and re-enters
 # If upstream main has advanced:
 dev rebase                 # fetch upstream main and rebase workspace on top of it
 
-# 5. Finish — squash and push for review
-dev push                   # creates in-review/my-feature, pushes to your remote
-                           # backs up and deletes wip/my-feature
-
-# 6. Resume later
-dev continue my-feature    # checks out in-review/my-feature
+# 5. Finish — your commit on in-review/my-feature (starts at wip/my-feature), then push it yourself
+dev merge                  # asks for the message; checks out in-review/my-feature
+git push -u michalvavrik in-review/my-feature
 ```
 
-`dev push` creates a single commit using your git identity and signoff. If the agent branch has uncommitted changes or multiple commits, they are squashed first. Works from any directory — resolves the source directory from container metadata.
+`dev merge` / `dev squash` work from any directory — they resolve the source directory from container metadata, like `dev show`. `dev-auto/` branches from `dev see` reuse the original container name when passed to `dev .`. Before `dev see` or `dev show` replaces a branch, its state is backed up to a timestamped branch. All agent branches are cleaned up by `dev delete`.
 
-`dev-auto/` branches from `dev see` reuse the original container name when passed to `dev .`. Before `dev see` or `dev show` replaces a branch, its state is backed up to a timestamped branch. All agent branches are cleaned up by `dev delete`.
-
-Works with PRs — `dev push` pushes to `in-review/<feature>`:
+Works with PRs — a `dev <pr-url>` container of your own PR targets the PR's `in-review/*` branch (fetched to the host if missing):
 
 ```bash
-dev https://github.com/keycloak/keycloak/pull/50801
+dev https://github.com/keycloak/keycloak/pull/53587       # your PR, head in-review/53157
 # ... agent work, dev see/show cycle ...
-dev push                   # creates in-review/<feature>, pushes to your remote
+dev squash                 # or dev merge — amends / extends in-review/53157
 ```
 
 ## PR review workflow
@@ -407,7 +357,9 @@ Review prompts use a two-layer system in `configs/review-prompts/`:
 
 Edit these files to improve prompts over time. `--prompt` replaces only the agent-specific part; `--append-to-prompt` appends to the combined prompt.
 
-For interactive follow-up (when headless isn't enough): `dev enter` then `claude -r <session-id>` to resume the review session. The session ID is printed at the end of each review.
+For interactive follow-up (when headless isn't enough): `dev enter` then `claude-resume` — it resumes the Claude session of the last `dev review` in that container (recorded by the review; falls back to the most recent Claude session in `/workspace`). Extra arguments are passed to `claude`, e.g. `claude-resume --model fable`. The session ID is also printed at the end of each review for `claude -r <session-id>`.
+
+Agents are instructed (in the generated `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` and in the review prompt) to always give the direct URL of any GitHub comment, review, issue, PR, commit or CI run they mention, never just a comment number or a paraphrase. Reviews must not change files or run formatters, and must not report housekeeping (the keycloak `spotless:apply` rule applies only to changes the agent made).
 
 ### Review loop (`--loop`)
 

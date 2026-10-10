@@ -32,6 +32,7 @@ export DEV_FORK_ORG=$(_devrc_env DEV_FORK_ORG)
 export DEV_BRANCH_NAME=$(_devrc_env DEV_BRANCH_NAME)
 
 echo "Recreating container '${_devrc_name}' (template: ${_devrc_template_key})"
+_dev_lock_shared
 
 # Ensure running for SSH access
 if ! _dev_container_running "$_devrc_name"; then
@@ -110,9 +111,11 @@ if [[ -d "$_devrc_staging/projects" || -d "$_devrc_staging/.reviews" || -d "$_de
     fi
     rm -rf "$_devrc_staging"
     echo "Entering container '${_devrc_name}'..."
+    _dev_lock_release
     _dev_ssh_cmd "$_devrc_name"
 else
     rm -rf "$_devrc_staging"
     echo "Entering container '${_devrc_name}'..."
+    _dev_lock_release
     exec podman start -ai "$_devrc_name"
 fi

@@ -8,25 +8,23 @@
 #                                  config.local, else api-key)
 
 _dev_usage() {
-    echo "Usage: dev {new|enter|recreate|delete|start|see|show|push|merge|rebase|cp|cpout|use|list|pull|sync|continue|install|review|.|<url>}"
+    echo "Usage: dev {new|enter|recreate|delete|see|show|merge|squash|rebase|cp|cpout|use|list|pull|sync|install|review|.|<url>}"
     echo ""
     echo "  new <name>     Create and enter a new dev container"
-    echo "  enter [name]   Enter an existing container"
+    echo "  enter [name]   Enter an existing container (starts it if stopped)"
     echo "  recreate [name] Fresh container, preserves workspace and Claude session"
-    echo "  delete [name]  Remove container (merges to tracked branch first; --dont-merge to skip)"
-    echo "  start [name]   Start a stopped container"
-    echo "  see [name]     Sync changes to host (squashes commits; --dont-squash to keep history)"
-    echo "  show [name]    Push host changes into a container (works from wip/*, in-review/*, dev-auto/*)"
-    echo "  push [name]    Push agent's work (wip/* becomes in-review/*, --local to skip remote push)"
-    echo "  merge [name]   Sync container state to tracked branch (wip/*, in-review/*, etc.)"
+    echo "  delete [name]  Remove container (saves workspace to dev-auto/<name>/main first; --dont-sync to skip)"
+    echo "  see [name]     Fetch the container's workspace to the host and check out dev-auto/<name>/main"
+    echo "  show [name]    Push the host's current branch into the container (dev-auto/*, in-review/*, wip/*)"
+    echo "  merge [-m msg] [name]  New commit by you on in-review/<feature> from the last dev see"
+    echo "  squash [name]  Fold the last dev see into the HEAD commit of in-review/<feature>"
     echo "  rebase [name]  Rebase container workspace on latest upstream main"
     echo "  cp [--to <dir>] <path>  Copy files/dirs into container (default: /tmp/workspace)"
     echo "  cpout [--to <dir>] <path> Copy files/dirs from container (default: cwd)"
     echo "  use <name>     Set current container without entering"
     echo "  list           List all dev containers"
     echo "  pull           Pull newer images and fetch project sources"
-    echo "  sync           Pull images/sources + prune dead branches (wip, in-review, dev-auto)"
-    echo "  continue [name] Check out an existing wip/in-review branch (tab-completes feature names)"
+    echo "  sync           Pull images/sources + prune dead branches (host and automation fork)"
     echo "  install        Install prerequisites and configure"
     echo "  .              Create/enter container from current git project"
     echo "  review [opts] [url|container-name|\"follow-up\"]  Headless agent review"
@@ -54,8 +52,11 @@ _dev_dispatch() {
     local _dev_cmd="$1"
     shift
     case "$_dev_cmd" in
-        new|enter|recreate|delete|start|see|show|push|merge|rebase|cp|cpout|review|continue)
+        new|enter|recreate|delete|see|show|merge|rebase|cp|cpout|review)
             _dev_sub "dev-${_dev_cmd}.sh" "$@"
+            ;;
+        squash)
+            _dev_sub dev-merge.sh --squash "$@"
             ;;
         use)
             if [[ -z "${1:-}" ]]; then

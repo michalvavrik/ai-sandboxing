@@ -6,6 +6,14 @@ source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 "${DEV_SCRIPTS_DIR}/dev-pull.sh"
 
 # ── Prune dead branches per source repo ───────────────────────────────────────
+# Not while a container is being created or recreated (its branch would look
+# orphaned for a moment); see DEV_CONTAINERS_LOCK in dev-common.sh.
+exec 9>>"$DEV_CONTAINERS_LOCK"
+if ! flock -n -x 9; then
+    echo "A container is being created or recreated — skipping branch cleanup this time."
+    exit 0
+fi
+
 _devsync_conf="${DEV_CONFIGS_DIR}/project-templates.conf"
 
 while IFS='|' read -r _devsync_key _devsync_src _devsync_rest; do
@@ -68,7 +76,6 @@ ${_devsync_cname}"
         [[ -z "$_devsync_ir" ]] && continue
         _devsync_ir="${_devsync_ir#\* }"
         _devsync_ir="${_devsync_ir## }"
-        _devsync_feature="${_devsync_ir#in-review/}"
 
         _devsync_pr_json=""
         _devsync_pr_json=$(gh pr list --state open --head "${_devsync_ir}" \
@@ -81,18 +88,19 @@ ${_devsync_cname}"
 
         if [[ -z "$_devsync_pr_json" ]]; then
             echo "  ${_devsync_ir} — no open PR, deleting..."
-            _dev_remove_branch_meta "$_devsync_repo" "$_devsync_feature"
             _dev_backup_and_delete_branch "$_devsync_src_dir" "$_devsync_ir"
         else
             _devsync_pr_num=$(echo "$_devsync_pr_json" | jq -r '.number')
             _devsync_pr_title=$(echo "$_devsync_pr_json" | jq -r '.title')
-            _dev_set_branch_meta "$_devsync_repo" "$_devsync_feature" "$_devsync_pr_num" "$_devsync_pr_title"
             echo "  ${_devsync_ir} — PR #${_devsync_pr_num}: ${_devsync_pr_title}"
         fi
     done < <(git -C "$_devsync_src_dir" branch --list 'in-review/*' 2>/dev/null)
 
     # ── 4. Delete old backup branches ─────────────────────────────────────
     _dev_prune_backup_branches "$_devsync_src_dir"
+
+    # ── 5. Delete stale dev-auto/* branches on the automation fork ─────────
+    _dev_prune_automation_fork "$_devsync_src_dir" "$_devsync_repo"
 
 done < "$_devsync_conf"
 

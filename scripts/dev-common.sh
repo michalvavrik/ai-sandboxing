@@ -230,8 +230,9 @@ _dev_ensure_proxy() {
     fi
 
     echo "Starting dev proxy..."
+    # 8>&-: the daemon must not inherit the container-creation lock (fd 8).
     DEV_PROXY_PID_FILE="$_dev_pf" DEV_PROXY_PORT_FILE="$_dev_ptf" \
-        python3 "${DEV_SCRIPTS_DIR}/dev-proxy.py" 2>/dev/null &
+        python3 "${DEV_SCRIPTS_DIR}/dev-proxy.py" 2>/dev/null 8>&- &
     disown
 
     local _dev_wait=0
@@ -512,7 +513,11 @@ _dev_create_container() {
     _dev_volumes+=(-v "${_dev_disk_img}:/opt/bounded-disk.img:rw")
     _dev_volumes+=(-v "${_dev_podman_img}:/opt/podman-disk.img:rw")
 
-    _dev_ensure_tracked_branch "$_dev_name" "$_dev_template_key"
+    # Containers created from an issue URL or by `dev new` have no host branch
+    # yet; label them with the in-review branch `dev merge` will create.
+    if [[ -z "${DEV_ORIGINAL_BRANCH:-}" && -n "$_dev_template_key" ]]; then
+        export DEV_ORIGINAL_BRANCH="in-review/$(_dev_container_name_to_feature "$_dev_name" "${_dev_template_key#*/}")"
+    fi
 
     local _dev_port
     _dev_port=$(_dev_assign_proxy_port "$_dev_name" "$_dev_auth_method") || return 1
@@ -743,10 +748,196 @@ _dev_detect_template_from_cwd() {
     return 1
 }
 
+# ── Automation fork (the agent's GitHub account) ─────────────────────────────
+
+readonly DEV_AUTOMATION_REMOTE="dev-automation"
+
+_dev_git_ssh() {
+    echo "ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+}
+
+_dev_automation_remote_url() {
+    echo "git@github.com:${DEV_AUTOMATION_USER}/${1}.git"
+}
+
+# Make sure the host repo has the `dev-automation` remote pointing at the
+# automation fork of <repo>.
+_dev_ensure_automation_remote() {
+    local _dev_src_dir="$1" _dev_repo="$2" _dev_url
+    _dev_url=$(_dev_automation_remote_url "$_dev_repo")
+    if ! git -C "$_dev_src_dir" remote get-url "$DEV_AUTOMATION_REMOTE" &>/dev/null; then
+        echo "Adding remote '${DEV_AUTOMATION_REMOTE}' -> ${_dev_url}"
+        git -C "$_dev_src_dir" remote add "$DEV_AUTOMATION_REMOTE" "$_dev_url"
+    elif [[ "$(git -C "$_dev_src_dir" remote get-url "$DEV_AUTOMATION_REMOTE")" != "$_dev_url" ]]; then
+        git -C "$_dev_src_dir" remote set-url "$DEV_AUTOMATION_REMOTE" "$_dev_url"
+    fi
+}
+
+# Default branch of the host repo's origin (main/master), without network.
+_dev_default_branch() {
+    local _dev_src_dir="$1" _dev_b
+    if _dev_b=$(git -C "$_dev_src_dir" symbolic-ref -q --short refs/remotes/origin/HEAD 2>/dev/null); then
+        echo "${_dev_b#origin/}"
+        return 0
+    fi
+    for _dev_b in main master; do
+        if git -C "$_dev_src_dir" rev-parse -q --verify "refs/remotes/origin/${_dev_b}" >/dev/null 2>&1; then
+            echo "$_dev_b"
+            return 0
+        fi
+    done
+    return 1
+}
+
+# Push the host's <rev> to dev-auto/<name>/main on the automation fork. Every
+# commit that is not already on the upstream repo (origin's branches and tags)
+# is first rewritten by dev-git-sanitize.sh so that no commit message references
+# a GitHub issue or PR — otherwise GitHub would list the automation fork in the
+# issue's timeline. The host branch itself is never changed.
+_dev_push_to_container_branch() {
+    local _dev_src_dir="$1" _dev_name="$2" _dev_rev="$3"
+    local _dev_repo _dev_head _dev_new _dev_count _dev_commits=()
+    _dev_repo="${4:-$(_dev_container_template_key "$_dev_name")}"
+    _dev_repo="${_dev_repo#*/}"
+
+    # Upstream refs must be current, otherwise upstream commits the container
+    # already has could be mistaken for branch commits and get rewritten.
+    if ! git -C "$_dev_src_dir" fetch -q origin 2>/dev/null; then
+        echo "Error: could not fetch origin in ${_dev_src_dir} (needed to tell your commits from upstream ones)" >&2
+        return 1
+    fi
+    _dev_head=$(git -C "$_dev_src_dir" rev-parse --verify "${_dev_rev}^{commit}") || return 1
+    mapfile -t _dev_commits < <(git -C "$_dev_src_dir" rev-list "$_dev_head" --not --remotes=origin --tags)
+    _dev_count=${#_dev_commits[@]}
+    if (( _dev_count > 100 )); then
+        echo "Error: ${_dev_count} commits on ${_dev_rev} are not on origin; refusing to rewrite that many (is origin the upstream repo?)" >&2
+        return 1
+    fi
+    _dev_new=$("${DEV_SCRIPTS_DIR}/dev-git-sanitize.sh" -C "$_dev_src_dir" "$_dev_head" "${_dev_commits[@]}") || return 1
+
+    echo "Pushing to dev-auto/${_dev_name}/main on ${DEV_AUTOMATION_USER}/${_dev_repo}..."
+    GIT_SSH_COMMAND="$(_dev_git_ssh)" \
+        git -C "$_dev_src_dir" push -f "$(_dev_automation_remote_url "$_dev_repo")" \
+        "${_dev_new}:refs/heads/dev-auto/${_dev_name}/main"
+}
+
+# Rewrite the given commits inside a container (see dev-git-sanitize.sh) and
+# move the workspace's HEAD to the result. Used after a PR or fork branch was
+# fetched from GitHub into the container.
+_dev_sanitize_in_container() {
+    local _dev_name="$1"
+    shift
+    local _dev_new
+    (( $# > 0 )) || return 0
+    _dev_new=$(_dev_ssh_cmd "$_dev_name" "bash -s -- -C /workspace HEAD $*" \
+        < "${DEV_SCRIPTS_DIR}/dev-git-sanitize.sh") || return 1
+    _dev_ssh_cmd "$_dev_name" "git -C /workspace reset -q --soft '${_dev_new}'"
+}
+
+# Commits of a PR as GitHub lists them (base...head), oldest first.
+_dev_pr_commits() {
+    gh pr view "$2" --repo "$1" --json commits --jq '.commits[].oid' 2>/dev/null
+}
+
+# Commits of <org>:<branch> that are not on the upstream default branch.
+_dev_fork_branch_commits() {
+    local _dev_tkey="$1" _dev_org="$2" _dev_branch="$3" _dev_default
+    _dev_default=$(gh repo view "$_dev_tkey" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null) || return 1
+    gh api --paginate "repos/${_dev_tkey}/compare/${_dev_default}...${_dev_org}:${_dev_branch}" \
+        --jq '.commits[].sha' 2>/dev/null
+}
+
+# Delete branches on the automation fork of <repo> that nothing needs any more:
+# dev-auto/<container>/* of containers that no longer exist, and
+# dev-auto/<container>/backup/{see,show}/<timestamp> older than
+# DEV_BACKUP_MAX_AGE_DAYS. `dev delete` normally removes a container's branches;
+# this catches containers removed otherwise (podman rm, failed delete).
+_dev_prune_automation_fork() {
+    local _dev_src_dir="$1" _dev_repo="$2"
+    local _dev_url _dev_ref _dev_branch _dev_cname _dev_rest _dev_ts _dev_now _dev_max_age
+    local _dev_delete=()
+    _dev_url=$(_dev_automation_remote_url "$_dev_repo")
+    _dev_now=$(date +%s)
+    _dev_max_age=$(( DEV_BACKUP_MAX_AGE_DAYS * 86400 ))
+
+    while read -r _dev_ref; do
+        [[ -z "$_dev_ref" ]] && continue
+        _dev_branch="${_dev_ref#refs/heads/}"
+        [[ "$_dev_branch" =~ ^dev-auto/([^/]+)(/.*)?$ ]] || continue
+        _dev_cname="${BASH_REMATCH[1]}"
+        _dev_rest="${BASH_REMATCH[2]:-}"
+        if ! _dev_container_exists "$_dev_cname"; then
+            echo "  ${_dev_branch} — no container '${_dev_cname}', deleting from ${DEV_AUTOMATION_USER}/${_dev_repo}..."
+            _dev_delete+=("$_dev_ref")
+        elif [[ "$_dev_rest" =~ ^/backup/(see|show)/([0-9]+)$ ]]; then
+            _dev_ts="${BASH_REMATCH[2]}"
+            if (( _dev_now - _dev_ts > _dev_max_age )); then
+                echo "  ${_dev_branch} — backup older than ${DEV_BACKUP_MAX_AGE_DAYS} days, deleting..."
+                _dev_delete+=("$_dev_ref")
+            fi
+        fi
+    done < <(GIT_SSH_COMMAND="$(_dev_git_ssh)" \
+        git -C "$_dev_src_dir" ls-remote --refs "$_dev_url" 'refs/heads/dev-auto/*' 2>/dev/null | awk '{print $2}')
+
+    if (( ${#_dev_delete[@]} > 0 )); then
+        GIT_SSH_COMMAND="$(_dev_git_ssh)" \
+            git -C "$_dev_src_dir" push -q "$_dev_url" --delete "${_dev_delete[@]}" \
+            || echo "WARNING: could not delete some branches on ${DEV_AUTOMATION_USER}/${_dev_repo}" >&2
+    fi
+}
+
 # ── Branch lifecycle functions ────────────────────────────────────────────────
 
-readonly DEV_BRANCH_META_DIR="/run/user/$(id -u)/dev-branch-meta"
 readonly DEV_BACKUP_MAX_AGE_DAYS=20
+
+# Value of a container label ("" when unset).
+_dev_container_label() {
+    local _dev_value
+    _dev_value=$(podman inspect --format "{{index .Config.Labels \"${2}\"}}" "$1" 2>/dev/null) || _dev_value=""
+    [[ "$_dev_value" == "<no value>" ]] && _dev_value=""
+    echo "$_dev_value"
+}
+
+# Host branch `dev merge` / `dev squash` put the agent's work on:
+#   - the branch the container was created from with `dev .` (main -> main,
+#     feature-x -> feature-x), where wip/<f> graduates to in-review/<f>;
+#   - in-review/<feature> for containers created from an issue, a PR or by
+#     `dev new` (a PR container of your own PR has the PR's in-review/* head
+#     as its label and targets that).
+_dev_container_target_branch() {
+    local _dev_name="$1" _dev_repo="$2" _dev_label _dev_pr
+    _dev_label=$(_dev_container_label "$_dev_name" "dev-original-branch")
+    case "$_dev_label" in
+        in-review/*) echo "$_dev_label"; return 0 ;;
+        wip/*) echo "in-review/${_dev_label#wip/}"; return 0 ;;
+    esac
+    _dev_pr=$(podman inspect --format '{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$_dev_name" 2>/dev/null \
+        | sed -n 's/^DEV_PR_NUMBER=//p') || _dev_pr=""
+    if [[ -n "$_dev_label" && "$_dev_label" != dev-auto/* && -z "$_dev_pr" ]]; then
+        echo "$_dev_label"
+    else
+        echo "in-review/$(_dev_container_name_to_feature "$_dev_name" "$_dev_repo")"
+    fi
+}
+
+# Container creation (dev ., dev <url>, dev new, dev recreate) and the branch
+# pruning of `dev sync` must not overlap: between pushing a container's branch
+# and creating the container, the branch looks orphaned. Creation scripts hold
+# the lock shared for their whole run (released before entering the container,
+# see _dev_lock_release); `dev sync` takes it exclusively and skips pruning when
+# it cannot. Background daemons must not inherit fd 8 (see _dev_ensure_proxy).
+readonly DEV_CONTAINERS_LOCK="/run/user/$(id -u)/dev-containers.lock"
+_dev_lock_shared() {
+    exec 8>>"$DEV_CONTAINERS_LOCK"
+    if ! flock -n -s 8; then
+        echo "Waiting for 'dev sync' branch cleanup to finish..."
+        flock -s 8
+    fi
+}
+_dev_lock_release() {
+    flock -u 8 2>/dev/null || true
+    exec 8>&-
+}
 
 _dev_branch_to_container_name() {
     local _dev_branch="$1"
@@ -824,31 +1015,6 @@ _dev_backup_and_delete_branch() {
     git -C "$_dev_src_dir" branch -D "$_dev_branch" 2>/dev/null || true
 }
 
-_dev_get_branch_meta() {
-    local _dev_repo="$1" _dev_name="$2"
-    local _dev_file="${DEV_BRANCH_META_DIR}/${_dev_repo}.json"
-    [[ -f "$_dev_file" ]] || return 1
-    jq -r --arg n "$_dev_name" '.[$n] // empty' "$_dev_file" 2>/dev/null
-}
-
-_dev_set_branch_meta() {
-    local _dev_repo="$1" _dev_name="$2" _dev_number="$3" _dev_title="$4"
-    mkdir -p "$DEV_BRANCH_META_DIR"
-    local _dev_file="${DEV_BRANCH_META_DIR}/${_dev_repo}.json"
-    local _dev_json="{}"
-    [[ -f "$_dev_file" ]] && _dev_json=$(cat "$_dev_file")
-    echo "$_dev_json" | jq --arg n "$_dev_name" --arg num "$_dev_number" --arg t "$_dev_title" \
-        '. + {($n): {number: ($num | tonumber), title: $t}}' > "$_dev_file"
-}
-
-_dev_remove_branch_meta() {
-    local _dev_repo="$1" _dev_name="$2"
-    local _dev_file="${DEV_BRANCH_META_DIR}/${_dev_repo}.json"
-    [[ -f "$_dev_file" ]] || return 0
-    jq --arg n "$_dev_name" 'del(.[$n])' "$_dev_file" > "${_dev_file}.tmp" \
-        && mv "${_dev_file}.tmp" "$_dev_file"
-}
-
 _dev_prune_backup_branches() {
     local _dev_src_dir="$1"
     local _dev_now
@@ -868,32 +1034,6 @@ _dev_prune_backup_branches() {
             git -C "$_dev_src_dir" branch -D "$_dev_ref" 2>/dev/null || true
         fi
     done < <(git -C "$_dev_src_dir" ls-remote "$DEV_GHCR_USER" "refs/heads/backup/*" 2>/dev/null | awk '{print $2}')
-}
-
-_dev_ensure_tracked_branch() {
-    local _dev_name="$1"
-    local _dev_tkey="$2"
-
-    [[ -n "${DEV_ORIGINAL_BRANCH:-}" ]] && return 0
-    [[ -z "$_dev_tkey" ]] && return 0
-
-    local _dev_repo="${_dev_tkey#*/}"
-    local _dev_src_dir
-    _dev_src_dir=$(_dev_resolve_src_dir "$_dev_tkey" 2>/dev/null) || return 0
-
-    local _dev_feature
-    _dev_feature=$(_dev_container_name_to_feature "$_dev_name" "$_dev_repo")
-    local _dev_wip="wip/${_dev_feature}"
-
-    if ! git -C "$_dev_src_dir" rev-parse --verify "$_dev_wip" &>/dev/null; then
-        local _dev_default
-        _dev_default=$(git -C "$_dev_src_dir" remote show origin 2>/dev/null \
-            | sed -n 's/.*HEAD branch: //p') || true
-        _dev_default="${_dev_default:-main}"
-        git -C "$_dev_src_dir" branch "$_dev_wip" "origin/${_dev_default}" 2>/dev/null || return 0
-    fi
-
-    export DEV_ORIGINAL_BRANCH="$_dev_wip"
 }
 
 _dev_resolve_src_dir() {

@@ -65,6 +65,7 @@ fi
 
 echo "Container: ${_devissue_name}"
 _dev_remember_container "$_devissue_name"
+_dev_lock_shared
 
 # Existing container — refresh and re-enter
 if _dev_container_exists "$_devissue_name"; then
@@ -77,16 +78,34 @@ if _dev_container_exists "$_devissue_name"; then
 
     _dev_update_ssh_config "$_devissue_name"
 
+    # Commits fetched from GitHub get their messages sanitized right after the
+    # checkout (same shell command, before anything can push them), so that no
+    # issue/PR reference ever reaches the automation fork.
+    scp -q "${DEV_SCRIPTS_DIR}/dev-git-sanitize.sh" "${_devissue_name}:/tmp/dev-git-sanitize.sh"
     if [[ "$_devissue_type" == "pull" ]]; then
+        _devissue_commits=$(_dev_pr_commits "$_devissue_template_key" "$_devissue_number" | tr '\n' ' ')
+        if [[ -z "${_devissue_commits// /}" ]]; then
+            echo "Error: could not list the commits of PR #${_devissue_number} (gh pr view); not refreshing" >&2
+            exit 1
+        fi
         echo "Refreshing PR #${_devissue_number}..."
         _dev_ssh_cmd "$_devissue_name" \
-            "cd /workspace && gh pr checkout -f ${_devissue_number} --repo ${_devissue_template_key} && _pr=\$(git branch --show-current) && git checkout -B 'dev-auto/${_devissue_name}/main' && [ \"\$_pr\" != 'dev-auto/${_devissue_name}/main' ] && git branch -D \"\$_pr\" 2>/dev/null; true"
+            "cd /workspace && gh pr checkout -f ${_devissue_number} --repo ${_devissue_template_key} && _new=\$(bash /tmp/dev-git-sanitize.sh HEAD ${_devissue_commits}) && git reset -q --soft \"\$_new\" && _pr=\$(git branch --show-current) && git checkout -B 'dev-auto/${_devissue_name}/main' && [ \"\$_pr\" != 'dev-auto/${_devissue_name}/main' ] && git branch -D \"\$_pr\" 2>/dev/null; true"
     elif [[ "$_devissue_type" == "tree" ]]; then
+        _devissue_commits=""
+        if [[ "$_devissue_org" != "$DEV_AUTOMATION_USER" ]]; then
+            _devissue_commits=$(_dev_fork_branch_commits "$_devissue_template_key" "$_devissue_org" "$_devissue_branch" | tr '\n' ' ')
+            if [[ -z "${_devissue_commits// /}" ]]; then
+                echo "Error: could not list the commits of ${_devissue_org}:${_devissue_branch} (gh api compare); not refreshing" >&2
+                exit 1
+            fi
+        fi
         echo "Refreshing branch ${_devissue_branch}..."
         _dev_ssh_cmd "$_devissue_name" \
-            "cd /workspace && git fetch https://github.com/${_devissue_org}/${_devissue_repo}.git ${_devissue_branch} && git checkout -B 'dev-auto/${_devissue_name}/main' FETCH_HEAD"
+            "cd /workspace && git fetch https://github.com/${_devissue_org}/${_devissue_repo}.git ${_devissue_branch} && git checkout -B 'dev-auto/${_devissue_name}/main' FETCH_HEAD && _new=\$(bash /tmp/dev-git-sanitize.sh HEAD ${_devissue_commits}) && git reset -q --soft \"\$_new\""
     fi
 
+    _dev_lock_release
     [[ "${DEV_SKIP_ENTER:-}" != "1" ]] && _dev_ssh_cmd "$_devissue_name"
     exit 0
 fi
@@ -94,9 +113,23 @@ fi
 # New container — pass context via env, entrypoint handles checkout
 if [[ "$_devissue_type" == "pull" ]]; then
     export DEV_PR_NUMBER="$_devissue_number"
-    _devissue_head_ref=$(gh pr view "$_devissue_number" --repo "$_devissue_template_key" --json headRefName --jq '.headRefName' 2>/dev/null) || true
+    _devissue_head=$(gh pr view "$_devissue_number" --repo "$_devissue_template_key" \
+        --json headRefName,headRepositoryOwner --jq '"\(.headRepositoryOwner.login) \(.headRefName)"' 2>/dev/null) || true
+    _devissue_head_ref="${_devissue_head#* }"
+    _devissue_head_owner="${_devissue_head%% *}"
     if [[ -n "$_devissue_head_ref" ]]; then
         export DEV_ORIGINAL_BRANCH="$_devissue_head_ref"
+    fi
+    # Your own PR (head on your fork): make sure the host has its in-review/*
+    # branch, so `dev merge` / `dev squash` extend the real PR commits.
+    if [[ "$_devissue_head_owner" == "$DEV_GHCR_USER" && "$_devissue_head_ref" == in-review/* ]]; then
+        _devissue_src_dir=$(_dev_resolve_src_dir "$_devissue_template_key" 2>/dev/null) || true
+        if [[ -n "$_devissue_src_dir" ]] && ! git -C "$_devissue_src_dir" rev-parse -q --verify "refs/heads/${_devissue_head_ref}" >/dev/null; then
+            echo "Fetching ${_devissue_head_ref} from ${DEV_GHCR_USER}/${_devissue_repo} (the PR's branch)..."
+            git -C "$_devissue_src_dir" fetch -q "https://github.com/${DEV_GHCR_USER}/${_devissue_repo}.git" \
+                "refs/heads/${_devissue_head_ref}:refs/heads/${_devissue_head_ref}" 2>/dev/null \
+                || echo "WARNING: could not fetch ${_devissue_head_ref}" >&2
+        fi
     fi
 elif [[ "$_devissue_type" == "tree" ]]; then
     export DEV_FORK_ORG="$_devissue_org"
@@ -122,5 +155,6 @@ if [[ "${DEV_SKIP_ENTER:-}" == "1" ]]; then
     fi
 else
     echo "Entering container '${_devissue_name}'..."
+    _dev_lock_release
     exec podman start -ai "$_devissue_name"
 fi

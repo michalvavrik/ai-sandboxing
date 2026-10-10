@@ -18,7 +18,7 @@ _comp_cur="${_comp_words[_comp_cword]:-}"
 _comp_prev=""
 (( _comp_cword >= 1 )) && _comp_prev="${_comp_words[_comp_cword-1]}"
 
-_COMP_COMMANDS="new enter recreate delete start see show push merge rebase cp cpout use list pull sync continue install review ."
+_COMP_COMMANDS="new enter recreate delete see show merge squash rebase cp cpout use list pull sync install review ."
 _COMP_AGENTS="claude bob agy"
 _COMP_MODELS="opus fable flash pro"
 _COMP_LOOPS="normal best all bob flash pro opus fable"
@@ -89,49 +89,20 @@ case "$_comp_cmd" in
     new)
         $_comp_is_opt && _comp_emit "--auth-method="
         ;;
-    enter|start|merge|rebase|use|show)
+    enter|see|squash|rebase|use|show)
         $_comp_is_opt || _comp_containers
+        ;;
+    merge)
+        if [[ "$_comp_prev" == "-m" ]]; then exit 0
+        elif $_comp_is_opt; then _comp_emit "-m"
+        else _comp_containers
+        fi
         ;;
     recreate)
         if $_comp_is_opt; then _comp_emit "--auth-method="; else _comp_containers; fi
         ;;
-    see)
-        if $_comp_is_opt; then _comp_emit "--dont-squash"; else _comp_containers; fi
-        ;;
     delete)
-        if $_comp_is_opt; then _comp_emit "--dont-merge"; else _comp_containers; fi
-        ;;
-    push)
-        if $_comp_is_opt; then _comp_emit "--local"; else _comp_containers; fi
-        ;;
-    continue)
-        (( _comp_cword == _comp_cmd_idx + 1 )) || exit 0
-        _comp_tkey=$(_dev_detect_template_from_cwd 2>/dev/null) || exit 0
-        _comp_src_dir=$(_dev_resolve_src_dir "$_comp_tkey" 2>/dev/null) || exit 0
-        _comp_repo="${_comp_tkey#*/}"
-        echo '%nosort'
-        _comp_seen=""
-        _comp_add() {
-            printf '%s\n' "$_comp_seen" | grep -qxF "$1" && return 0
-            _comp_seen="${_comp_seen}
-$1"
-            printf '%s\n' "$1"
-        }
-        while read -r _comp_b; do
-            _comp_b="${_comp_b#\* }"; _comp_b="${_comp_b## }"
-            [[ -z "$_comp_b" ]] && continue
-            _comp_add "${_comp_b#in-review/}"
-        done < <(git -C "$_comp_src_dir" branch --list 'in-review/*' 2>/dev/null)
-        while read -r _comp_b; do
-            _comp_b="${_comp_b#\* }"; _comp_b="${_comp_b## }"
-            [[ -z "$_comp_b" ]] && continue
-            _comp_add "${_comp_b#wip/}"
-        done < <(git -C "$_comp_src_dir" branch --list 'wip/*' 2>/dev/null)
-        while read -r _comp_b; do
-            _comp_b="${_comp_b#\* }"; _comp_b="${_comp_b## }"
-            [[ "$_comp_b" =~ ^dev-auto/([^/]+) ]] || continue
-            _comp_add "$(_dev_container_name_to_feature "${BASH_REMATCH[1]}" "$_comp_repo")"
-        done < <(git -C "$_comp_src_dir" branch --list 'dev-auto/*' 2>/dev/null)
+        if $_comp_is_opt; then _comp_emit "--dont-sync"; else _comp_containers; fi
         ;;
     review)
         if $_comp_is_opt; then _comp_emit $_COMP_REVIEW_OPTS; else _comp_containers; fi

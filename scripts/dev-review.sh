@@ -433,7 +433,11 @@ _devreview_run_agent() {
             done || true
             echo
             [[ -s "$_devreview_host_tmp.out" ]] || rc=1
-            [[ -s "${session_file}.tmp" ]] && mv "${session_file}.tmp" "$session_file"
+            if [[ -s "${session_file}.tmp" ]]; then
+                mv "${session_file}.tmp" "$session_file"
+                # Also record it in the container for `claude-resume`.
+                ssh -q "$_devreview_name" "mkdir -p /home/dev/.config/dev-sandbox && printf '%s\n' '$(cat "$session_file")' > /home/dev/.config/dev-sandbox/last-review-session" </dev/null 2>/dev/null || true
+            fi
             ;;
         bob)
             ssh -qt "$_devreview_name" \
@@ -457,7 +461,13 @@ _devreview_run_agent() {
             echo "Review saved to ${review_file}" >&2
         fi
     fi
-    [[ -f "$session_file" ]] && echo "Session: $(cat "$session_file")" >&2
+    if [[ -f "$session_file" ]]; then
+        if [[ "$agent" == "claude" ]]; then
+            echo "Session: $(cat "$session_file") (continue it: dev review \"question\", or dev enter + claude-resume)" >&2
+        else
+            echo "Session: $(cat "$session_file")" >&2
+        fi
+    fi
     return "$rc"
 }
 

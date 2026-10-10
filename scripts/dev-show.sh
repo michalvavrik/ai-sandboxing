@@ -1,9 +1,13 @@
 #!/bin/bash
+# dev show — push the host's current branch into a container. Uncommitted host
+# changes are committed first ("sync from host"). The commits are copied to
+# dev-auto/<name>/main on the automation fork with GitHub issue/PR references
+# removed from their messages (see dev-git-sanitize.sh), then checked out in
+# the container.
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
 _devshow_name="${1:-}"
-_devshow_remote="dev-automation"
 
 # ── Resolve container name ────────────────────────────────────────────────────
 if [[ -z "$_devshow_name" ]]; then
@@ -40,47 +44,37 @@ if [[ -z "$_devshow_template_key" ]]; then
 fi
 
 _devshow_repo="${_devshow_template_key#*/}"
-_devshow_tmpl=$(_dev_lookup_template "$_devshow_template_key") || true
-if [[ -z "$_devshow_tmpl" ]]; then
-    echo "Error: no template found for '${_devshow_template_key}'" >&2
+_devshow_src_dir=$(_dev_resolve_src_dir "$_devshow_template_key") || {
+    echo "Error: source directory for '${_devshow_template_key}' does not exist or is not a git repo" >&2
     exit 1
-fi
-
-_devshow_src_dir=$(echo "$_devshow_tmpl" | cut -d'|' -f1)
-if [[ -n "$_devshow_src_dir" && "$_devshow_src_dir" != /* ]]; then
-    _devshow_src_dir="${DEV_SOURCES_DIR}/${_devshow_src_dir}"
-fi
-
-if [[ -z "$_devshow_src_dir" || ! -d "$_devshow_src_dir/.git" ]]; then
-    echo "Error: source directory '${_devshow_src_dir}' does not exist or is not a git repo" >&2
-    exit 1
-fi
+}
 
 readonly _devshow_branch="dev-auto/${_devshow_name}/main"
 _devshow_current=$(git -C "$_devshow_src_dir" branch --show-current 2>/dev/null)
 
-# ── Verify current branch matches the container ──────────────────────────────
-_devshow_current_maps_to=""
+# ── Verify current branch belongs to the container ───────────────────────────
+# Accepted: the container's dev-auto branch, the branch dev merge/squash
+# target (which is the branch a `dev .` container was created from), wip/<f>
+# for an in-review/<f> target, and any branch that maps to the container by
+# name.
+_devshow_target=$(_dev_container_target_branch "$_devshow_name" "$_devshow_repo")
+_devshow_accepted=("$_devshow_branch" "$_devshow_target")
+[[ "$_devshow_target" == in-review/* ]] && _devshow_accepted+=("wip/${_devshow_target#in-review/}")
+_devshow_ok=false
 if [[ -n "$_devshow_current" ]]; then
-    _devshow_current_maps_to=$(_dev_branch_to_container_name "$_devshow_current" "$_devshow_repo")
+    for _devshow_b in "${_devshow_accepted[@]}"; do
+        [[ "$_devshow_current" == "$_devshow_b" ]] && _devshow_ok=true
+    done
+    [[ "$(_dev_branch_to_container_name "$_devshow_current" "$_devshow_repo")" == "$_devshow_name" ]] && _devshow_ok=true
 fi
 
-if [[ "$_devshow_current_maps_to" != "$_devshow_name" ]]; then
+if [[ "$_devshow_ok" != true ]]; then
     echo "Error: current branch does not match container" >&2
     echo "  Current branch: ${_devshow_current:-detached HEAD}" >&2
     echo "  Container:      ${_devshow_name}" >&2
-    echo "  Expected one of: ${_devshow_branch}, wip/*, or in-review/* that maps to '${_devshow_name}'" >&2
-    echo "Run 'dev see ${_devshow_name}' or 'dev continue' first." >&2
+    echo "  Expected one of: $(IFS=', '; echo "${_devshow_accepted[*]}")" >&2
+    echo "Run 'dev see ${_devshow_name}' or check out one of these branches first." >&2
     exit 1
-fi
-
-readonly _devshow_remote_url="git@github.com:${DEV_AUTOMATION_USER}/${_devshow_repo}.git"
-readonly _devshow_git_ssh="ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
-
-if ! git -C "$_devshow_src_dir" remote get-url "$_devshow_remote" &>/dev/null; then
-    git -C "$_devshow_src_dir" remote add "$_devshow_remote" "$_devshow_remote_url"
-elif [[ "$(git -C "$_devshow_src_dir" remote get-url "$_devshow_remote")" != "$_devshow_remote_url" ]]; then
-    git -C "$_devshow_src_dir" remote set-url "$_devshow_remote" "$_devshow_remote_url"
 fi
 
 cd "$_devshow_src_dir"
@@ -92,9 +86,7 @@ else
     echo "No new changes to commit."
 fi
 
-echo "Pushing to ${_devshow_branch}..."
-GIT_SSH_COMMAND="$_devshow_git_ssh" \
-    git push -f "$_devshow_remote" "HEAD:refs/heads/${_devshow_branch}"
+_dev_push_to_container_branch "$_devshow_src_dir" "$_devshow_name" HEAD "$_devshow_repo"
 
 _dev_ensure_proxy
 

@@ -1,4 +1,4 @@
-You are reviewing code in /workspace. Gather context before reviewing:
+You are reviewing code in /workspace. This is a review, not a change: do not modify any file except the review file, do not run formatters (e.g. `mvn spotless:apply`) and do not mention formatting or other housekeeping in your output — only findings matter. Gather context before reviewing:
 - Check .reviews/ for previous reviews by you or other agents (`ls .reviews/` recursively). If any exist, read them — they provide context but may be obsolete or contain wrong conclusions. Fact-check anything you rely on rather than trusting it blindly. Note where you agree or disagree with prior findings.
 - Examine the diff: `git diff $(git merge-base HEAD upstream/main 2>/dev/null || echo HEAD~1)..HEAD`
 - Read .issue if present (issue details)
@@ -6,13 +6,16 @@ You are reviewing code in /workspace. Gather context before reviewing:
 
 If .pr exists (PR review):
 - Read .pr for PR details
-- Fetch all PR comments: `gh pr view --comments`, `gh pr review list`, and inline code comments via `gh api repos/{owner}/{repo}/pulls/{number}/comments`
-- Fetch Copilot review findings if any: `gh api repos/{owner}/{repo}/pulls/{number}/reviews` (look for bot/copilot authors)
+- Fetch all PR comments with their links: `gh pr view --comments`, `gh pr review list`, and inline code comments via `gh api repos/{owner}/{repo}/pulls/{number}/comments --jq '.[] | {html_url, user: .user.login, path, line, body}'`
+- Fetch Copilot review findings if any: `gh api repos/{owner}/{repo}/pulls/{number}/reviews --jq '.[] | {html_url, user: .user.login, state, body}'` (look for bot/copilot authors) plus their inline comments from the call above
 - Read the full diff and relevant source files
 
 If .pr does not exist (local code review):
 - Review the workspace changes against the upstream base
 - Skip PR-specific sections below
+
+## Links
+Every time you mention a GitHub comment, review, issue, PR, commit or CI run, give its direct URL (the `html_url` from the API, e.g. `https://github.com/org/repo/pull/123#discussion_r456789`). Never refer to a comment only by its number, its author, or a paraphrase of it.
 
 ## Output format
 
@@ -33,4 +36,4 @@ If there are blockers, heated debates, or unresolved threads in the PR comments 
 If this is a PR, check CI status: `gh pr checks`. For any failing checks, list the test name, a one-line best guess of the cause, and a direct link to the failing action run. Do not investigate deeply — a quick smoke check is enough. If I need more, I will ask.
 
 ### Overall assessment
-Summary, key risks, and whether the changes are ready to merge.
+Summary, key risks, and whether the changes are ready to merge. End here — no notes about tools, builds or formatters you ran.

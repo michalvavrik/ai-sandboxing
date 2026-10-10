@@ -25,8 +25,9 @@ fi
 _devlocal_name=$(_dev_branch_to_container_name "$_devlocal_branch" "$_devlocal_repo")
 
 readonly _devlocal_name
+_dev_lock_shared
 readonly _devlocal_push_branch="dev-auto/${_devlocal_name}/main"
-readonly _devlocal_git_ssh="ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+_devlocal_src_dir=$(git rev-parse --show-toplevel)
 
 echo "Project: ${_devlocal_template_key}"
 echo "Branch: ${_devlocal_branch}"
@@ -41,11 +42,9 @@ if [[ -n "$(git status --porcelain 2>/dev/null)" ]]; then
     _devlocal_had_wip=true
 fi
 
-echo "Pushing to ${DEV_AUTOMATION_USER}/${_devlocal_repo} branch ${_devlocal_push_branch}..."
-GIT_SSH_COMMAND="$_devlocal_git_ssh" \
-    git push -f \
-    "git@github.com:${DEV_AUTOMATION_USER}/${_devlocal_repo}.git" \
-    "HEAD:refs/heads/${_devlocal_push_branch}" || {
+# Copies the branch to the automation fork with issue/PR references removed
+# from commit messages; the host branch itself is not changed.
+_dev_push_to_container_branch "$_devlocal_src_dir" "$_devlocal_name" HEAD "$_devlocal_repo" || {
         if [[ "$_devlocal_had_wip" == true ]]; then
             git reset --quiet HEAD~1
         fi
@@ -71,6 +70,7 @@ if _dev_container_exists "$_devlocal_name"; then
     _dev_ssh_cmd "$_devlocal_name" \
         "cd /workspace && git fetch origin ${_devlocal_push_branch} && git checkout -B '${_devlocal_push_branch}' FETCH_HEAD"
 
+    _dev_lock_release
     _dev_ssh_cmd "$_devlocal_name"
     exit 0
 fi
@@ -85,4 +85,5 @@ fi
 _dev_create_container "$_devlocal_name" "$_devlocal_template_key"
 
 echo "Entering container '${_devlocal_name}'..."
+_dev_lock_release
 exec podman start -ai "$_devlocal_name"

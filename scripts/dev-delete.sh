@@ -6,7 +6,16 @@ _devdel_sync=true
 _devdel_name_arg=""
 for _devdel_arg in "$@"; do
     case "$_devdel_arg" in
-        --dont-merge) _devdel_sync=false ;;
+        --dont-sync) _devdel_sync=false ;;
+        --help|-h)
+            echo "Usage: dev delete [--dont-sync] [name]"
+            echo "Removes the container, its disks and its dev-auto/* branches. The workspace is first"
+            echo "synced to the host branch dev-auto/<name>/main, which is backed up to your fork"
+            echo "(backup/<feature>/dev-auto/<timestamp>, kept ${DEV_BACKUP_MAX_AGE_DAYS} days) before it is deleted."
+            echo "in-review/* and wip/* branches are not touched. --dont-sync skips the sync."
+            exit 0
+            ;;
+        -*) echo "dev delete: unknown option '${_devdel_arg}'" >&2; exit 1 ;;
         *) _devdel_name_arg="$_devdel_arg" ;;
     esac
 done
@@ -19,30 +28,48 @@ if ! _dev_container_exists "$_devdel_name"; then
     exit 1
 fi
 
-# Merge container state into tracked branch before deleting (unless --dont-merge or recreate)
-if [[ "$_devdel_sync" == true && "${DEV_SKIP_BRANCH_CLEANUP:-}" != "1" ]]; then
-    "${DEV_SCRIPTS_DIR}/dev-merge.sh" "$_devdel_name" || \
-        echo "WARNING: merge failed — container state may not be saved to tracked branch" >&2
+_devdel_template_key=$(_dev_container_template_key "$_devdel_name")
+_devdel_src_dir=""
+[[ -n "$_devdel_template_key" ]] && _devdel_src_dir=$(_dev_resolve_src_dir "$_devdel_template_key" 2>/dev/null) || true
+
+# Save the workspace to the host branch dev-auto/<name>/main before deleting
+# (unless --dont-sync or recreate). It is backed up to your fork by the
+# lifecycle cleanup below, so nothing is lost for DEV_BACKUP_MAX_AGE_DAYS.
+if [[ "$_devdel_sync" == true && "${DEV_SKIP_BRANCH_CLEANUP:-}" != "1" && -n "$_devdel_src_dir" ]]; then
+    _devdel_branch="dev-auto/${_devdel_name}/main"
+    if _dev_ensure_running "$_devdel_name" \
+        && _dev_sync_workspace "$_devdel_name" "$_devdel_branch" \
+        && _dev_ensure_automation_remote "$_devdel_src_dir" "${_devdel_template_key#*/}" \
+        && git -C "$_devdel_src_dir" fetch -q "$DEV_AUTOMATION_REMOTE" "$_devdel_branch"; then
+        if [[ "$(git -C "$_devdel_src_dir" branch --show-current 2>/dev/null)" == "$_devdel_branch" ]]; then
+            git -C "$_devdel_src_dir" reset -q --keep FETCH_HEAD \
+                || echo "WARNING: ${_devdel_branch} is checked out with local changes in the way — left as is" >&2
+        else
+            git -C "$_devdel_src_dir" update-ref "refs/heads/${_devdel_branch}" FETCH_HEAD
+        fi
+        echo "Saved workspace to host branch ${_devdel_branch}."
+    else
+        echo "WARNING: could not save the workspace to ${_devdel_branch} — container state may be lost" >&2
+    fi
 fi
 
-# Delete remote branch if it was pushed
-_devdel_template_key=$(_dev_container_template_key "$_devdel_name")
+# Delete the container's branches on the automation fork
 if [[ -n "$_devdel_template_key" ]]; then
     _devdel_repo="${_devdel_template_key#*/}"
-    _devdel_git_ssh="ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
-    _devdel_remote="git@github.com:${DEV_AUTOMATION_USER}/${_devdel_repo}.git"
-    _devdel_refs=$(GIT_SSH_COMMAND="$_devdel_git_ssh" \
+    _devdel_remote=$(_dev_automation_remote_url "$_devdel_repo")
+    _devdel_refs=$(GIT_SSH_COMMAND="$(_dev_git_ssh)" \
         git ls-remote --refs "$_devdel_remote" "refs/heads/dev-auto/${_devdel_name}/*" 2>/dev/null \
         | awk '{print $2}') || true
     if [[ -n "$_devdel_refs" ]]; then
-        GIT_SSH_COMMAND="$_devdel_git_ssh" \
-            git push "$_devdel_remote" --delete $_devdel_refs 2>/dev/null || true
+        # shellcheck disable=SC2086
+        GIT_SSH_COMMAND="$(_dev_git_ssh)" \
+            git push -q "$_devdel_remote" --delete $_devdel_refs 2>/dev/null \
+            || echo "WARNING: could not delete dev-auto/${_devdel_name}/* on ${DEV_AUTOMATION_USER}/${_devdel_repo} ('dev sync' retries later)" >&2
     fi
 
     # Clean up local lifecycle branches (dev-auto/*, wip/*)
     # Keep in-review/* if it exists; delete wip/* and dev-auto/*
     # Skipped during dev recreate (DEV_SKIP_BRANCH_CLEANUP=1)
-    _devdel_src_dir=$(_dev_resolve_src_dir "$_devdel_template_key" 2>/dev/null) || true
     if [[ -n "$_devdel_src_dir" && "${DEV_SKIP_BRANCH_CLEANUP:-}" != "1" ]]; then
         _devdel_feature=$(_dev_container_name_to_feature "$_devdel_name" "$_devdel_repo")
         _devdel_has_ir=false

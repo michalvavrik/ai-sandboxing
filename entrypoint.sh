@@ -82,6 +82,25 @@ if [[ -s /home/dev/.config/dev-sandbox/claude-model ]]; then
 fi
 fable() { claude --model fable "$@"; }
 opus()  { claude --model opus "$@"; }
+# Resume the Claude session of the last `dev review` in this container (the
+# review records its session id); without one, the most recent Claude session
+# in /workspace. Extra arguments go to claude (e.g. claude-resume --model fable).
+claude-resume() {
+    local _f=/home/dev/.config/dev-sandbox/last-review-session _id="" _what="last dev review"
+    [[ -s "$_f" ]] && _id="$(< "$_f")"
+    if [[ -z "$_id" ]]; then
+        _id=$(ls -t /home/dev/.claude/projects/-workspace/*.jsonl 2>/dev/null | head -n1)
+        _id="${_id##*/}"
+        _id="${_id%.jsonl}"
+        _what="most recent Claude session"
+    fi
+    if [[ -z "$_id" ]]; then
+        echo "claude-resume: no dev review session recorded and no Claude session found in /workspace" >&2
+        return 1
+    fi
+    echo "Resuming ${_what}: ${_id}"
+    (cd /workspace && exec claude -r "$_id" "$@")
+}
 claude-model() {
     local _f=/home/dev/.config/dev-sandbox/claude-model
     case "${1:-}" in
@@ -423,7 +442,7 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         if [[ "$DEV_TEMPLATE_KEY" == "keycloak/keycloak" ]]; then
             _fmt_section='
 ## Code formatting
-Formatting is part of finishing a change here. Whenever you run the tests or report a change as done, also run `mvn spotless:apply` from /workspace — a change is not done until it is formatted.'
+When you have changed code, run `mvn spotless:apply` from /workspace before running the tests or reporting the change as done — a change is not done until it is formatted. This only applies to code you changed: when you review, analyze or answer questions without changing files, do not run it and do not mention it. Mention it in a summary only if it actually reformatted something.'
         fi
 
         runuser -u dev -- bash -c 'mkdir -p /home/dev/.claude /home/dev/.bob /home/dev/.gemini && tee /home/dev/.claude/CLAUDE.md /home/dev/.bob/AGENTS.md /home/dev/.gemini/GEMINI.md >/dev/null' <<AGENTSMD
@@ -448,6 +467,9 @@ You can only push to branches under \`dev-auto/$(hostname)/\`. If you need extra
 ## Git commits
 Never reference any GitHub PR or issue inside a Git commit message. Do not commit changes unless you are asked to.
 
+## GitHub links
+Whenever you mention a GitHub comment, review, issue, pull request, commit or CI run, give its direct URL so it can be opened with one click. For comments use the \`html_url\` from the API (e.g. \`https://github.com/org/repo/pull/123#discussion_r456789\` for a review comment, \`...#issuecomment-456789\` for a conversation comment, \`...#pullrequestreview-456789\` for a review). Never refer to a comment only by its number, its author, or a paraphrase of it. When fetching comments with \`gh api\`, select \`html_url\` along with the body so you have the link at hand, e.g. \`gh api repos/{owner}/{repo}/pulls/{number}/comments --jq '.[] | {html_url, user: .user.login, path, line, body}'\`.
+
 ## Testing
 Docker is NOT installed. Podman is the container runtime. Testcontainers works with Podman out of the box (already configured via DOCKER_HOST). Always try running tests before claiming they can't run.
 ${_fmt_section}
@@ -464,6 +486,23 @@ AGENTSMD
 
     _target_branch="dev-auto/$(hostname)/main"
 
+    # Commits fetched from GitHub are rewritten so that no commit message
+    # references a GitHub issue or PR (see /opt/dev/dev-git-sanitize.sh): every
+    # push from here goes to the automation fork, and GitHub would otherwise
+    # list that fork in the issue's timeline. $1: the commits to rewrite.
+    _sanitize_workspace() {
+        local _commits="$1" _new
+        if [ -z "${_commits// /}" ]; then
+            echo "WARNING: could not list the branch's commits — commit messages were not sanitized" >&2
+            return 0
+        fi
+        if _new=$(runuser -u dev -- bash -c "cd /workspace && /opt/dev/dev-git-sanitize.sh HEAD ${_commits}"); then
+            runuser -u dev -- git -C /workspace reset -q --soft "$_new"
+        else
+            echo "WARNING: sanitizing commit messages failed — do not push this branch before fixing it" >&2
+        fi
+    }
+
     # PR checkout and details (first run only — subsequent starts reuse the working branch)
     if [ -n "${DEV_PR_NUMBER:-}" ]; then
         if ! runuser -u dev -- git -C /workspace rev-parse --verify "$_target_branch" &>/dev/null 2>&1; then
@@ -472,8 +511,11 @@ AGENTSMD
                 cp /opt/project-src/.git/packed-refs /workspace/.git/packed-refs 2>/dev/null || true
             fi
             echo "Checking out PR #${DEV_PR_NUMBER}..."
-            runuser -u dev -- bash -c \
-                "cd /workspace && gh pr checkout -f ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}" || true
+            if runuser -u dev -- bash -c \
+                "cd /workspace && gh pr checkout -f ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY}"; then
+                _sanitize_workspace "$(runuser -u dev -- gh pr view "${DEV_PR_NUMBER}" --repo "${DEV_TEMPLATE_KEY}" \
+                    --json commits --jq '.commits[].oid' 2>/dev/null | tr '\n' ' ')"
+            fi
             runuser -u dev -- bash -c \
                 "gh pr view ${DEV_PR_NUMBER} --repo ${DEV_TEMPLATE_KEY} 2>/dev/null | tr -d '\r' > /workspace/.pr" || true
         fi
@@ -486,8 +528,16 @@ AGENTSMD
                 cp /opt/project-src/.git/packed-refs /workspace/.git/packed-refs 2>/dev/null || true
             fi
             echo "Checking out branch ${DEV_BRANCH_NAME} from ${DEV_FORK_ORG}/${_repo}..."
-            runuser -u dev -- bash -c \
-                "cd /workspace && git fetch https://github.com/${DEV_FORK_ORG}/${_repo}.git ${DEV_BRANCH_NAME} && git checkout -B '${DEV_BRANCH_NAME}' FETCH_HEAD" || true
+            if runuser -u dev -- bash -c \
+                "cd /workspace && git fetch https://github.com/${DEV_FORK_ORG}/${_repo}.git ${DEV_BRANCH_NAME} && git checkout -B '${DEV_BRANCH_NAME}' FETCH_HEAD" \
+                && [ "${DEV_FORK_ORG}" != "${DEV_AUTOMATION_USER:-dev-automation}" ]; then
+                # Branches pushed by `dev .` / `dev show` are already sanitized; others are not.
+                [ -n "$_gh_auth_pid" ] && wait "$_gh_auth_pid" 2>/dev/null
+                _default=$(runuser -u dev -- gh repo view "${DEV_TEMPLATE_KEY}" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null) || _default=""
+                _sanitize_workspace "$(runuser -u dev -- gh api --paginate \
+                    "repos/${DEV_TEMPLATE_KEY}/compare/${_default:-main}...${DEV_FORK_ORG}:${DEV_BRANCH_NAME}" \
+                    --jq '.commits[].sha' 2>/dev/null | tr '\n' ' ')"
+            fi
         fi
     fi
 
