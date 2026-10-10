@@ -150,6 +150,27 @@ def _get_branch_prefix(port):
     return None
 
 
+def _get_expected_repo(port):
+    with _port_mapping_lock:
+        entry = _port_mapping.get(str(port))
+    return entry.get("repo") if entry else None
+
+
+def _check_repo_allowed(port, repo_part):
+    """Restrict the SSH git bridge to the fork repo registered for this port, so
+    the automation key can't be pointed at any other repo it can reach. repo_part
+    is 'owner/repo.git'. Returns (allowed, reason)."""
+    if port == LISTEN_PORT:
+        return False, "git not allowed on base proxy port"
+    expected = _get_expected_repo(port)
+    if not expected:
+        return False, f"no repo registered for port {port}"
+    requested = repo_part[:-4] if repo_part.endswith(".git") else repo_part
+    if requested != expected:
+        return False, f"repo {requested} not allowed (only {expected})"
+    return True, "ok"
+
+
 def _extract_push_refs(body):
     """Extract ref names from a git-receive-pack pkt-line payload."""
     refs = []
@@ -315,6 +336,13 @@ class _ProxyHandler(http.server.BaseHTTPRequestHandler):
 
         _, repo_part, rest, query = parsed
         repo_path = f"/{repo_part}"
+
+        port = self.server.server_address[1]
+        allowed, reason = _check_repo_allowed(port, repo_part)
+        if not allowed:
+            log.warning("BLOCKED git on port %d: %s", port, reason)
+            self.send_error(403, "repo not allowed")
+            return
 
         try:
             if rest == "info/refs":

@@ -117,6 +117,7 @@ _dev_proxy_reload() {
 _dev_assign_proxy_port() {
     local _dev_container="$1"
     local _dev_auth="${2:-vertex}"
+    local _dev_repo="${3:-}"
     local _dev_mapfile
     _dev_mapfile="$(_dev_proxy_mapping_file)"
     local _dev_mapping="{}"
@@ -129,8 +130,8 @@ _dev_assign_proxy_port() {
     _dev_existing_port=$(echo "$_dev_mapping" | jq -r --arg c "$_dev_container" \
         'first(to_entries[] | select(.value.container == $c) | .key) // empty' 2>/dev/null) || true
     if [[ -n "$_dev_existing_port" ]]; then
-        echo "$_dev_mapping" | jq --arg p "$_dev_existing_port" --arg a "$_dev_auth" \
-            '.[$p].auth = $a' > "$_dev_mapfile"
+        echo "$_dev_mapping" | jq --arg p "$_dev_existing_port" --arg a "$_dev_auth" --arg r "$_dev_repo" \
+            '.[$p].auth = $a | .[$p].repo = $r' > "$_dev_mapfile"
         _dev_proxy_reload
         echo "$_dev_existing_port"
         return 0
@@ -143,7 +144,8 @@ _dev_assign_proxy_port() {
                 --arg c "$_dev_container" \
                 --arg b "dev-auto/${_dev_container}" \
                 --arg a "$_dev_auth" \
-                '. + {($p): {container: $c, branch: $b, auth: $a}}' > "$_dev_mapfile"
+                --arg r "$_dev_repo" \
+                '. + {($p): {container: $c, branch: $b, auth: $a, repo: $r}}' > "$_dev_mapfile"
             _dev_proxy_reload
             echo "$_dev_port"
             return 0
@@ -254,11 +256,16 @@ _dev_reconcile_port_mapping() {
         [[ -z "$_dev_port" ]] && continue
         _dev_auth=$(podman inspect --format '{{index .Config.Labels "dev-auth-method"}}' "$_dev_cname" 2>/dev/null) || _dev_auth=""
         [[ "$_dev_auth" == "api-key" ]] || _dev_auth="vertex"
+        local _dev_tkey _dev_repo
+        _dev_tkey=$(_dev_container_template_key "$_dev_cname")
+        _dev_repo=""
+        [[ -n "$_dev_tkey" ]] && _dev_repo="${DEV_AUTOMATION_USER}/${_dev_tkey#*/}"
         _dev_mapping=$(echo "$_dev_mapping" | jq --arg p "$_dev_port" \
             --arg c "$_dev_cname" \
             --arg b "dev-auto/${_dev_cname}" \
             --arg a "$_dev_auth" \
-            '. + {($p): {container: $c, branch: $b, auth: $a}}')
+            --arg r "$_dev_repo" \
+            '. + {($p): {container: $c, branch: $b, auth: $a, repo: $r}}')
     done < <(podman ps -a --filter="label=${DEV_LABEL}" --format '{{.Names}}' 2>/dev/null)
 
     if [[ "$_dev_mapping" == "{}" && ! -f "$_dev_mapfile" ]]; then
@@ -575,7 +582,8 @@ _dev_create_container() {
     fi
 
     local _dev_port
-    _dev_port=$(_dev_assign_proxy_port "$_dev_name" "$_dev_auth_method") || return 1
+    _dev_port=$(_dev_assign_proxy_port "$_dev_name" "$_dev_auth_method" \
+        "${_dev_template_key:+${DEV_AUTOMATION_USER}/${_dev_template_key#*/}}") || return 1
 
     if [[ "$_dev_auth_method" == "api-key" ]]; then
         _dev_auth_args=(
