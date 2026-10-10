@@ -6,3 +6,6 @@ plan/
 __pycache__/
 ssh-config
 .idea/
+.claude/worktrees/
+.claude/projects/
+.claude/settings.local.json
