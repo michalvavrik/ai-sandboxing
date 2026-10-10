@@ -33,12 +33,6 @@ assert_match() { # <value> <regex> [msg]
 assert_file() { # <path> [msg]
     if [[ -f "$1" ]]; then _t_ok "${2:-file exists: $1}"; else _t_fail "${2:-file missing: $1}"; fi
 }
-assert_success() { # <cmd...> (expects exit 0)
-    if "$@" >/dev/null 2>&1; then _t_ok "ok: $*"; else _t_fail "expected success: $*"; fi
-}
-assert_fail() { # <cmd...> (expects non-zero)
-    if "$@" >/dev/null 2>&1; then _t_fail "expected failure: $*"; else _t_ok "fails as expected: $*"; fi
-}
 assert_fresh_epoch() { # <value> [msg] — numeric and within the last 10 minutes
     local now age
     if [[ "$1" =~ ^[0-9]+$ ]]; then

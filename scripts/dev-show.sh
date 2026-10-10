@@ -91,6 +91,7 @@ _dev_push_to_container_branch "$_devshow_src_dir" "$_devshow_name" HEAD "$_devsh
 _dev_ensure_proxy
 
 _dev_ensure_running "$_devshow_name"
+_dev_warn_if_backup_stale "$_devshow_name"
 
 _devshow_backup="dev-auto/${_devshow_name}/backup/show/$(date +%s)"
 echo "Backing up container state to ${_devshow_backup}..."

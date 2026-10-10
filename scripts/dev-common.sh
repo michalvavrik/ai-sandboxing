@@ -39,6 +39,61 @@ _dev_podman_storage_gib() {
     fi
 }
 
+# ── Workspace auto-backup status (written by scripts/dev-auto-backup.sh) ──────
+# Human-readable age of an epoch; "STALE (...)" once older than the threshold,
+# "never" if empty/missing. Integer math only (no `date -d`) to stay macOS-safe.
+_dev_fmt_backup_age() {
+    local _epoch="${1:-}" _now="${2:-$(date +%s)}" _thresh="${DEV_BACKUP_STALE_SECS:-90}" _age _h
+    [[ "$_epoch" =~ ^[0-9]+$ ]] || { echo "never"; return 0; }
+    _age=$(( _now - _epoch ))
+    (( _age < 0 )) && _age=0
+    if   (( _age < 60 ));    then _h="${_age}s"
+    elif (( _age < 3600 ));  then _h="$(( _age / 60 ))m"
+    elif (( _age < 86400 )); then _h="$(( _age / 3600 ))h"
+    else                          _h="$(( _age / 86400 ))d"
+    fi
+    if (( _age > _thresh )); then echo "STALE (${_h} ago)"; else echo "${_h} ago"; fi
+}
+
+# Raw backup status file of a container, best-effort: SSH while running, else
+# read the stopped container's disk image read-only via debugfs (no mount/root).
+_dev_backup_status_raw() {
+    local _name="$1" _img="${DEV_DISK_DIR}/${_name}.img"
+    if [[ "$(podman inspect "$_name" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]]; then
+        _dev_ssh_cmd "$_name" 'cat /mnt/bounded/backup/status 2>/dev/null' 2>/dev/null
+    elif command -v debugfs >/dev/null 2>&1 && [[ -f "$_img" ]]; then
+        debugfs -R "cat /backup/status" "$_img" 2>/dev/null
+    fi
+}
+
+# Formatted age of a container's last auto-backup run (loop liveness: "STALE"/
+# "never" means the in-container backup loop is not running).
+_dev_backup_age() {
+    local _name="$1" _status _lr
+    _status=$(_dev_backup_status_raw "$_name")
+    _lr=$(printf '%s\n' "$_status" | sed -n 's/^last_run=//p' | tail -1)
+    _dev_fmt_backup_age "$_lr"
+}
+
+# Warn (stderr) when a running container's auto-backup loop looks dead/stale.
+# Skips freshly-started containers (the loop needs one interval to run first)
+# and hosts without GNU `date -d` (can't measure uptime) to avoid false alarms.
+_dev_warn_if_backup_stale() {
+    local _name="$1" _started _started_epoch _up _age
+    [[ "$(podman inspect "$_name" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]] || return 0
+    _started=$(podman inspect "$_name" --format '{{.State.StartedAt}}' 2>/dev/null) || return 0
+    _started_epoch=$(date -d "$_started" +%s 2>/dev/null) || return 0
+    _up=$(( $(date +%s) - _started_epoch ))
+    (( _up < 120 )) && return 0
+    _age=$(_dev_backup_age "$_name")
+    case "$_age" in
+        never | STALE*)
+            echo "WARNING: auto-backup for '${_name}' looks inactive (last run: ${_age})." >&2
+            echo "         Check /mnt/bounded/backup/log inside the container." >&2
+            ;;
+    esac
+}
+
 _dev_pid_file() {
     echo "${DEV_PROXY_PID_FILE:-/run/user/$(id -u)/dev-proxy.pid}"
 }

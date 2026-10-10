@@ -9,6 +9,7 @@ on:
       - 'configs/**'
       - 'entrypoint.sh'
       - 'scripts/dev-git-sanitize.sh'
+      - 'scripts/dev-auto-backup.sh'
       - '*.c'
   workflow_dispatch: {}
 

@@ -31,8 +31,11 @@ case_changes_pushed() {
     local out rc
     out=$(run_once "$tmp/ws" "$tmp/status"); rc=$?
     assert_eq 0 "$rc" "case1: exit 0"
-    assert_success git -C "$tmp/origin.git" rev-parse --verify "refs/heads/$BRANCH" \
-        "case1: backup ref pushed to origin"
+    if git -C "$tmp/origin.git" rev-parse --verify "refs/heads/$BRANCH" >/dev/null 2>&1; then
+        _t_ok "case1: backup ref pushed to origin"
+    else
+        _t_fail "case1: backup ref NOT pushed to origin"
+    fi
     assert_eq "new work" "$(git -C "$tmp/origin.git" show "refs/heads/$BRANCH:feature.txt" 2>/dev/null)" \
         "case1: pushed snapshot contains the uncommitted change"
     assert_file "$tmp/status" "case1: status file written"
@@ -51,8 +54,11 @@ case_no_changes() {
     local out rc
     out=$(run_once "$tmp/ws" "$tmp/status"); rc=$?
     assert_eq 0 "$rc" "case2: exit 0"
-    assert_fail git -C "$tmp/origin.git" rev-parse --verify "refs/heads/$BRANCH" \
-        "case2: no backup ref created when nothing changed"
+    if git -C "$tmp/origin.git" rev-parse --verify "refs/heads/$BRANCH" >/dev/null 2>&1; then
+        _t_fail "case2: unexpected backup ref created"
+    else
+        _t_ok "case2: no backup ref created when nothing changed"
+    fi
     assert_fresh_epoch "$(status_get "$tmp/status" last_run)" "case2: last_run refreshed (loop alive)"
     assert_empty "$(status_get "$tmp/status" last_push)" "case2: last_push not set (nothing pushed)"
     rm -rf "$tmp"

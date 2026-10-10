@@ -127,8 +127,8 @@ RUN git clone --depth 1 --single-branch --branch main \
         https://github.com/quarkusio/quarkus.git /opt/workspace/quarkus
 USER root
 
-# ── Entrypoint (+ the commit-message sanitizer it runs after PR/branch checkouts)
-COPY --chmod=755 entrypoint.sh scripts/dev-git-sanitize.sh /opt/dev/
+# ── Entrypoint (+ the sanitizer it runs after checkouts, + the auto-backup loop)
+COPY --chmod=755 entrypoint.sh scripts/dev-git-sanitize.sh scripts/dev-auto-backup.sh /opt/dev/
 ENTRYPOINT ["/opt/dev/entrypoint.sh"]
 
 # ── Runtime defaults ─────────────────────────────────────────────────────────

@@ -521,7 +521,14 @@ Result:
 
 ## Auto-backup
 
-Every 30 seconds, a background process snapshots the workspace (including uncommitted and untracked files) and pushes to `dev-auto/<name>/backup` on the remote without affecting the workspace.
+Every 30 seconds, a background process (`scripts/dev-auto-backup.sh`, launched by the entrypoint) snapshots the workspace — including uncommitted and untracked files — and force-pushes it to `dev-auto/<name>/backup` on the automation fork, without touching the workspace. A push failure (e.g. the proxy is down) is logged but the local snapshot commit is kept, so the work is still recoverable with `dev see` or directly from the disk image.
+
+It records progress to `/mnt/bounded/backup/{status,log}` on the bounded disk, which the host reads even when the container is stopped:
+
+- `dev list` shows a `BACKUP` column — the age of the last loop run for running containers (`STALE`/`never` means the loop is not working).
+- `dev see` / `dev show` warn if a container that has been up a while has an inactive auto-backup.
+
+If the whole mechanism fails and the container won't even start, the workspace still lives in the disk image's fuse-overlay upperdir (`~/.local/share/dev-sandbox-disks/<name>.img`, dir `ws-upper`) and can be recovered read-only with `debugfs`.
 
 ## Known issues
 

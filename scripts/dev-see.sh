@@ -42,6 +42,7 @@ readonly _devsee_branch="dev-auto/${_devsee_name}/main"
 echo "Pushing changes to ${_devsee_branch}..."
 _dev_sync_workspace "$_devsee_name" "$_devsee_branch"
 echo "Branch: ${_devsee_branch}"
+_dev_warn_if_backup_stale "$_devsee_name"
 
 _dev_ensure_automation_remote "$_devsee_src" "$_devsee_repo"
 
