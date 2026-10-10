@@ -291,8 +291,8 @@ _dev_reconcile_port_mapping() {
 _dev_run_proxy() {
     local _dev_py=(python3 "${DEV_SCRIPTS_DIR}/dev-proxy.py")
     if ! command -v bwrap >/dev/null 2>&1; then
-        echo "WARNING: bwrap not found — running dev-proxy UNCONFINED. Install bubblewrap to sandbox it." >&2
-        exec "${_dev_py[@]}"
+        echo "FATAL: bwrap not found — refusing to run the proxy unconfined." >&2
+        exit 1
     fi
     local _dev_rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
     exec bwrap \
@@ -323,6 +323,13 @@ _dev_ensure_proxy() {
 
     if [[ -f "$_dev_pf" ]] && kill -0 "$(cat "$_dev_pf")" 2>/dev/null; then
         return 0
+    fi
+
+    # Fail closed: the proxy holds real credentials, so never run it unconfined.
+    if ! command -v bwrap >/dev/null 2>&1; then
+        echo "Error: bwrap (bubblewrap) is required to sandbox the proxy but is not installed." >&2
+        echo "       Install it with 'sudo dnf install bubblewrap' (or re-run 'dev install')." >&2
+        return 1
     fi
 
     echo "Starting dev proxy..."
