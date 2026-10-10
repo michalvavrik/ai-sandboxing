@@ -280,6 +280,40 @@ _dev_reconcile_port_mapping() {
     fi
 }
 
+# Launch dev-proxy.py confined with bubblewrap. The proxy holds real credentials
+# (the automation SSH key, Claude/Vertex tokens) and parses untrusted guest
+# traffic, so it runs in a filesystem/namespace jail that exposes only what it
+# needs — its own script, the two keys it actually uses (not the rest of keys/),
+# the gcloud ADC and ~/.claude.json, and the runtime dir — so a compromise can't
+# read the rest of $HOME or the other keys. It still runs as the same user (file
+# perms unchanged) and must outlive the dev command, so no pid/user/net unshare
+# and no --die-with-parent. Falls back to unconfined (loud) if bwrap is missing.
+_dev_run_proxy() {
+    local _dev_py=(python3 "${DEV_SCRIPTS_DIR}/dev-proxy.py")
+    if ! command -v bwrap >/dev/null 2>&1; then
+        echo "WARNING: bwrap not found — running dev-proxy UNCONFINED. Install bubblewrap to sandbox it." >&2
+        exec "${_dev_py[@]}"
+    fi
+    local _dev_rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    exec bwrap \
+        --ro-bind /usr /usr \
+        --ro-bind /etc /etc \
+        --symlink usr/lib /lib --symlink usr/lib64 /lib64 \
+        --symlink usr/bin /bin --symlink usr/sbin /sbin \
+        --proc /proc --dev /dev --tmpfs /tmp \
+        --ro-bind-try /run/systemd/resolve /run/systemd/resolve \
+        --tmpfs "$HOME" \
+        --ro-bind "$DEV_SCRIPTS_DIR" "$DEV_SCRIPTS_DIR" \
+        --ro-bind-try "${DEV_KEYS_DIR}/id_ed25519_dev_automation" "${DEV_KEYS_DIR}/id_ed25519_dev_automation" \
+        --ro-bind-try "${DEV_KEYS_DIR}/claude-oauth-token" "${DEV_KEYS_DIR}/claude-oauth-token" \
+        --ro-bind-try "${HOME}/.claude.json" "${HOME}/.claude.json" \
+        --ro-bind-try "${HOME}/.config/gcloud" "${HOME}/.config/gcloud" \
+        --bind "$_dev_rt" "$_dev_rt" \
+        --unshare-ipc --unshare-uts --unshare-cgroup-try \
+        --setenv HOME "$HOME" \
+        "${_dev_py[@]}"
+}
+
 _dev_ensure_proxy() {
     local _dev_pf _dev_ptf
     _dev_pf="$(_dev_pid_file)"
@@ -294,7 +328,7 @@ _dev_ensure_proxy() {
     echo "Starting dev proxy..."
     # 8>&-: the daemon must not inherit the container-creation lock (fd 8).
     DEV_PROXY_PID_FILE="$_dev_pf" DEV_PROXY_PORT_FILE="$_dev_ptf" \
-        python3 "${DEV_SCRIPTS_DIR}/dev-proxy.py" 2>/dev/null 8>&- &
+        _dev_run_proxy 2>/dev/null 8>&- &
     disown
 
     local _dev_wait=0
