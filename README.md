@@ -32,7 +32,7 @@ Ephemeral, microVM-isolated dev containers for AI-assisted development. Each con
 
 ### The `kind` profile weakens in-VM isolation
 
-Containers using the `kind` profile (currently only camel-k) auto-create a Kubernetes cluster with **rootful podman inside the VM**. This is required, not a shortcut: the `kindest/node` image runs systemd, which needs a root-owned cgroup that the unprivileged `dev` user cannot create — this microVM has no systemd/cgroup delegation, so rootless Kind cannot boot here. (Also, the node's kubelet needs a real block device for its rootfs, so Kind/registry storage is pinned to the bounded podman disk rather than the virtiofs root.)
+Containers using the `kind` profile (no bundled template currently uses it) auto-create a Kubernetes cluster with **rootful podman inside the VM**. This is required, not a shortcut: the `kindest/node` image runs systemd, which needs a root-owned cgroup that the unprivileged `dev` user cannot create — this microVM has no systemd/cgroup delegation, so rootless Kind cannot boot here. (Also, the node's kubelet needs a real block device for its rootfs, so Kind/registry storage is pinned to the bounded podman disk rather than the virtiofs root.)
 
 **Consequence — for these containers, treat the `dev`-vs-root boundary *inside the VM* as gone.** Kind's kubeconfig is cluster-admin, so the agent has a practical, non-exploit path to VM-root (cluster-admin → privileged pod → node container, which runs as VM-root). That means:
 
@@ -41,7 +41,7 @@ Containers using the `kind` profile (currently only camel-k) auto-create a Kuber
 
 **What is _not_ affected:** the KVM boundary still fully contains the VM. Your host filesystem, Google Vertex credentials, and the GitHub-write SSH key never enter the VM, so they remain protected even against a VM-root agent. Non-`kind` containers keep the full rootless posture described above.
 
-**Functional limits (libkrun kernel ceiling).** The cluster runs on the microVM's libkrun kernel, which lacks netfilter features kube-proxy needs. iptables mode is fully broken (missing `xt_comment`/`xt_conntrack`); the entrypoint uses `nftables` mode, which is better — the control plane is healthy and CoreDNS pods reach the API server — but it still **cannot program multi-endpoint Services** (kernel lacks `numgen`), and since kube-proxy applies its ruleset atomically per sync, ClusterIP Services with more than one backing pod never program. In testing, pod → cluster-DNS (the default two-replica service) resolution failed 8/8. So **in-cluster Service networking / DNS is effectively non-functional out of the box.** Treat the `kind` profile as a **control-plane / manifest-testing** environment — `kubectl`, CRDs, applying resources, the local registry — **not** a place to run pod-to-pod Service networking or e2e. Run real e2e in CI or a real cluster (camel-k's own Knative e2e runs on minikube in CI, not Kind).
+**Functional limits (libkrun kernel ceiling).** The cluster runs on the microVM's libkrun kernel, which lacks netfilter features kube-proxy needs. iptables mode is fully broken (missing `xt_comment`/`xt_conntrack`); the entrypoint uses `nftables` mode, which is better — the control plane is healthy and CoreDNS pods reach the API server — but it still **cannot program multi-endpoint Services** (kernel lacks `numgen`), and since kube-proxy applies its ruleset atomically per sync, ClusterIP Services with more than one backing pod never program. In testing, pod → cluster-DNS (the default two-replica service) resolution failed 8/8. So **in-cluster Service networking / DNS is effectively non-functional out of the box.** Treat the `kind` profile as a **control-plane / manifest-testing** environment — `kubectl`, CRDs, applying resources, the local registry — **not** a place to run pod-to-pod Service networking or e2e. Run real e2e in CI or a real cluster.
 
 ## Prerequisites
 
@@ -403,7 +403,6 @@ The host proxy can reverse-proxy MCP SSE servers running on the host into contai
 dev new keycloak-client              # → keycloak-client template (profiles: java)
 dev new keycloak-client-my-feature   # → keycloak-client template (prefix match, beats shorter "keycloak")
 cd ~/sources/quarkus && dev new foo  # → quarkus template (profiles: java)
-cd ~/sources/camel-k && dev new bar  # → camel-k template (profiles: go,kind)
 ```
 
 ### Pre-installed toolchains
@@ -424,21 +423,6 @@ The `profiles` field in `project-templates.conf` is a comma-separated list that 
 | `java`  | Maven cache overlay from host `~/.m2/repository` |
 | `go`    | Sets GOPATH, GOBIN, adds `~/go/bin` to PATH |
 | `kind`  | Auto-creates a **rootful** Kind cluster + local registry (`localhost:5001`) on first start; 20 GiB podman storage. **Control-plane / manifest work only — in-cluster Service networking does not work (kernel limits), and it weakens in-VM isolation; see [the `kind` profile note](#the-kind-profile-weakens-in-vm-isolation).** |
-
-```bash
-# camel-k (profiles: go,kind):
-make build                    # build everything (codegen + tests + CLI)
-make images                   # build operator image
-podman tag apache/camel-k:2.11.0-SNAPSHOT localhost:5001/camel-k:dev
-podman push localhost:5001/camel-k:dev
-make install-k8s-global       # install operator on Kind cluster
-make test-smoke               # smoke tests (in-sandbox networking is limited — run full e2e in CI)
-
-# terraform-provider-keycloak (profiles: go):
-make local                    # start Keycloak via podman-compose
-make test                     # unit tests
-make testacc                  # acceptance tests
-```
 
 ## Keys
 
