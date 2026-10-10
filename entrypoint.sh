@@ -20,21 +20,46 @@ printf '[user]\n\temail = %s\n\tname = %s\n[gc]\n\tauto = 0\n' \
     "${DEV_AUTOMATION_NAME:-Dev Automation}" \
     > /etc/gitconfig
 
-# ── Guest firewall (nft — kernel has NF_TABLES but not XTABLES) ─────────────
+# ── Guest egress firewall (nft — kernel has NF_TABLES but not XTABLES) ───────
+# FAIL CLOSED. The firewall only actually filters when passt gives the guest a
+# real interface with a default route; under TSI (no passt) egress bypasses
+# netfilter, so a "successful" ruleset would be false confidence. We therefore
+# refuse to start unless passt networking is up AND the ruleset applies — never
+# run the agent believing it is confined when it is not.
 HOST_IP=$(getent hosts host.internal | awk '{print $1}')
 HOST_IP="${HOST_IP:-$(getent hosts host.containers.internal | awk '{print $1}')}"
 PROXY_PORT="${PROXY_PORT:-9222}"
 
-if [[ -n "$HOST_IP" ]] && nft list ruleset &>/dev/null; then
-    nft add table inet filter
-    nft add chain inet filter output '{ type filter hook output priority 0; policy drop; }'
-    nft add rule inet filter output oifname "lo" accept
-    nft add rule inet filter output ip daddr "$HOST_IP" tcp dport "$PROXY_PORT" accept
-    nft add rule inet filter output udp dport 53 accept
-    nft add rule inet filter output tcp dport 443 accept
-    nft add rule inet filter output ct state established,related accept
-else
-    echo "WARNING: nft not available or host IP unknown, skipping guest firewall" >&2
+# Wait briefly for passt's DHCP-provided default route, so a healthy container is
+# not refused for a transient "not up yet" (TSI never gets one; it waits out).
+for _ in $(seq 1 20); do
+    [[ -n "$(ip route show default 2>/dev/null)" ]] && break
+    sleep 0.5
+done
+
+if [[ -z "$HOST_IP" ]] || [[ -z "$(ip route show default 2>/dev/null)" ]] || ! nft list ruleset &>/dev/null; then
+    echo "FATAL: guest egress firewall cannot be established — no passt default route, nft, or host IP." >&2
+    echo "       Refusing to start an unconfined container (needs krun.use_passt=1 + working passt)." >&2
+    exit 1
+fi
+
+# Apply the whole ruleset atomically (default-drop + allows in one transaction,
+# so there is never an open window), and refuse to start if it does not apply.
+if ! nft -f - <<NFT
+table inet filter {
+	chain output {
+		type filter hook output priority 0; policy drop;
+		oifname "lo" accept
+		ip daddr ${HOST_IP} tcp dport ${PROXY_PORT} accept
+		udp dport 53 accept
+		tcp dport 443 accept
+		ct state established,related accept
+	}
+}
+NFT
+then
+    echo "FATAL: failed to apply the guest egress firewall ruleset. Refusing to start." >&2
+    exit 1
 fi
 
 # ── Persist container env vars for all sessions (main + SSH) ─────────────────
