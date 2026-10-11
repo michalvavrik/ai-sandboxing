@@ -1,0 +1,33 @@
+diff --git a/scripts/dev-common.sh b/scripts/dev-common.sh
+index 4a37aa2..de4d2ec 100755
+--- a/scripts/dev-common.sh
++++ b/scripts/dev-common.sh
+@@ -57,10 +57,11 @@ _dev_fmt_backup_age() {
+ 
+ # Raw backup status file of a container, best-effort: SSH while running, else
+ # read the stopped container's disk image read-only via debugfs (no mount/root).
++# </dev/null: ssh would otherwise swallow the caller's stdin (dev list's loop).
+ _dev_backup_status_raw() {
+     local _name="$1" _img="${DEV_DISK_DIR}/${_name}.img"
+     if [[ "$(podman inspect "$_name" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]]; then
+-        _dev_ssh_cmd "$_name" 'cat /mnt/bounded/backup/status 2>/dev/null' 2>/dev/null
++        _dev_ssh_cmd "$_name" 'cat /mnt/bounded/backup/status 2>/dev/null' </dev/null 2>/dev/null
+     elif command -v debugfs >/dev/null 2>&1 && [[ -f "$_img" ]]; then
+         debugfs -R "cat /backup/status" "$_img" 2>/dev/null
+     fi
+diff --git a/scripts/dev-proxy.py b/scripts/dev-proxy.py
+index 995d355..3dd25ca 100755
+--- a/scripts/dev-proxy.py
++++ b/scripts/dev-proxy.py
+@@ -226,7 +226,10 @@ def _get_token():
+ 
+ 
+ def _git_ssh_cmd():
+-    return ["ssh", "-i", SSH_KEY, "-o", "IdentitiesOnly=yes",
++    # -F /dev/null: in the bwrap jail (_dev_run_proxy) root-owned files appear
++    # as nobody, and ssh refuses /etc/ssh/ssh_config.d/*.conf ("Bad owner or
++    # permissions"), failing every bridged fetch/push before it connects.
++    return ["ssh", "-F", "/dev/null", "-i", SSH_KEY, "-o", "IdentitiesOnly=yes",
+             "-o", "StrictHostKeyChecking=accept-new", "git@github.com"]
+ 
+ 
