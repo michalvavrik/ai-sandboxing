@@ -57,10 +57,11 @@ _dev_fmt_backup_age() {
 
 # Raw backup status file of a container, best-effort: SSH while running, else
 # read the stopped container's disk image read-only via debugfs (no mount/root).
+# </dev/null: ssh would otherwise swallow the caller's stdin (dev list's loop).
 _dev_backup_status_raw() {
     local _name="$1" _img="${DEV_DISK_DIR}/${_name}.img"
     if [[ "$(podman inspect "$_name" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]]; then
-        _dev_ssh_cmd "$_name" 'cat /mnt/bounded/backup/status 2>/dev/null' 2>/dev/null
+        _dev_ssh_cmd "$_name" 'cat /mnt/bounded/backup/status 2>/dev/null' </dev/null 2>/dev/null
     elif command -v debugfs >/dev/null 2>&1 && [[ -f "$_img" ]]; then
         debugfs -R "cat /backup/status" "$_img" 2>/dev/null
     fi

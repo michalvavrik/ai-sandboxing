@@ -226,7 +226,10 @@ def _get_token():
 
 
 def _git_ssh_cmd():
-    return ["ssh", "-i", SSH_KEY, "-o", "IdentitiesOnly=yes",
+    # -F /dev/null: in the bwrap jail (_dev_run_proxy) root-owned files appear
+    # as nobody, and ssh refuses /etc/ssh/ssh_config.d/*.conf ("Bad owner or
+    # permissions"), failing every bridged fetch/push before it connects.
+    return ["ssh", "-F", "/dev/null", "-i", SSH_KEY, "-o", "IdentitiesOnly=yes",
             "-o", "StrictHostKeyChecking=accept-new", "git@github.com"]
 
 
