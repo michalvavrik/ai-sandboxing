@@ -32,6 +32,7 @@ PID_FILE = os.environ.get("DEV_PROXY_PID_FILE", "/run/user/1000/dev-proxy.pid")
 PORT_FILE = os.environ.get("DEV_PROXY_PORT_FILE", "/run/user/1000/dev-proxy.port")
 LISTEN_PORT = int(os.environ.get("DEV_PROXY_PORT", "9222"))
 MAPPING_FILE = os.path.join(os.path.dirname(PID_FILE), "dev-proxy-ports.json")
+KNOWN_HOSTS_FILE = os.path.join(os.path.dirname(PID_FILE), "dev-proxy-known-hosts")
 
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 _KEYS_DIR = os.path.join(os.path.dirname(_SCRIPT_DIR), "keys")
@@ -229,8 +230,12 @@ def _git_ssh_cmd():
     # -F /dev/null: in the bwrap jail (_dev_run_proxy) root-owned files appear
     # as nobody, and ssh refuses /etc/ssh/ssh_config.d/*.conf ("Bad owner or
     # permissions"), failing every bridged fetch/push before it connects.
+    # KNOWN_HOSTS_FILE has the github.com lines of your ~/.ssh/known_hosts (see
+    # _dev_ensure_proxy) and is read-only here: with no entry, accept-new would
+    # trust whatever key it is shown on every connection, so refuse instead.
     return ["ssh", "-F", "/dev/null", "-i", SSH_KEY, "-o", "IdentitiesOnly=yes",
-            "-o", "StrictHostKeyChecking=accept-new", "git@github.com"]
+            "-o", f"UserKnownHostsFile={KNOWN_HOSTS_FILE}",
+            "-o", "StrictHostKeyChecking=yes", "git@github.com"]
 
 
 def _read_pkt_lines(stream):

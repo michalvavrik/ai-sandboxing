@@ -107,6 +107,10 @@ _dev_proxy_mapping_file() {
     echo "${DEV_PROXY_MAPPING_FILE:-$(dirname "$(_dev_pid_file)")/dev-proxy-ports.json}"
 }
 
+_dev_proxy_known_hosts_file() {
+    echo "$(dirname "$(_dev_pid_file)")/dev-proxy-known-hosts"
+}
+
 _dev_proxy_reload() {
     local _dev_pf
     _dev_pf="$(_dev_pid_file)"
@@ -285,10 +289,11 @@ _dev_reconcile_port_mapping() {
 # (the automation SSH key, Claude/Vertex tokens) and parses untrusted guest
 # traffic, so it runs in a filesystem/namespace jail that exposes only what it
 # needs — its own script, the two keys it actually uses (not the rest of keys/),
-# the gcloud ADC and ~/.claude.json, and the runtime dir — so a compromise can't
-# read the rest of $HOME or the other keys. It still runs as the same user (file
-# perms unchanged) and must outlive the dev command, so no pid/user/net unshare
-# and no --die-with-parent. Falls back to unconfined (loud) if bwrap is missing.
+# the gcloud ADC and ~/.claude.json, the runtime dir, and (read-only) GitHub's
+# host keys from ~/.ssh/known_hosts — so a compromise can't read the rest of
+# $HOME or the other keys. It still runs as the same user (file perms unchanged)
+# and must outlive the dev command, so no pid/user/net unshare and no
+# --die-with-parent. Refuses to run unconfined if bwrap is missing.
 _dev_run_proxy() {
     local _dev_py=(python3 "${DEV_SCRIPTS_DIR}/dev-proxy.py")
     if ! command -v bwrap >/dev/null 2>&1; then
@@ -296,6 +301,8 @@ _dev_run_proxy() {
         exit 1
     fi
     local _dev_rt="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+    local _dev_kh
+    _dev_kh="$(_dev_proxy_known_hosts_file)"
     exec bwrap \
         --ro-bind /usr /usr \
         --ro-bind /etc /etc \
@@ -310,6 +317,7 @@ _dev_run_proxy() {
         --ro-bind-try "${HOME}/.claude.json" "${HOME}/.claude.json" \
         --ro-bind-try "${HOME}/.config/gcloud" "${HOME}/.config/gcloud" \
         --bind "$_dev_rt" "$_dev_rt" \
+        --ro-bind-try "$_dev_kh" "$_dev_kh" \
         --unshare-ipc --unshare-uts --unshare-cgroup-try \
         --setenv HOME "$HOME" \
         "${_dev_py[@]}"
@@ -331,6 +339,14 @@ _dev_ensure_proxy() {
         echo "Error: bwrap (bubblewrap) is required to sandbox the proxy but is not installed." >&2
         echo "       Install it with 'sudo dnf install bubblewrap' (or re-run 'dev install')." >&2
         return 1
+    fi
+
+    # The jail hides ~/.ssh: the proxy checks github.com against a copy of only
+    # GitHub's lines from your known_hosts, taken at every proxy start.
+    if ! ssh-keygen -F github.com -f "${HOME}/.ssh/known_hosts" \
+        > "$(_dev_proxy_known_hosts_file)" 2>/dev/null; then
+        echo "WARNING: no github.com entry in ~/.ssh/known_hosts — git fetch/push from containers will be refused." >&2
+        echo "         Run 'ssh -T git@github.com' once and check the fingerprint against GitHub's published keys." >&2
     fi
 
     echo "Starting dev proxy..."
@@ -858,7 +874,7 @@ _dev_detect_template_from_cwd() {
 readonly DEV_AUTOMATION_REMOTE="dev-automation"
 
 _dev_git_ssh() {
-    echo "ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+    echo "ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=accept-new"
 }
 
 _dev_automation_remote_url() {

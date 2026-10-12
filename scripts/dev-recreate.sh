@@ -67,7 +67,7 @@ fi
 # Move branch out of dev-auto/name/* before delete cleans it up
 readonly _devrc_repo="${_devrc_template_key#*/}"
 readonly _devrc_remote="git@github.com:${DEV_AUTOMATION_USER}/${_devrc_repo}.git"
-readonly _devrc_git_ssh="ssh -i ${DEV_KEYS_DIR}/id_ed25519_dev_automation -o IdentitiesOnly=yes -o StrictHostKeyChecking=no"
+readonly _devrc_git_ssh="$(_dev_git_ssh)"
 readonly _devrc_tmp_branch="dev-recreate/${_devrc_name}"
 GIT_SSH_COMMAND="$_devrc_git_ssh" \
     git push "$_devrc_remote" "refs/heads/${_devrc_branch}:refs/heads/${_devrc_tmp_branch}" 2>/dev/null
