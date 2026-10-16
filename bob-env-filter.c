@@ -9,8 +9,15 @@ static void lock_proc(void) {
     prctl(PR_SET_DUMPABLE, 0);
 }
 
-static const char PREFIX[] = "BOBSHELL_API_KEY=";
-static const size_t PREFIX_LEN = sizeof(PREFIX) - 1;
+/* bob 2.x copies BOBSHELL_API_KEY into BOB_API_KEY at startup */
+static const char *const KEY_VARS[] = { "BOBSHELL_API_KEY=", "BOB_API_KEY=" };
+
+static int is_key_var(const char *entry) {
+    for (size_t k = 0; k < sizeof(KEY_VARS) / sizeof(KEY_VARS[0]); k++)
+        if (strncmp(entry, KEY_VARS[k], strlen(KEY_VARS[k])) == 0)
+            return 1;
+    return 0;
+}
 
 int execve(const char *path, char *const argv[], char *const envp[]) {
     int (*real)(const char *, char *const[], char *const[]) =
@@ -28,7 +35,7 @@ int execve(const char *path, char *const argv[], char *const envp[]) {
 
     int j = 0;
     for (int i = 0; i < n; i++) {
-        if (strncmp(envp[i], PREFIX, PREFIX_LEN) != 0)
+        if (!is_key_var(envp[i]))
             filtered[j++] = (char *)envp[i];
     }
     filtered[j] = NULL;

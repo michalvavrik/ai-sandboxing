@@ -51,21 +51,27 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    int is_run = (argc > 1 && strcmp(argv[1], "run") == 0);
-    int extra = is_run ? 2 : 3;
-    char **new_argv = malloc((argc + extra) * sizeof(char *));
+    /* bob only accepts run/chat options after the subcommand name; without
+     * a subcommand it falls back to chat and takes them up front. run is
+     * headless, auto-approves anyway and rejects --auto-approve. */
+    int has_sub = argc > 1 && (strcmp(argv[1], "run") == 0 || strcmp(argv[1], "chat") == 0);
+    int is_run = has_sub && strcmp(argv[1], "run") == 0;
+    /* BOB_PATH + at most 4 injected args + argv[1..argc-1] + NULL */
+    char **new_argv = malloc((argc + 5) * sizeof(char *));
     if (!new_argv) {
         fprintf(stderr, "bob-run: malloc failed\n");
         return 1;
     }
-    int idx = 0;
+    int idx = 0, i = 1;
     new_argv[idx++] = BOB_PATH;
+    if (has_sub)
+        new_argv[idx++] = argv[i++];
     new_argv[idx++] = "--accept-license";
     new_argv[idx++] = "--max-turns";
     new_argv[idx++] = "1500";
     if (!is_run)
         new_argv[idx++] = "--auto-approve";
-    for (int i = 1; i < argc; i++)
+    for (; i < argc; i++)
         new_argv[idx++] = argv[i];
     new_argv[idx] = NULL;
 

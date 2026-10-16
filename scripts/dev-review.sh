@@ -441,7 +441,7 @@ _devreview_run_agent() {
             ;;
         bob)
             ssh -qt "$_devreview_name" \
-                "cd /workspace && bob run ${agent_continue} -p \"\$(cat /tmp/dev-review-prompt.txt)\"" \
+                "cd /workspace && bob run ${agent_continue} -- \"\$(cat /tmp/dev-review-prompt.txt)\"" \
                 | tee "$_devreview_host_tmp.out" || rc=1
             sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' "$_devreview_host_tmp.out" | awk '/Task ID:/ {id=$NF} END {if (id) print id}' > "${session_file}.tmp"
             [[ -s "${session_file}.tmp" ]] && mv "${session_file}.tmp" "$session_file"
