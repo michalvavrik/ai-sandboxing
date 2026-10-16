@@ -58,9 +58,10 @@ if git -C "$_devsee_src" rev-parse -q --verify "refs/heads/${_devsee_branch}" >/
         _devsee_had_wip=true
     fi
     echo "Backing up host state to ${_devsee_backup}..."
-    GIT_SSH_COMMAND="$(_dev_git_ssh)" \
-        git -C "$_devsee_src" push "$(_dev_automation_remote_url "$_devsee_repo")" \
-        "refs/heads/${_devsee_branch}:refs/heads/${_devsee_backup}" 2>/dev/null || true
+    # Sanitized like dev show: commits made on this host branch can mention issues.
+    _dev_push_to_container_branch "$_devsee_src" "$_devsee_name" "refs/heads/${_devsee_branch}" \
+        "$_devsee_repo" "$_devsee_backup" &>/dev/null \
+        || echo "WARNING: could not back up ${_devsee_branch}; its current state stays in the host's git reflog" >&2
     if [[ "$_devsee_had_wip" == true ]]; then
         git -C "$_devsee_src" reset --quiet HEAD~1
     fi

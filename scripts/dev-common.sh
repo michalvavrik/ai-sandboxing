@@ -57,21 +57,30 @@ _dev_fmt_backup_age() {
 
 # Raw backup status file of a container, best-effort: SSH while running, else
 # read the stopped container's disk image read-only via debugfs (no mount/root).
+# Fails when SSH does; a missing status file is not a failure (no output).
+# <ssh-port>: the container's SSH port as `podman ps` reported it (dev list) —
+# the container is then known to be running and podman is not asked again. It
+# also beats the port in the SSH config entry, which is only refreshed when a
+# dev command uses the container. BatchMode: never prompt (parallel callers).
 # </dev/null: ssh would otherwise swallow the caller's stdin (dev list's loop).
 _dev_backup_status_raw() {
-    local _name="$1" _img="${DEV_DISK_DIR}/${_name}.img"
-    if [[ "$(podman inspect "$_name" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]]; then
-        _dev_ssh_cmd "$_name" 'cat /mnt/bounded/backup/status 2>/dev/null' </dev/null 2>/dev/null
+    local _name="$1" _port="${2:-}" _img="${DEV_DISK_DIR}/${_name}.img"
+    local _cmd='cat /mnt/bounded/backup/status 2>/dev/null || true'
+    if [[ -n "$_port" ]]; then
+        ssh -q -o BatchMode=yes -p "$_port" "$_name" "$_cmd" </dev/null 2>/dev/null
+    elif [[ "$(podman inspect "$_name" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]]; then
+        _dev_ssh_cmd "$_name" "$_cmd" </dev/null 2>/dev/null
     elif command -v debugfs >/dev/null 2>&1 && [[ -f "$_img" ]]; then
         debugfs -R "cat /backup/status" "$_img" 2>/dev/null
     fi
 }
 
 # Formatted age of a container's last auto-backup run (loop liveness: "STALE"/
-# "never" means the in-container backup loop is not running).
+# "never" means the in-container backup loop is not running, "?" that its
+# status could not be read). <ssh-port>: see _dev_backup_status_raw.
 _dev_backup_age() {
     local _name="$1" _status _lr
-    _status=$(_dev_backup_status_raw "$_name")
+    _status=$(_dev_backup_status_raw "$_name" "${2:-}") || { echo "?"; return 0; }
     _lr=$(printf '%s\n' "$_status" | sed -n 's/^last_run=//p' | tail -1)
     _dev_fmt_backup_age "$_lr"
 }
@@ -910,16 +919,19 @@ _dev_default_branch() {
     return 1
 }
 
-# Push the host's <rev> to dev-auto/<name>/main on the automation fork. Every
-# commit that is not already on the upstream repo (origin's branches and tags)
-# is first rewritten by dev-git-sanitize.sh so that no commit message references
-# a GitHub issue or PR — otherwise GitHub would list the automation fork in the
-# issue's timeline. The host branch itself is never changed.
+# Push the host's <rev> to <branch> (default dev-auto/<name>/main) on the
+# automation fork. Every commit that is not already on the upstream repo
+# (origin's branches and tags) is first rewritten by dev-git-sanitize.sh so that
+# no commit message references a GitHub issue or PR — otherwise GitHub would
+# list the automation fork in the issue's timeline. The host branch itself is
+# never changed.
+# Usage: _dev_push_to_container_branch <src-dir> <name> <rev> [<repo>] [<branch>]
 _dev_push_to_container_branch() {
     local _dev_src_dir="$1" _dev_name="$2" _dev_rev="$3"
-    local _dev_repo _dev_head _dev_new _dev_count _dev_commits=()
+    local _dev_repo _dev_branch _dev_head _dev_new _dev_count _dev_commits=()
     _dev_repo="${4:-$(_dev_container_template_key "$_dev_name")}"
     _dev_repo="${_dev_repo#*/}"
+    _dev_branch="${5:-dev-auto/${_dev_name}/main}"
 
     # Upstream refs must be current, otherwise upstream commits the container
     # already has could be mistaken for branch commits and get rewritten.
@@ -936,10 +948,10 @@ _dev_push_to_container_branch() {
     fi
     _dev_new=$("${DEV_SCRIPTS_DIR}/dev-git-sanitize.sh" -C "$_dev_src_dir" "$_dev_head" "${_dev_commits[@]}") || return 1
 
-    echo "Pushing to dev-auto/${_dev_name}/main on ${DEV_AUTOMATION_USER}/${_dev_repo}..."
+    echo "Pushing to ${_dev_branch} on ${DEV_AUTOMATION_USER}/${_dev_repo}..."
     GIT_SSH_COMMAND="$(_dev_git_ssh)" \
         git -C "$_dev_src_dir" push -f "$(_dev_automation_remote_url "$_dev_repo")" \
-        "${_dev_new}:refs/heads/dev-auto/${_dev_name}/main"
+        "${_dev_new}:refs/heads/${_dev_branch}"
 }
 
 # Rewrite the given commits inside a container (see dev-git-sanitize.sh) and

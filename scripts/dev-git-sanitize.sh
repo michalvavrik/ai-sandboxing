@@ -5,8 +5,8 @@
 # that issue, so a commit like "closes: https://github.com/org/repo/issues/123"
 # pushed to the automation fork would show up in the issue's timeline under the
 # automation account. Every commit that leaves the host for the automation fork
-# (dev show, dev .) and every commit that enters a container from GitHub
-# (dev <pr-url>, dev <tree-url>) goes through this script first.
+# (dev show, dev ., the dev see backup) and every commit that enters a container
+# from GitHub (dev <pr-url>, dev <tree-url>) goes through this script first.
 #
 # Usage: dev-git-sanitize.sh [-C <repo>] <head> [<commit>...]
 #
@@ -17,11 +17,16 @@
 # signatures are dropped from rewritten commits. Prints the new id of <head>
 # (which is <head> itself when nothing changed). No ref is moved.
 #
-# Message rewriting (readable, but not a GitHub reference any more):
-#   https://github.com/org/repo/issues/123  ->  github.com/org/repo/issues/123
+# Message rewriting (readable, but not a GitHub reference any more). GitHub
+# links an issue/PR/discussion path with any host, in any case, or with no host
+# at all ("github.com/org/repo/issues/123", even a bare "org/repo/issues/123"),
+# and GH-123 in any case:
+#   https://github.com/org/repo/issues/123  ->  org/repo issue 123
+#   github.com/org/repo/pull/123/files      ->  org/repo PR 123/files
+#   org/repo/discussions/123                ->  org/repo discussion 123
 #   org/repo#123                            ->  org/repo issue 123
 #   #123                                    ->  issue 123
-#   GH-123                                  ->  GH 123
+#   GH-123, gh-123                          ->  GH 123, gh 123
 set -euo pipefail
 
 if [[ "${1:-}" == "-C" ]]; then
@@ -33,12 +38,17 @@ shift
 
 _san_head=$(git rev-parse --verify "${_san_head}^{commit}")
 
+# org/repo with an optional URL prefix (consumed, so no half URL is left).
+_san_repo='(https?://)?([A-Za-z0-9.-]*github\.com/)?([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)'
+
 _san_sanitize_message() {
     sed -E \
-        -e 's#https?://(www\.)?github\.com/#github.com/#g' \
+        -e "s#${_san_repo}/issues/([0-9]+)#\\3 issue \\4#gI" \
+        -e "s#${_san_repo}/pulls?/([0-9]+)#\\3 PR \\4#gI" \
+        -e "s#${_san_repo}/discussions/([0-9]+)#\\3 discussion \\4#gI" \
         -e 's#([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)\#([0-9]+)#\1 issue \2#g' \
         -e 's/(^|[^A-Za-z0-9&])#([0-9]+)/\1issue \2/g' \
-        -e 's/(^|[^A-Za-z0-9])GH-([0-9]+)/\1GH \2/g'
+        -e 's/(^|[^A-Za-z0-9])(GH)-([0-9]+)/\1\2 \3/gI'
 }
 
 if (( $# == 0 )); then
