@@ -382,8 +382,13 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         if [[ -d /mnt/bounded ]]; then
             mkdir -p /mnt/bounded/ws-upper /mnt/bounded/ws-work
             chown dev:dev /mnt/bounded/ws-upper /mnt/bounded/ws-work
+            # allow_other (only here, on /workspace): without it FUSE admits only the
+            # mounting uid, so Testcontainers' rootless inner containers — whose
+            # processes are dev's subordinate uids — get "Permission denied" on
+            # anything bind-mounted from the workspace. Mode bits still apply
+            # (default_permissions); nothing outside /workspace is affected.
             runuser -u dev -- fuse-overlayfs \
-                -o "lowerdir=/opt/workspace/${_repo},upperdir=/mnt/bounded/ws-upper,workdir=/mnt/bounded/ws-work,squash_to_uid=1000,squash_to_gid=1000" \
+                -o "lowerdir=/opt/workspace/${_repo},upperdir=/mnt/bounded/ws-upper,workdir=/mnt/bounded/ws-work,squash_to_uid=1000,squash_to_gid=1000,allow_other" \
                 /workspace
         else
             ln -s "/opt/workspace/${_repo}" /workspace
@@ -414,8 +419,9 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
             fi
             mkdir -p /mnt/bounded/ws-upper /mnt/bounded/ws-work
             chown dev:dev /mnt/bounded/ws-upper /mnt/bounded/ws-work
+            # allow_other: see the pre-baked case above.
             runuser -u dev -- fuse-overlayfs \
-                -o "lowerdir=${_clone_base},upperdir=/mnt/bounded/ws-upper,workdir=/mnt/bounded/ws-work,squash_to_uid=1000,squash_to_gid=1000" \
+                -o "lowerdir=${_clone_base},upperdir=/mnt/bounded/ws-upper,workdir=/mnt/bounded/ws-work,squash_to_uid=1000,squash_to_gid=1000,allow_other" \
                 /workspace
         else
             if [ -d /opt/project-src/.git ]; then
