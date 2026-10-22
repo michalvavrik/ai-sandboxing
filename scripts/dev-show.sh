@@ -85,6 +85,7 @@ if ! git diff --cached --quiet; then
 else
     echo "No new changes to commit."
 fi
+_devshow_tree=$(git rev-parse 'HEAD^{tree}')
 
 _dev_push_to_container_branch "$_devshow_src_dir" "$_devshow_name" HEAD "$_devshow_repo"
 
@@ -93,15 +94,33 @@ _dev_ensure_proxy
 _dev_ensure_running "$_devshow_name"
 _dev_warn_if_backup_stale "$_devshow_name"
 
+# Everything in the container's workspace is committed (the same sync as dev
+# see, including its repair of a workspace damaged by an unclean stop) and
+# pushed to the backup branch, so the checkout below replaces it completely.
 _devshow_backup="dev-auto/${_devshow_name}/backup/show/$(date +%s)"
 echo "Backing up container state to ${_devshow_backup}..."
-_dev_ssh_cmd "$_devshow_name" \
-    "cd /workspace && git add -A && git reset HEAD -- .pr .issue .pnpm-store 2>/dev/null; git diff --cached --quiet || git commit -m 'backup'; git push origin HEAD:refs/heads/${_devshow_backup}" 2>/dev/null || true
+_dev_sync_workspace "$_devshow_name" "$_devshow_backup" \
+    || echo "WARNING: could not back up the container's workspace to ${_devshow_backup}" >&2
 
 echo "Pulling inside container..."
 _dev_ssh_cmd "$_devshow_name" \
     "cd /workspace && git fetch origin ${_devshow_branch} && git checkout -B '${_devshow_branch}' FETCH_HEAD"
 
+# The container must now have exactly the host's content.
+_devshow_state=$(_dev_ssh_cmd "$_devshow_name" \
+    "cd /workspace && git rev-parse 'HEAD^{tree}' && git status --porcelain | head -n 5")
+_devshow_ctree="${_devshow_state%%$'\n'*}"
+_devshow_dirty="${_devshow_state#"$_devshow_ctree"}"
+if [[ "$_devshow_ctree" != "$_devshow_tree" ]]; then
+    _dev_stop_if_was_stopped "$_devshow_name"
+    echo "Error: the container checked out tree ${_devshow_ctree}, the host has ${_devshow_tree}" >&2
+    exit 1
+fi
+if [[ -n "${_devshow_dirty//[[:space:]]/}" ]]; then
+    echo "WARNING: the container's workspace still has local changes:" >&2
+    printf '%s\n' "${_devshow_dirty#$'\n'}" >&2
+fi
+
 _dev_stop_if_was_stopped "$_devshow_name"
 
-echo "Done. Container '${_devshow_name}' updated with host changes."
+echo "Done. Container '${_devshow_name}' has the content of host HEAD ($(git log -1 --format='%h %s' HEAD))."

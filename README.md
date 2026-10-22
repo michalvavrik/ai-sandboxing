@@ -179,11 +179,15 @@ git push --force-with-lease michalvavrik in-review/53157     # (printed by dev s
 
 ### `dev see`
 
-Commits whatever the container's workspace has (as the sandbox identity), pushes it to `dev-auto/<container>/main` on the automation fork, fetches it and checks it out in the project's source directory. Commits are kept as they are; the previous host state of that branch is backed up to `dev-auto/<container>/backup/see/<timestamp>` on the automation fork first.
+Commits whatever the container's workspace has (as the sandbox identity), pushes it to `dev-auto/<container>/main` on the automation fork, fetches it and checks it out in the project's source directory: the host branch and its working tree are then exactly the container's workspace. Commits are kept as they are. Nothing of the host is carried over — if `dev-auto/<container>/main` had anything the container does not (commits of your own, uncommitted changes while it was checked out, which become a `WIP` commit first), that state is backed up to `dev-auto/<container>/backup/see/<timestamp>` on the automation fork and stays in the host's reflog. With uncommitted changes on any other branch `dev see` refuses to run (commit or stash them first); untracked files are left alone.
 
 ### `dev show`
 
-Pushes the host's current branch into the container, from any branch that belongs to the container: `dev-auto/<container>/main`, `in-review/<feature>`, `wip/<feature>` or the branch the container was created from. Uncommitted changes are committed first (`sync from host`). The container's previous state is backed up to `dev-auto/<container>/backup/show/<timestamp>`. See [Commit messages and issue links](#commit-messages-and-issue-links) for what exactly is pushed.
+Pushes the host's current branch into the container, from any branch that belongs to the container: `dev-auto/<container>/main`, `in-review/<feature>`, `wip/<feature>` or the branch the container was created from. Uncommitted changes are committed first (`sync from host`). Everything the container's workspace has, committed or not, is backed up to `dev-auto/<container>/backup/show/<timestamp>` and then replaced: afterwards the container's checkout has exactly the content of the host's HEAD (`dev show` verifies that). See [Commit messages and issue links](#commit-messages-and-issue-links) for what exactly is pushed.
+
+### `dev rebase`
+
+Rebases the container's workspace on the latest upstream default branch (`main`/`master` of the project) and pushes the result to `dev-auto/<container>/main`. The workspace is committed and pushed there first, so the state before the rebase stays in the container's reflog; on conflicts the rebase is aborted and the workspace is left as it was. The host is not touched — run `dev see` afterwards. `dev merge` / `dev squash` expect their target branch to be the base the container works on, so rebase `in-review/<feature>` / `wip/<feature>` on the same upstream before using them.
 
 ### `dev merge` and `dev squash`
 
@@ -288,7 +292,7 @@ dev .                      # alternative: re-syncs and re-enters
 # Repeat steps 2–4 as needed
 
 # If upstream main has advanced:
-dev rebase                 # fetch upstream main and rebase workspace on top of it
+dev rebase                 # rebase the container's workspace on upstream main, then dev see
 
 # 5. Finish — your commit on in-review/my-feature (starts at wip/my-feature), then push it yourself
 dev merge                  # asks for the message; checks out in-review/my-feature

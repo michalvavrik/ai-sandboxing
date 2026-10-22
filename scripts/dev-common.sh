@@ -935,7 +935,10 @@ _dev_push_to_container_branch() {
 
     # Upstream refs must be current, otherwise upstream commits the container
     # already has could be mistaken for branch commits and get rewritten.
-    if ! git -C "$_dev_src_dir" fetch -q origin 2>/dev/null; then
+    # --no-write-fetch-head: callers may hold a FETCH_HEAD of their own (dev see
+    # fetches the container's branch before it backs up the host's), and this
+    # fetch must not replace it with origin's first branch.
+    if ! git -C "$_dev_src_dir" fetch -q --no-write-fetch-head origin 2>/dev/null; then
         echo "Error: could not fetch origin in ${_dev_src_dir} (needed to tell your commits from upstream ones)" >&2
         return 1
     fi

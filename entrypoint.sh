@@ -578,6 +578,22 @@ AGENTSMD
     if ! runuser -u dev -- git -C /workspace rev-parse --verify "$_target_branch" &>/dev/null 2>&1; then
         runuser -u dev -- git -C /workspace branch -m "$_target_branch" 2>/dev/null || true
     fi
+    # Track the branch's own copy on origin — the one dev see / dev show sync.
+    # Renamed from main or a PR head it would keep tracking that instead:
+    # `git status` then counts the whole history as "ahead of origin/main"
+    # (slowly) and a plain `git pull` would merge the fork's main. The pre-baked
+    # repos are --single-branch clones, so the branch also needs its own fetch
+    # refspec for pushes and fetches to update refs/remotes/origin/<branch>.
+    if runuser -u dev -- git -C /workspace rev-parse --verify "$_target_branch" &>/dev/null 2>&1; then
+        _fetch_spec="+refs/heads/${_target_branch}:refs/remotes/origin/${_target_branch}"
+        runuser -u dev -- git -C /workspace config "branch.${_target_branch}.remote" origin
+        runuser -u dev -- git -C /workspace config "branch.${_target_branch}.merge" "refs/heads/${_target_branch}"
+        runuser -u dev -- git -C /workspace config --get-all remote.origin.fetch 2>/dev/null | grep -qxF -- "$_fetch_spec" \
+            || runuser -u dev -- git -C /workspace config --add remote.origin.fetch "$_fetch_spec"
+        # Until the first sync pushes the branch, let it count as up to date.
+        runuser -u dev -- git -C /workspace rev-parse -q --verify "refs/remotes/origin/${_target_branch}" &>/dev/null \
+            || runuser -u dev -- git -C /workspace update-ref "refs/remotes/origin/${_target_branch}" "$_target_branch" 2>/dev/null || true
+    fi
 fi
 
 # ── MCP server discovery (inject host IDE tools into container) ─────────────
