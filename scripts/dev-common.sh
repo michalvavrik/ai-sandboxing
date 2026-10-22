@@ -869,6 +869,10 @@ _dev_detect_template_from_cwd() {
         if [[ -n "$_dev_src_dir" && "$_dev_src_dir" != /* ]]; then
             _dev_src_dir="${DEV_SOURCES_DIR}/${_dev_src_dir}"
         fi
+        # Compare resolved paths: DEV_SOURCES_DIR may go through a symlink.
+        if [[ -n "$_dev_src_dir" ]]; then
+            _dev_src_dir=$(cd "$_dev_src_dir" 2>/dev/null && pwd -P) || _dev_src_dir=""
+        fi
         if [[ -n "$_dev_src_dir" && ("$_dev_cwd" == "$_dev_src_dir" || "$_dev_cwd" == "$_dev_src_dir"/*) ]]; then
             echo "${_dev_line%%|*}"
             return 0
@@ -1185,4 +1189,98 @@ _dev_resolve_src_dir() {
         return 1
     fi
     echo "$_dev_src_dir"
+}
+
+# Source directory a container is bound to: its project's checkout, or "" when
+# the project has none (DEFAULT template, or the directory is not there).
+_dev_container_src_dir() {
+    local _dev_tkey
+    _dev_tkey=$(_dev_container_template_key "$1")
+    [[ -n "$_dev_tkey" ]] || return 0
+    _dev_resolve_src_dir "$_dev_tkey" 2>/dev/null || true
+}
+
+# Containers of project <org/repo>, one per line.
+_dev_project_containers() {
+    local _dev_tkey="$1" _dev_c
+    while read -r _dev_c; do
+        [[ -n "$_dev_c" && "$(_dev_container_template_key "$_dev_c")" == "$_dev_tkey" ]] && echo "$_dev_c"
+    done < <(podman ps -a --filter="label=${DEV_LABEL}" --format '{{.Names}}' 2>/dev/null)
+    return 0
+}
+
+# Succeeds when the current directory is inside the source directory container
+# <name> is bound to (or it is bound to none); otherwise explains on stderr.
+_dev_check_container_cwd() {
+    local _dev_name="$1" _dev_src _dev_cwd
+    _dev_src=$(_dev_container_src_dir "$_dev_name")
+    [[ -n "$_dev_src" ]] || return 0
+    _dev_src=$(cd "$_dev_src" 2>/dev/null && pwd -P) || return 0
+    _dev_cwd="$(pwd -P)"
+    [[ "$_dev_cwd" == "$_dev_src" || "$_dev_cwd" == "$_dev_src"/* ]] && return 0
+    echo "Error: container '${_dev_name}' belongs to $(_dev_container_template_key "$_dev_name") — run this inside ${_dev_src}" >&2
+    return 1
+}
+
+# Container for a command that works in the project's source directory (dev
+# see, dev show, dev merge, dev squash). Those change the checkout there, so
+# they run only inside that directory and only for containers of its project.
+#   <name>      container named on the command line ("" if none)
+#   <fallback>  optional, tried before the project's only container (dev show:
+#               the container the current branch maps to)
+# Without a name: the remembered container (DEV_LAST_CONTAINER) when it belongs
+# to the current directory's project, else <fallback> when it does, else the
+# project's only container. A container whose project has no source directory
+# is bound to no directory and is accepted anywhere.
+_dev_resolve_project_container() {
+    local _dev_name="${1:-}" _dev_fallback="${2:-}" _dev_tkey _dev_last _dev_c _dev_all=()
+
+    if [[ -n "$_dev_name" ]]; then
+        if ! _dev_container_exists "$_dev_name"; then
+            echo "Error: container '${_dev_name}' does not exist" >&2
+            return 1
+        fi
+        _dev_check_container_cwd "$_dev_name" || return 1
+        _dev_remember_container "$_dev_name"
+        echo "$_dev_name"
+        return 0
+    fi
+
+    _dev_last="${DEV_LAST_CONTAINER:-}"
+    [[ -n "$_dev_last" ]] && ! _dev_container_exists "$_dev_last" && _dev_last=""
+    for _dev_c in "$_dev_last" "$_dev_fallback"; do
+        if [[ -n "$_dev_c" ]] && _dev_container_exists "$_dev_c" && _dev_check_container_cwd "$_dev_c" 2>/dev/null; then
+            _dev_remember_container "$_dev_c"
+            echo "$_dev_c"
+            return 0
+        fi
+    done
+
+    _dev_tkey=$(_dev_detect_template_from_cwd) || _dev_tkey=""
+    if [[ -z "$_dev_tkey" ]]; then
+        echo "Error: not inside a project's source directory (see configs/project-templates.conf)" >&2
+        if [[ -n "$_dev_last" ]]; then
+            echo "The remembered container '${_dev_last}' belongs to $(_dev_container_template_key "$_dev_last"): run this inside $(_dev_container_src_dir "$_dev_last")" >&2
+        fi
+        return 1
+    fi
+    mapfile -t _dev_all < <(_dev_project_containers "$_dev_tkey")
+    case ${#_dev_all[@]} in
+        0)
+            echo "Error: no container for ${_dev_tkey} (the current directory's project)" >&2
+            return 1
+            ;;
+        1)
+            _dev_name="${_dev_all[0]}"
+            if [[ -n "$_dev_last" ]]; then
+                echo "Note: using ${_dev_name}, the only ${_dev_tkey} container (the remembered ${_dev_last} belongs to $(_dev_container_template_key "$_dev_last"))" >&2
+            fi
+            ;;
+        *)
+            echo "Error: ${_dev_tkey} has several containers: ${_dev_all[*]} — name one, or 'dev use <name>'" >&2
+            return 1
+            ;;
+    esac
+    _dev_remember_container "$_dev_name"
+    echo "$_dev_name"
 }

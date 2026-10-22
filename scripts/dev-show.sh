@@ -7,35 +7,20 @@
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
-_devshow_name="${1:-}"
-
 # ── Resolve container name ────────────────────────────────────────────────────
-if [[ -z "$_devshow_name" ]]; then
-    _devshow_name=$(_dev_resolve_name "" 2>/dev/null) || true
-fi
-
-if [[ -z "$_devshow_name" ]] && git rev-parse --is-inside-work-tree &>/dev/null; then
-    _devshow_tkey=$(_dev_detect_template_from_cwd 2>/dev/null) || true
-    if [[ -n "$_devshow_tkey" ]]; then
-        _devshow_cur=$(git branch --show-current 2>/dev/null) || true
-        if [[ -n "$_devshow_cur" ]]; then
-            _devshow_name=$(_dev_branch_to_container_name "$_devshow_cur" "${_devshow_tkey#*/}")
-        fi
+# Only inside the project's source directory, only its containers. Without a
+# name: the remembered container, else the one the current branch maps to
+# (wip/<f> -> <repo>-<f>), else the project's only container.
+_devshow_hint=""
+if [[ -z "${1:-}" ]]; then
+    _devshow_tkey=$(_dev_detect_template_from_cwd 2>/dev/null) || _devshow_tkey=""
+    _devshow_cur=$(git branch --show-current 2>/dev/null) || _devshow_cur=""
+    if [[ -n "$_devshow_tkey" && -n "$_devshow_cur" ]]; then
+        _devshow_hint=$(_dev_branch_to_container_name "$_devshow_cur" "${_devshow_tkey#*/}")
     fi
 fi
-
-if [[ -z "$_devshow_name" ]]; then
-    echo "Error: no container specified and could not determine from branch." >&2
-    echo "Use 'dev use <name>' first or provide a container name." >&2
-    exit 1
-fi
-
+_devshow_name=$(_dev_resolve_project_container "${1:-}" "$_devshow_hint")
 readonly _devshow_name
-
-if ! _dev_container_exists "$_devshow_name"; then
-    echo "Error: container '${_devshow_name}' does not exist" >&2
-    exit 1
-fi
 
 _devshow_template_key=$(_dev_container_template_key "$_devshow_name")
 if [[ -z "$_devshow_template_key" ]]; then

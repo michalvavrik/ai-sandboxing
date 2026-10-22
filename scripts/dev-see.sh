@@ -24,13 +24,9 @@ for _devsee_arg in "$@"; do
     esac
 done
 
-_devsee_name=$(_dev_resolve_name "$_devsee_name_arg")
+# Only inside the project's source directory, only its containers.
+_devsee_name=$(_dev_resolve_project_container "$_devsee_name_arg")
 readonly _devsee_name
-
-if ! _dev_container_exists "$_devsee_name"; then
-    echo "Error: container '${_devsee_name}' does not exist" >&2
-    exit 1
-fi
 
 _devsee_template_key=$(_dev_container_template_key "$_devsee_name")
 _devsee_repo="${_devsee_template_key#*/}"

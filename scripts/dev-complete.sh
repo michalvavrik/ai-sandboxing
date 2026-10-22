@@ -29,6 +29,17 @@ _comp_emit() { local _w; for _w in "$@"; do printf '%s\n' "$_w"; done; }
 _comp_values() { local _p="$1" _w; shift; for _w in "$@"; do printf '%s%s\n' "$_p" "$_w"; done; }
 _comp_containers() { podman ps -a --filter="label=${DEV_LABEL}" --format '{{.Names}}' 2>/dev/null; }
 
+# Containers of the current directory's project (dev see/show/merge/squash only
+# accept those); every container when not inside a project.
+_comp_project_containers() {
+    local _tkey
+    if _tkey=$(_dev_detect_template_from_cwd 2>/dev/null) && [[ -n "$_tkey" ]]; then
+        _dev_project_containers "$_tkey"
+    else
+        _comp_containers
+    fi
+}
+
 # Remote path listing inside the current container (dev cpout, dev cp --to).
 _comp_remote_paths() {
     local _name _prefix="/workspace/"
@@ -89,13 +100,16 @@ case "$_comp_cmd" in
     new)
         $_comp_is_opt && _comp_emit "--auth-method="
         ;;
-    enter|see|squash|rebase|use|show)
+    enter|rebase|use)
         $_comp_is_opt || _comp_containers
+        ;;
+    see|show|squash)
+        $_comp_is_opt || _comp_project_containers
         ;;
     merge)
         if [[ "$_comp_prev" == "-m" ]]; then exit 0
         elif $_comp_is_opt; then _comp_emit "-m"
-        else _comp_containers
+        else _comp_project_containers
         fi
         ;;
     recreate)

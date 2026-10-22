@@ -54,13 +54,9 @@ if [[ "$_devmerge_mode" == "squash" && -n "$_devmerge_message" ]]; then
     exit 1
 fi
 
-_devmerge_name=$(_dev_resolve_name "$_devmerge_name_arg")
+# Only inside the project's source directory, only its containers.
+_devmerge_name=$(_dev_resolve_project_container "$_devmerge_name_arg")
 readonly _devmerge_name
-
-if ! _dev_container_exists "$_devmerge_name"; then
-    echo "Error: container '${_devmerge_name}' does not exist" >&2
-    exit 1
-fi
 
 _devmerge_template_key=$(_dev_container_template_key "$_devmerge_name")
 if [[ -z "$_devmerge_template_key" ]]; then

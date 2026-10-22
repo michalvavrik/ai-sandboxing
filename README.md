@@ -143,6 +143,8 @@ The current container is remembered per terminal: whatever a `dev` command worke
 Use `dev use <name>` to set the current container from a different terminal.
 When nothing is remembered and multiple containers exist, commands resolve by cwd: `cd ~/sources/quarkus && dev see` picks the quarkus container if exactly one matches.
 
+`dev see`, `dev show`, `dev merge` and `dev squash` change the checkout of the project's source directory, so they only run inside it (`~/sources/quarkus` for quarkus containers) and only for that project's containers: a container named on the command line or the remembered one is refused when it belongs to another project. Without a name they take the remembered container if it is the project's, else (`dev show`) the container the current branch maps to, else the project's only container — with two keycloak containers and one quarkus container, `cd ~/sources/quarkus && dev see` needs no name. Tab completion offers only the project's containers there. Containers of a project without a source directory are not bound to any directory.
+
 ## Development flow
 
 The flow is always the same four commands; nothing rebases, nothing merges upstream, nothing pushes to GitHub on your behalf:
@@ -299,7 +301,7 @@ dev merge                  # asks for the message; checks out in-review/my-featu
 git push -u michalvavrik in-review/my-feature
 ```
 
-`dev merge` / `dev squash` work from any directory — they resolve the source directory from container metadata, like `dev show`. `dev-auto/` branches from `dev see` reuse the original container name when passed to `dev .`. Before `dev see` or `dev show` replaces a branch, its state is backed up to a timestamped branch. All agent branches are cleaned up by `dev delete`.
+`dev see` / `dev show` / `dev merge` / `dev squash` only run inside the project's source directory (see [Usage](#usage)). `dev-auto/` branches from `dev see` reuse the original container name when passed to `dev .`. Before `dev see` or `dev show` replaces a branch, its state is backed up to a timestamped branch. All agent branches are cleaned up by `dev delete`.
 
 Works with PRs — a `dev <pr-url>` container of your own PR targets the PR's `in-review/*` branch (fetched to the host if missing):
 
