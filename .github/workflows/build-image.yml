@@ -10,6 +10,7 @@ on:
       - 'entrypoint.sh'
       - 'scripts/dev-git-sanitize.sh'
       - 'scripts/dev-auto-backup.sh'
+      - 'scripts/dev-workspace-sync.sh'
       - '*.c'
   workflow_dispatch: {}
 

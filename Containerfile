@@ -128,7 +128,7 @@ RUN git clone --depth 1 --single-branch --branch main \
 USER root
 
 # ── Entrypoint (+ the sanitizer it runs after checkouts, + the auto-backup loop)
-COPY --chmod=755 entrypoint.sh scripts/dev-git-sanitize.sh scripts/dev-auto-backup.sh /opt/dev/
+COPY --chmod=755 entrypoint.sh scripts/dev-git-sanitize.sh scripts/dev-auto-backup.sh scripts/dev-workspace-sync.sh /opt/dev/
 ENTRYPOINT ["/opt/dev/entrypoint.sh"]
 
 # ── Runtime defaults ─────────────────────────────────────────────────────────

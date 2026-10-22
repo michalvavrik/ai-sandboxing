@@ -791,6 +791,11 @@ _dev_ensure_running() {
 _dev_stop_if_was_stopped() {
     local _dev_name="$1"
     if [[ "$_DEV_WAS_STOPPED" == true ]]; then
+        # `podman stop` ends in a SIGKILL of the microVM (its PID 1 ignores
+        # SIGTERM), which throws away whatever the guest has not flushed to the
+        # bounded disk yet — such as the git files a dev command just wrote.
+        # Flush first; a plain `sync` needs no privileges.
+        _dev_ssh_cmd "$_dev_name" sync </dev/null 2>/dev/null || true
         podman stop "$_dev_name" >/dev/null
     fi
 }

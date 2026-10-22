@@ -77,6 +77,13 @@ export DOCKER_HOST=unix:///run/user/1000/podman/podman.sock
 export TESTCONTAINERS_RYUK_DISABLED=true
 export HISTFILE=/dev/null
 export CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS=true
+# Claude Code's critical-path removal check prompts even in bypass mode and
+# denies after a timeout. Nothing in this VM can hurt the host, so relax the
+# two sub-checks that have a switch: rm inside sh/bash -c scripts and rm of a
+# command-substitution target. Removals of /, ~, top-level directories or
+# variable targets are still checked — there is no switch for those.
+export CLAUDE_CODE_DISABLE_INLINE_SHELL_RM_PROMPT=1
+export CLAUDE_CODE_DISABLE_SUBSTITUTION_RM_PROMPT=1
 if ! infocmp "\${TERM:-dumb}" &>/dev/null 2>&1; then export TERM=xterm-256color; fi
 DEVENV
 
@@ -381,12 +388,6 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
         else
             ln -s "/opt/workspace/${_repo}" /workspace
         fi
-        runuser -u dev -- git -C /workspace remote set-url origin \
-            "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git" 2>/dev/null \
-            || runuser -u dev -- git -C /workspace remote add origin \
-            "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git"
-        runuser -u dev -- git -C /workspace remote add upstream \
-            "https://github.com/${_org}/${_repo}.git" 2>/dev/null || true
 
     # Set up workspace from host source or GitHub (no pre-baked repo available)
     elif [ ! -d /workspace/.git ]; then
@@ -424,12 +425,23 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
                     "https://github.com/${_org}/${_repo}.git" /workspace
             fi
         fi
-        runuser -u dev -- git -C /workspace remote set-url origin \
-            "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git" 2>/dev/null \
-            || runuser -u dev -- git -C /workspace remote add origin \
-            "http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git"
+    fi
+
+    # Git setup of the workspace — never fatal. An unclean stop (podman stop
+    # ends in a SIGKILL of the microVM) can zero git files just written; the
+    # same repairs dev see runs fix what they can, and a workspace that is
+    # still unusable must not keep the container — and sshd — from starting.
+    _target_branch="dev-auto/$(hostname)/main"
+    runuser -u dev -- /opt/dev/dev-workspace-sync.sh --repair "$_target_branch" || true
+    if runuser -u dev -- git -C /workspace rev-parse --git-dir >/dev/null 2>&1; then
+        _origin_url="http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git"
+        runuser -u dev -- git -C /workspace remote set-url origin "$_origin_url" 2>/dev/null \
+            || runuser -u dev -- git -C /workspace remote add origin "$_origin_url" 2>/dev/null || true
         runuser -u dev -- git -C /workspace remote add upstream \
             "https://github.com/${_org}/${_repo}.git" 2>/dev/null || true
+    else
+        echo "WARNING: /workspace is not a usable git repository (damaged by an unclean stop?)." >&2
+        echo "         The container starts anyway; recover it from the host with 'dev show' or 'dev recreate'." >&2
     fi
 
     # Link host's full history as git alternates (avoids re-downloading objects)
@@ -514,8 +526,6 @@ AGENTSMD
         # Warm virtio-fs dentry cache for workspace + Claude Code binary (async)
         (runuser -u dev -- git -C /workspace status; cat /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe) &>/dev/null &
     fi
-
-    _target_branch="dev-auto/$(hostname)/main"
 
     # Commits fetched from GitHub are rewritten so that no commit message
     # references a GitHub issue or PR (see /opt/dev/dev-git-sanitize.sh): every

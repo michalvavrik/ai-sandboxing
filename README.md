@@ -519,6 +519,10 @@ It records progress to `/mnt/bounded/backup/{status,log}` on the bounded disk, w
 - `dev list` shows a `BACKUP` column — the age of the last loop run for running containers (`STALE`/`never` means the loop is not working).
 - `dev see` / `dev show` warn if a container that has been up a while has an inactive auto-backup.
 
+### Unclean stops
+
+`podman stop` ends in a SIGKILL of the microVM (its PID 1 ignores SIGTERM), and a hard stop throws away whatever the guest had not flushed to the bounded disk — git files written seconds earlier can come back zero-length. Two safeguards: a `dev` command that started a stopped container (`dev see`, `dev show`, `dev rebase`, ...) runs `sync` inside it before stopping it again, and at every start the entrypoint runs the same repairs as the sync behind `dev see` (`scripts/dev-workspace-sync.sh --repair`: zeroed `HEAD`, index, refs and objects, stale lock files; a zeroed branch ref is restored from its reflog). A workspace that is still unusable never prevents the container from starting — a warning is printed and sshd comes up, so `dev show` or `dev recreate` can restore it.
+
 If the whole mechanism fails and the container won't even start, the workspace still lives in the disk image's fuse-overlay upperdir (`~/.local/share/dev-sandbox-disks/<name>.img`, dir `ws-upper`) and can be recovered read-only with `debugfs`.
 
 ## Known issues
