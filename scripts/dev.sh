@@ -82,7 +82,7 @@ _dev_dispatch() {
             local _dev_review=false _dev_a
             for _dev_a in "$@"; do
                 case "$_dev_a" in
-                    --loop|--loop=*|--agent|--agent=*|--model|--model=*|--prompt|--append-to-prompt)
+                    --loop|--loop=*|--agent|--agent=*|--model|--model=*|--prompt|--prompt=*|--append-to-prompt|--append-to-prompt=*)
                         _dev_review=true ;;
                 esac
             done

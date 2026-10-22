@@ -25,8 +25,8 @@ _devreview_usage() {
     echo "                                  list: comma-separated bob|flash|pro|opus|fable"
     echo "                                  (gemini = flash, claude = opus, profiles may be"
     echo "                                  mixed in, e.g. --loop=normal,fable)"
-    echo '  --prompt "text"                 Replace agent-specific prompt (base kept)'
-    echo '  --append-to-prompt "text"       Append to default prompt'
+    echo '  --prompt "text"                 Replace agent-specific prompt (base kept); also --prompt="text"'
+    echo '  --append-to-prompt "text"       Append to the prompt (reviews and follow-ups); also --append-to-prompt="text"'
     echo "  -h, --help                      Show this help"
 }
 
@@ -46,11 +46,21 @@ while [[ $# -gt 0 ]]; do
         --model)   _devreview_model="${2:?'--model requires a value'}"; shift 2 ;;
         --loop)    _devreview_loop="normal"; shift ;;
         --loop=*)  _devreview_loop="${1#--loop=}"; [[ -n "$_devreview_loop" ]] || _devreview_loop="normal"; shift ;;
+        --prompt=*) _devreview_custom_prompt="${1#--prompt=}"; shift ;;
         --prompt)  _devreview_custom_prompt="${2:?'--prompt requires a value'}"; shift 2 ;;
+        --append-to-prompt=*) _devreview_append="${1#--append-to-prompt=}"; shift ;;
         --append-to-prompt) _devreview_append="${2:?'--append-to-prompt requires a value'}"; shift 2 ;;
         --help|-h) _devreview_usage; exit 0 ;;
+        # An unknown option must not become the follow-up question (the agent
+        # then gets "--foo=..." as its prompt — or nothing at all, since the
+        # CLIs read a leading "--" as an option).
+        -*) echo "dev review: unknown option '$1'" >&2; _devreview_usage >&2; exit 1 ;;
         *) _devreview_positional="$1"; shift ;;
     esac
+done
+for _devreview_v in "$_devreview_custom_prompt" "$_devreview_append"; do
+    [[ -n "${_devreview_v//[[:space:]]/}" || -z "$_devreview_v" ]] \
+        || { echo "dev review: --prompt / --append-to-prompt need a non-empty text" >&2; exit 1; }
 done
 
 # --model=flash|pro without --agent means the agy agent.
@@ -178,6 +188,10 @@ if [[ "$_devreview_mode" == "followup" && -n "$_devreview_loop" ]]; then
     echo "Error: --loop cannot be used with a follow-up question (use --agent to pick whose session to continue)" >&2
     exit 1
 fi
+if [[ "$_devreview_mode" == "followup" && -n "$_devreview_custom_prompt" ]]; then
+    echo "Error: --prompt replaces the review prompt; a follow-up has none — put everything in the question" >&2
+    exit 1
+fi
 
 _dev_ensure_running "$_devreview_name"
 
@@ -292,7 +306,9 @@ _devreview_build_prompt() {
     local _agent_prompt _prompt _loop_text _loop_desc="" _self
 
     if [[ "$_devreview_mode" == "followup" ]]; then
-        printf '%s\n' "$_devreview_positional"
+        printf '%s\n' "${_devreview_positional}${_devreview_append:+
+
+${_devreview_append}}"
         return 0
     fi
 
