@@ -22,7 +22,11 @@ readonly DEV_DEFAULT_DISK_GIB=15
 readonly DEV_DEFAULT_PROFILES="java"
 readonly DEV_DISK_DIR="${HOME}/.local/share/dev-sandbox-disks"
 readonly DEV_PROXY_BASE_PORT=9222
-readonly DEV_PROXY_PORT_COUNT="${DEV_PROXY_PORTS:-5}"
+# Base port + container slots (DEV_PROXY_PORTS in config.local; default 9 =
+# 8 containers). `dev install` rejects the whole range from the network — re-run
+# it after raising the number: _dev_assign_proxy_port refuses ports the host
+# firewall does not cover.
+readonly DEV_PROXY_PORT_COUNT="${DEV_PROXY_PORTS:-9}"
 readonly DEV_CLAUDE_TOKEN_FILE="${DEV_KEYS_DIR}/claude-oauth-token"
 
 _dev_has_profile() {
@@ -128,6 +132,29 @@ _dev_proxy_reload() {
     fi
 }
 
+# The proxy listens on 0.0.0.0, so a container port is only safe while the
+# host firewall rejects it from the network (the rich rules `dev install`
+# writes for the whole port range, IPv4 and IPv6). Succeeds when the runtime
+# rules cover <port>; fails closed when firewall-cmd is missing or unreadable.
+_dev_port_firewalled() {
+    local _dev_port="$1" _dev_rules _dev_fam _dev_ok _dev_line _dev_lo _dev_hi
+    _dev_rules=$(firewall-cmd --list-rich-rules 2>/dev/null) || return 1
+    for _dev_fam in ipv4 ipv6; do
+        _dev_ok=false
+        while read -r _dev_line; do
+            [[ "$_dev_line" == *"family=\"${_dev_fam}\""* && "$_dev_line" == *'protocol="tcp"'* && "$_dev_line" == *reject* ]] || continue
+            [[ "$_dev_line" =~ port\ port=\"([0-9]+)(-([0-9]+))?\" ]] || continue
+            _dev_lo="${BASH_REMATCH[1]}"
+            _dev_hi="${BASH_REMATCH[3]:-$_dev_lo}"
+            if (( _dev_port >= _dev_lo && _dev_port <= _dev_hi )); then
+                _dev_ok=true
+                break
+            fi
+        done <<< "$_dev_rules"
+        [[ "$_dev_ok" == true ]] || return 1
+    done
+}
+
 _dev_assign_proxy_port() {
     local _dev_container="$1"
     local _dev_auth="${2:-vertex}"
@@ -154,6 +181,11 @@ _dev_assign_proxy_port() {
     local _dev_port
     for (( _dev_port = DEV_PROXY_BASE_PORT + 1; _dev_port < DEV_PROXY_BASE_PORT + DEV_PROXY_PORT_COUNT; _dev_port++ )); do
         if ! echo "$_dev_mapping" | jq -e --arg p "$_dev_port" 'has($p)' &>/dev/null; then
+            if ! _dev_port_firewalled "$_dev_port"; then
+                echo "Error: the host firewall does not reject proxy port ${_dev_port} from the network — run 'dev install' first" >&2
+                echo "       (it covers ${DEV_PROXY_BASE_PORT}-$(( DEV_PROXY_BASE_PORT + DEV_PROXY_PORT_COUNT - 1 )) for DEV_PROXY_PORTS=${DEV_PROXY_PORT_COUNT})" >&2
+                return 1
+            fi
             echo "$_dev_mapping" | jq --arg p "$_dev_port" \
                 --arg c "$_dev_container" \
                 --arg b "dev-auto/${_dev_container}" \

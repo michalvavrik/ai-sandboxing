@@ -217,9 +217,22 @@ fi
 # --------------------------------------------------------------------------
 _dev_step_header 5 10 "Firewall rule for proxy port"
 
-_DEV_FW_PORT_END=$((9222 + ${DEV_PROXY_PORTS:-5} - 1))
-readonly _DEV_FW_RULE_V4="rule priority=\"-1\" family=\"ipv4\" port port=\"9222-${_DEV_FW_PORT_END}\" protocol=\"tcp\" reject"
-readonly _DEV_FW_RULE_V6="rule priority=\"-1\" family=\"ipv6\" port port=\"9222-${_DEV_FW_PORT_END}\" protocol=\"tcp\" reject"
+# The range is defined once, in dev-common.sh (DEV_PROXY_PORTS from config.local).
+read -r _DEV_FW_PORT_START _DEV_FW_PORT_END < <(
+    source "${_DEV_BASE_DIR}/scripts/dev-common.sh" \
+        && echo "$DEV_PROXY_BASE_PORT $(( DEV_PROXY_BASE_PORT + DEV_PROXY_PORT_COUNT - 1 ))"
+) || { echo "Error: could not read the proxy port range from scripts/dev-common.sh" >&2; exit 1; }
+readonly _DEV_FW_RULE_V4="rule priority=\"-1\" family=\"ipv4\" port port=\"${_DEV_FW_PORT_START}-${_DEV_FW_PORT_END}\" protocol=\"tcp\" reject"
+readonly _DEV_FW_RULE_V6="rule priority=\"-1\" family=\"ipv6\" port port=\"${_DEV_FW_PORT_START}-${_DEV_FW_PORT_END}\" protocol=\"tcp\" reject"
+
+# Rules of an earlier range (DEV_PROXY_PORTS changed) are replaced, not kept.
+while read -r _dev_fw_old; do
+    [[ "$_dev_fw_old" =~ port\ port=\"([0-9]+-[0-9]+)\" ]] || continue
+    [[ "${BASH_REMATCH[1]}" != "${_DEV_FW_PORT_START}-${_DEV_FW_PORT_END}" ]] || continue
+    echo "Removing rule of a previous port range: ${_dev_fw_old}"
+    sudo firewall-cmd --remove-rich-rule="$_dev_fw_old" --permanent
+done < <(firewall-cmd --list-rich-rules --permanent 2>/dev/null \
+    | grep -F "port port=\"${_DEV_FW_PORT_START}-" | grep -F ' reject')
 
 for _dev_fw_rule in "$_DEV_FW_RULE_V4" "$_DEV_FW_RULE_V6"; do
     if ! firewall-cmd --query-rich-rule="$_dev_fw_rule" --permanent &>/dev/null; then

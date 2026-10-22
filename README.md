@@ -59,7 +59,7 @@ All machine-specific values live in `config.local` (gitignored). The install scr
 | `DEV_GHCR_USER`        | GitHub username for GHCR image pulls and branch backups |
 | `DEV_IMAGE`            | Container image to pull and run               |
 | `DEV_SOURCES_DIR`      | Parent directory for project source checkouts |
-| `DEV_PROXY_PORTS`      | Number of proxy ports (default 5, = 4 container slots). Re-run `dev install` after changing to update firewall rules |
+| `DEV_PROXY_PORTS`      | Number of proxy ports (default 9, = 8 container slots). Re-run `dev install` after changing it: it rewrites the firewall rule for the range, and a port the host firewall does not reject from the network is never assigned to a container |
 | `DEV_AUTH_METHOD`      | Claude Code auth for new containers: `api-key` (default, Claude subscription) or `vertex`. See [Claude auth and models](#claude-auth-and-models) |
 | `DEV_SUBSCRIPTION_MODEL` | Default Claude model in `api-key` containers (default `opus` = latest Opus) |
 | `DEV_VERTEX_OPUS_MODEL`, `DEV_VERTEX_FABLE_MODEL` | What `opus` / `fable` mean in `vertex` containers (opus defaults to the model in `configs/claude-settings.json`; fable has no default, so Fable is skipped on Vertex unless set) |
