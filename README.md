@@ -370,7 +370,7 @@ Agents are instructed (in the generated `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` 
 
 ### Review loop (`--loop`)
 
-`--loop` runs several reviewers one after another in the same container. Every reviewer first does its own independent review, then fact-checks each earlier review of the loop (CONFIRMED / REJECTED / UNVERIFIED per finding, with evidence) and writes both into `/workspace/.reviews/<agent>/<timestamp>-<model>.md`. The last reviewer therefore verifies everything before it.
+`--loop` runs several reviewers one after another in the same container. Every reviewer first does its own independent review, then fact-checks each earlier review of the loop (CONFIRMED / REJECTED / UNVERIFIED per finding, with evidence) and writes both into `/workspace/.reviews/<agent>/<timestamp>-<model>.md`. The last reviewer therefore verifies everything before it. Every loop review — the file and the answer printed in the terminal — ends with a `Verified findings` section: all findings that reviewer stands behind after fact-checking, its own and the confirmed ones of earlier reviewers, merged and ordered by severity. The last reviewer's list is the result of the loop.
 
 ```bash
 dev https://github.com/keycloak/keycloak/pull/50801 --loop      # set up container + normal loop

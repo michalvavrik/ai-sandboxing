@@ -25,6 +25,11 @@ dev() {
 _dev_completion() {
     local IFS=$' \t\n'
     local raw_cur="${COMP_WORDS[COMP_CWORD]}"
+    # Readline completes the text after the last word break. When the word
+    # bash reports as current is that break itself ("--loop=" puts a bare "="
+    # there), the text is empty: a candidate keeping the "=" would be inserted
+    # after it ("--loop==").
+    [[ "$raw_cur" == [=:] ]] && raw_cur=""
     local words=() cword=-1 i w
     for ((i = 0; i < ${#COMP_WORDS[@]}; i++)); do
         w="${COMP_WORDS[i]}"

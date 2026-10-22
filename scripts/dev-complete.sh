@@ -58,11 +58,18 @@ case "$_comp_cur" in
     --agent=*)       _comp_values "--agent=" $_COMP_AGENTS; exit 0 ;;
     --model=*)       _comp_values "--model=" $_COMP_MODELS; exit 0 ;;
     --loop=*)
-        # Comma-separated list: complete the last entry, keep what was typed.
+        # Comma-separated list: complete the last entry, keep what was typed,
+        # and do not offer what the list already has.
         _comp_list="${_comp_cur#--loop=}"
         _comp_pfx="--loop="
-        [[ "$_comp_list" == *,* ]] && _comp_pfx="--loop=${_comp_list%,*},"
-        _comp_values "$_comp_pfx" $_COMP_LOOPS
+        _comp_have=","
+        if [[ "$_comp_list" == *,* ]]; then
+            _comp_pfx="--loop=${_comp_list%,*},"
+            _comp_have=",${_comp_list%,*},"
+        fi
+        for _comp_w in $_COMP_LOOPS; do
+            [[ "$_comp_have" == *",${_comp_w},"* ]] || printf '%s%s\n' "$_comp_pfx" "$_comp_w"
+        done
         exit 0
         ;;
 esac
