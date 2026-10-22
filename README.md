@@ -516,7 +516,7 @@ Every 30 seconds, a background process (`scripts/dev-auto-backup.sh`, launched b
 
 It records progress to `/mnt/bounded/backup/{status,log}` on the bounded disk, which the host reads even when the container is stopped:
 
-- `dev list` shows a `BACKUP` column — the age of the last loop run for running containers (`STALE`/`never` means the loop is not working).
+- `dev list` shows a `BACKUP` column — the age of the last loop run for running containers (`STALE`/`never` means the loop is not working, `?` that the container could not be reached over SSH).
 - `dev see` / `dev show` warn if a container that has been up a while has an inactive auto-backup.
 
 ### Unclean stops

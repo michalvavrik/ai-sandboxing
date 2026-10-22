@@ -28,6 +28,12 @@ readonly DEV_PROXY_BASE_PORT=9222
 # firewall does not cover.
 readonly DEV_PROXY_PORT_COUNT="${DEV_PROXY_PORTS:-9}"
 readonly DEV_CLAUDE_TOKEN_FILE="${DEV_KEYS_DIR}/claude-oauth-token"
+# SSH to a container without its `Host <name>` entry (the same parameters
+# _dev_update_ssh_config writes there): the entry only exists once a dev command
+# has used the container since boot, and `dev list` reads every running
+# container without ever writing one. Usage: ssh "${DEV_SSH_DIRECT_OPTS[@]}" -p <port> dev@127.0.0.1 ...
+readonly -a DEV_SSH_DIRECT_OPTS=(-o BatchMode=yes -o ConnectTimeout=5 -o StrictHostKeyChecking=no
+    -o UserKnownHostsFile=/dev/null -o IdentitiesOnly=yes -i "${DEV_KEYS_DIR}/id_ed25519_container")
 
 _dev_has_profile() {
     [[ ",${1}," == *",${2},"* ]]
@@ -63,17 +69,19 @@ _dev_fmt_backup_age() {
 # read the stopped container's disk image read-only via debugfs (no mount/root).
 # Fails when SSH does; a missing status file is not a failure (no output).
 # <ssh-port>: the container's SSH port as `podman ps` reported it (dev list) —
-# the container is then known to be running and podman is not asked again. It
-# also beats the port in the SSH config entry, which is only refreshed when a
-# dev command uses the container. BatchMode: never prompt (parallel callers).
+# the container is then known to be running and podman is not asked again.
+# The connection does not use the container's SSH config entry (see
+# DEV_SSH_DIRECT_OPTS): `dev list` never writes one, and after a reboot or a
+# `dev enter` that started the container none exists, which showed as "?".
 # </dev/null: ssh would otherwise swallow the caller's stdin (dev list's loop).
 _dev_backup_status_raw() {
     local _name="$1" _port="${2:-}" _img="${DEV_DISK_DIR}/${_name}.img"
     local _cmd='cat /mnt/bounded/backup/status 2>/dev/null || true'
+    if [[ -z "$_port" && "$(podman inspect "$_name" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]]; then
+        _port=$(_dev_ssh_port "$_name")
+    fi
     if [[ -n "$_port" ]]; then
-        ssh -q -o BatchMode=yes -p "$_port" "$_name" "$_cmd" </dev/null 2>/dev/null
-    elif [[ "$(podman inspect "$_name" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]]; then
-        _dev_ssh_cmd "$_name" "$_cmd" </dev/null 2>/dev/null
+        ssh -q "${DEV_SSH_DIRECT_OPTS[@]}" -p "$_port" dev@127.0.0.1 "$_cmd" </dev/null 2>/dev/null
     elif command -v debugfs >/dev/null 2>&1 && [[ -f "$_img" ]]; then
         debugfs -R "cat /backup/status" "$_img" 2>/dev/null
     fi
@@ -840,7 +848,7 @@ _dev_update_ssh_config() {
 
     _dev_remove_ssh_config "$_dev_name"
 
-    # Write new entry
+    # Write new entry (the same parameters as DEV_SSH_DIRECT_OPTS)
     cat >> "$_dev_ssh_conf" <<SSHENTRY
 # dev-sandbox: ${_dev_name}
 Host ${_dev_name}
