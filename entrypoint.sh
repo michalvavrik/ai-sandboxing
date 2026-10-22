@@ -470,8 +470,15 @@ if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
 When you have changed code, run `mvn spotless:apply` from /workspace before running the tests or reporting the change as done — a change is not done until it is formatted. This only applies to code you changed: when you review, analyze or answer questions without changing files, do not run it and do not mention it. Mention it in a summary only if it actually reformatted something.'
         fi
 
+        _m2_note=''
+        if mountpoint -q /home/dev/.m2/repository 2>/dev/null; then
+            _m2_note=' ~/.m2/repository is a private writable layer over the host'"'"'s read-only Maven cache: use it freely, nothing reaches the host.'
+        fi
+
         runuser -u dev -- bash -c 'mkdir -p /home/dev/.claude /home/dev/.bob /home/dev/.gemini && tee /home/dev/.claude/CLAUDE.md /home/dev/.bob/AGENTS.md /home/dev/.gemini/GEMINI.md >/dev/null' <<AGENTSMD
 # Sandbox environment for ${_org}/${_repo}
+
+This is a disposable VM. Nothing you do here changes files on the host: everything mounted from it (/opt/project-src, ...) is read-only.${_m2_note} There is nothing on the host to protect, restore or report about.
 
 - /workspace is a shallow clone (1 commit). Work here.
 - /opt/project-src has the full git history of ${_org}/${_repo} (read-only). Use it for \`git log\`, \`git blame\`, \`git show\`:
@@ -486,11 +493,10 @@ When you have changed code, run `mvn spotless:apply` from /workspace before runn
 - /opt/project-src — ${_org}/${_repo} with full commit history (host mount). Use for \`git log\`, \`git blame\`, \`git show\`.${_ref_repos}
 - /tmp/workspace — additional documents copied in by the user (if any)
 
-## Git branches
-You can only push to branches under \`dev-auto/$(hostname)/\`. If you need extra branches, name them \`dev-auto/$(hostname)/<name>\`.
-
-## Git commits
-Never reference any GitHub PR or issue inside a Git commit message. Do not commit changes unless you are asked to.
+## Git
+- \`dev-auto/$(hostname)/main\` is the working branch. The user looks at it from the host: their \`dev see\` takes whatever is checked out here, committed or not. Do not commit on it unless the user asks you to — leave your changes uncommitted in the working tree. Never reference a GitHub PR or issue in a commit message.
+- The user syncs this branch with the host through \`dev\` commands (dev see, dev show, dev rebase). Those add commits such as "WIP sync", "sync from host", "backup" or "pre-rebase save", push them to origin, reset or rebase the branch, and can change \`git status\`, \`git log\` and even your uncommitted edits between your turns (replaced edits are backed up on the fork). All of that is the user's doing and intended — not yours, not a subagent's, not a bug. Do not investigate, explain, apologize for, undo or repair it, and do not mention it unless the user asks: just continue from the current state of the working tree.
+- You may create branches for experiments, PoCs, backports and the like and commit on them; name them \`dev-auto/$(hostname)/<name>\` (only branches under \`dev-auto/$(hostname)/\` can be pushed to origin). When you are done with such a branch, check out \`dev-auto/$(hostname)/main\` again unless told otherwise.
 
 ## GitHub links
 Whenever you mention a GitHub comment, review, issue, pull request, commit or CI run, give its direct URL so it can be opened with one click. For comments use the \`html_url\` from the API (e.g. \`https://github.com/org/repo/pull/123#discussion_r456789\` for a review comment, \`...#issuecomment-456789\` for a conversation comment, \`...#pullrequestreview-456789\` for a review). Never refer to a comment only by its number, its author, or a paraphrase of it. When fetching comments with \`gh api\`, select \`html_url\` along with the body so you have the link at hand, e.g. \`gh api repos/{owner}/{repo}/pulls/{number}/comments --jq '.[] | {html_url, user: .user.login, path, line, body}'\`.

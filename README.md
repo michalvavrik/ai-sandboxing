@@ -364,7 +364,7 @@ Edit these files to improve prompts over time. `--prompt` replaces only the agen
 
 For interactive follow-up (when headless isn't enough): `dev enter` then `claude-resume` — it resumes the Claude session of the last `dev review` in that container (recorded by the review; falls back to the most recent Claude session in `/workspace`). Extra arguments are passed to `claude`, e.g. `claude-resume --model fable`. The session ID is also printed at the end of each review for `claude -r <session-id>`.
 
-Agents are instructed (in the generated `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` and in the review prompt) to always give the direct URL of any GitHub comment, review, issue, PR, commit or CI run they mention, never just a comment number or a paraphrase. Reviews must not change files or run formatters, and must not report housekeeping (the keycloak `spotless:apply` rule applies only to changes the agent made).
+Agents are instructed (in the generated `CLAUDE.md` / `AGENTS.md` / `GEMINI.md` and in the review prompt) to always give the direct URL of any GitHub comment, review, issue, PR, commit or CI run they mention, never just a comment number or a paraphrase. They are also told not to commit on `dev-auto/<container>/main` unless asked — their changes stay uncommitted for `dev see` to pick up; branches for experiments, PoCs or backports are fine — and that the commits, resets and rebases `dev see` / `dev show` / `dev rebase` make on that branch are the user's doing: not to be investigated, repaired or reported. Reviews must not change files or run formatters, and must not report housekeeping (the keycloak `spotless:apply` rule applies only to changes the agent made).
 
 ### Review loop (`--loop`)
 
