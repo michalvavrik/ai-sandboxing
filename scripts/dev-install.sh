@@ -39,6 +39,9 @@ DEV_IMAGE=""
 
 # Parent directory for project source checkouts (used by project-templates.conf)
 DEV_SOURCES_DIR="${HOME}/sources"
+
+# Parent directory of study projects (templates with the study profile; optional)
+DEV_EDUCATION_DIR="${HOME}/education"
 CONF
     echo "Created ${_DEV_CONFIG_FILE} with empty values."
     echo "Fill it in and re-run: $0"

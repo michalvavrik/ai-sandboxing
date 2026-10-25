@@ -13,6 +13,8 @@ for _devdel_arg in "$@"; do
             echo "synced to the host branch dev-auto/<name>/main, which is backed up to your fork"
             echo "(backup/<feature>/dev-auto/<timestamp>, kept ${DEV_BACKUP_MAX_AGE_DAYS} days) before it is deleted."
             echo "in-review/* and wip/* branches are not touched. --dont-sync skips the sync."
+            echo "A study container's workspace is saved to ${DEV_STUDY_SAVE_DIR}/<name>-<timestamp>-*.tar.gz"
+            echo "instead (kept ${DEV_BACKUP_MAX_AGE_DAYS} days); --dont-sync skips that too."
             exit 0
             ;;
         -*) echo "dev delete: unknown option '${_devdel_arg}'" >&2; exit 1 ;;
@@ -31,6 +33,23 @@ fi
 _devdel_template_key=$(_dev_container_template_key "$_devdel_name")
 _devdel_src_dir=""
 [[ -n "$_devdel_template_key" ]] && _devdel_src_dir=$(_dev_resolve_src_dir "$_devdel_template_key" 2>/dev/null) || true
+_devdel_study=false
+_dev_container_is_study "$_devdel_name" && _devdel_study=true
+
+# A study container's workspace exists nowhere else (no git branch): save it
+# to a tarball first, and do not delete when that fails (--dont-sync does).
+# dev recreate saves it itself.
+if [[ "$_devdel_study" == true && "$_devdel_sync" == true && "${DEV_SKIP_BRANCH_CLEANUP:-}" != "1" ]]; then
+    if _dev_ensure_running "$_devdel_name" && _devdel_saved=$(_dev_study_save_workspace "$_devdel_name"); then
+        echo "Saved the workspace to ${_devdel_saved} (kept ${DEV_BACKUP_MAX_AGE_DAYS} days)."
+        # What dev see fetched for review: in the tarball now.
+        rm -rf "${DEV_STUDY_SEE_DIR:?}/${_devdel_name}"
+    else
+        echo "Error: could not save the workspace of '${_devdel_name}' — not deleting it" >&2
+        echo "('dev delete --dont-sync ${_devdel_name}' deletes it without saving)" >&2
+        exit 1
+    fi
+fi
 
 # Save the workspace to the host branch dev-auto/<name>/main before deleting
 # (unless --dont-sync or recreate). It is backed up to your fork by the
@@ -53,8 +72,8 @@ if [[ "$_devdel_sync" == true && "${DEV_SKIP_BRANCH_CLEANUP:-}" != "1" && -n "$_
     fi
 fi
 
-# Delete the container's branches on the automation fork
-if [[ -n "$_devdel_template_key" ]]; then
+# Delete the container's branches on the automation fork (study containers have none)
+if [[ -n "$_devdel_template_key" && "$_devdel_study" != true ]]; then
     _devdel_repo="${_devdel_template_key#*/}"
     _devdel_remote=$(_dev_automation_remote_url "$_devdel_repo")
     _devdel_refs=$(GIT_SSH_COMMAND="$(_dev_git_ssh)" \

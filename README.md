@@ -59,6 +59,7 @@ All machine-specific values live in `config.local` (gitignored). The install scr
 | `DEV_GHCR_USER`        | GitHub username for GHCR image pulls and branch backups |
 | `DEV_IMAGE`            | Container image to pull and run               |
 | `DEV_SOURCES_DIR`      | Parent directory for project source checkouts |
+| `DEV_EDUCATION_DIR`    | Parent directory of [study projects](#study-projects) (optional, default `~/education`) |
 | `DEV_PROXY_PORTS`      | Number of proxy ports (default 9, = 8 container slots). Re-run `dev install` after changing it: it rewrites the firewall rule for the range, and a port the host firewall does not reject from the network is never assigned to a container |
 | `DEV_AUTH_METHOD`      | Claude Code auth for new containers: `api-key` (default, Claude subscription) or `vertex`. See [Claude auth and models](#claude-auth-and-models) |
 | `DEV_SUBSCRIPTION_MODEL` | Default Claude model in `api-key` containers (default `opus` = latest Opus) |
@@ -66,7 +67,7 @@ All machine-specific values live in `config.local` (gitignored). The install scr
 | `DEV_AGY_FLASH_MODEL`, `DEV_AGY_PRO_MODEL` | Pin the Antigravity models behind `flash` / `pro` (default: newest `*-flash-high` / `*-pro-high` from `agy models`) |
 | `DEV_LOOP_NORMAL`, `DEV_LOOP_BEST`, `DEV_LOOP_ALL` | Override the review loop profiles (comma-separated reviewer lists) |
 
-Project-specific source dirs in `configs/project-templates.conf` are relative to `DEV_SOURCES_DIR`.
+Project-specific source dirs in `configs/project-templates.conf` are relative to `DEV_SOURCES_DIR` (those of study projects to `DEV_EDUCATION_DIR`).
 
 ### Background sync
 
@@ -121,6 +122,9 @@ dev sync                   # pull + prune dead branches (host and automation for
 
 # From the current git project directory:
 cd ~/sources/keycloak && dev .   # detect template, push local HEAD to container
+
+# From a study directory (no git, see Study projects):
+cd ~/education/psychology && dev .   # create or enter container psychology
 
 # From a GitHub issue, PR, or branch URL:
 dev https://github.com/keycloak/keycloak/issues/50167
@@ -235,13 +239,14 @@ All three branch forms map to the same container and the same `dev-auto` working
 
 ### `dev sync`
 
-Superset of `dev pull`. Pulls images and sources, then prunes dead branches across all template projects:
+Superset of `dev pull`. Pulls images and sources, then prunes dead branches across all template projects, and old files of [study containers](#study-projects):
 
 1. **`dev-auto/<x>/*`** on the host — deleted when no container `<x>` exists
 2. **`wip/<x>`** — deleted when `in-review/<x>` exists or the branch had no commit for 20 days
 3. **`in-review/<x>`** — deleted when no open PR is associated (checked via `gh pr list`)
 4. **`backup/*/<timestamp>`** on your fork — deleted when timestamp is older than 20 days
 5. **`dev-auto/<x>/*`** on the automation fork — deleted when no container `<x>` exists; `dev-auto/<x>/backup/{see,show}/<timestamp>` of existing containers deleted after 20 days
+6. **Study files** — saved workspaces (`dev delete`, `dev recreate`) and the files of yours `dev merge` replaced, in `~/.local/share/dev-sandbox-saved/`, deleted after 20 days; a review copy in `~/.cache/dev-sandbox-see/<x>/` (`dev see`) deleted when no container `<x>` exists or no `dev see` refreshed it for 20 days
 
 Before any host branch deletion, the branch is backed up to `backup/<feature>/<type>/<timestamp>` on the `DEV_GHCR_USER` remote (your GitHub fork).
 
@@ -325,6 +330,31 @@ claude
 dev https://github.com/keycloak/keycloak/pull/50801
 ```
 
+## Study projects
+
+For material to learn from instead of code to change: a directory under `~/education` (`DEV_EDUCATION_DIR`) with books, notes, slides, past exams — no git, no GitHub. Each directory gets a template with the `study` profile, its `source_dir` relative to `DEV_EDUCATION_DIR`:
+
+```
+study/psychology|psychology|4096|4|10|study
+```
+
+```bash
+cd ~/education/psychology && dev .   # create or enter container psychology
+dev see                    # fetch what the agents made for review, list it
+dev merge                  # take the new files into ~/education/psychology
+dev merge notes/lecture-03.md   # also take a file that replaces one of yours (yours is backed up)
+```
+
+- **Your directory is the material, read-only.** It is mounted at `/workspace/psychology` as a live view, subdirectories and all: books and notes you add or edit on the host show up there, and nothing in the container can change them. Nothing is copied, so the size of the library does not matter; the disk cap only has to hold what the agents make. (Not a copy-on-write overlay like the git workspaces: fuse-overlayfs never shows files added to its lower directory after it has listed it, and reads lower files changed since at their old size.) Only the directory is mounted: a symlink in it that points outside (`books -> ~/Documents/books`) is dead in the VM — move or copy the files in.
+- **The rest of `/workspace` is what the agents make for you** — cards, Anki decks, printable sheets, summaries, practice questions. Their instructions (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md`) tell them to lay it out like your directory (a corrected version of one of your files goes to the same relative path), to keep scratch files out of it, and to tell you which files they created or changed. What `dev see` and `dev merge` show does not rely on that.
+- **`dev see` fetches it for review**: the agents' files (only regular files, read-only, at most what the container's disk holds) replace `~/.cache/dev-sandbox-see/<container>/` (one copy per container, never more; `dev delete` removes it, `dev sync` too once it is 20 days old), and are listed newest first against your directory — `A` new, `M` replaces a file of yours (same relative path, other content); files identical to yours are only counted. Open them there (Anki can import a deck from there, a PDF prints from there); compare a changed file with `diff -u ~/education/psychology/<path> ~/.cache/dev-sandbox-see/<container>/<path>`. Your directory is not touched.
+- **`dev merge [path...]` takes them into your directory**, from what the last `dev see` fetched (so only what you could look at), at the same relative paths (as `dev see` lists them, relative to `/workspace`; tab completion offers them). Without paths it takes only the new files and lists those it left out; a file that replaces one of yours is taken only when you name it or a directory it is in, and your versions are saved to `~/.local/share/dev-sandbox-saved/<container>-merge-<timestamp>-*.tar.gz` first (`dev sync` deletes them after 20 days). Nothing is ever deleted from your directory. `dev cpout <path>` still copies anything anywhere.
+- `dev show` has nothing to do (the material is live); `dev squash` and `dev rebase` refuse. Like for git projects, `dev see`, `dev show` and `dev merge` run only inside the study directory, for its containers.
+- **No git, no GitHub.** The container's git bridge refuses every repository, it has no auto-backup branch, and `dev sync` / `dev pull` skip study templates. So `dev delete` first saves the workspace (without the material) to `~/.local/share/dev-sandbox-saved/<name>-<timestamp>-*.tar.gz`, kept 20 days like the other backups (pruned by `dev sync`), and does not delete the container when that fails (`--dont-sync` skips the save). `dev recreate` saves the workspace the same way and unpacks it into the new container.
+- Your directory may be a git repository of its own (history of your notes, no remote needed); the container gets it read-only with the rest, dev never uses it.
+- Host files show up root-owned in the VM: a file only you can read (mode 600) is not readable by the agents.
+- More containers for one directory: `dev new psychology-exam` (the name prefix picks the template).
+
 ## Headless review
 
 Run an AI review without entering the container — output streams to your terminal:
@@ -400,7 +430,7 @@ The host proxy can reverse-proxy MCP SSE servers running on the host into contai
 `configs/project-templates.conf` maps `org/repo` to source dir, resources, disk caps, and profiles. Template detection (first match wins):
 
 1. **GitHub URL** — `dev https://github.com/keycloak/keycloak-client/pull/42` → exact `org/repo` from URL
-2. **`dev .`** — `cd ~/sources/keycloak && dev .` → matches template whose `source_dir` contains the cwd (requires non-DEFAULT match and a git branch)
+2. **`dev .`** — `cd ~/sources/keycloak && dev .` → matches template whose `source_dir` contains the cwd (requires non-DEFAULT match and a git branch; a [study template](#study-projects) needs no git)
 3. **cwd** — `cd ~/sources/keycloak-client && dev new fix` → matches template whose `source_dir` contains the cwd
 4. **Name heuristic** — `dev new keycloak-client-fix` → longest repo name matching the container name or its prefix
 5. **DEFAULT** — fallback when nothing matches
@@ -429,6 +459,7 @@ The `profiles` field in `project-templates.conf` is a comma-separated list that 
 | `java`  | Maven cache overlay from host `~/.m2/repository` |
 | `go`    | Sets GOPATH, GOBIN, adds `~/go/bin` to PATH |
 | `kind`  | Auto-creates a **rootful** Kind cluster + local registry (`localhost:5001`) on first start; 20 GiB podman storage. **Control-plane / manifest work only — in-cluster Service networking does not work (kernel limits), and it weakens in-VM isolation; see [the `kind` profile note](#the-kind-profile-weakens-in-vm-isolation).** |
+| `study` | Study project instead of a git project: the source dir (relative to `DEV_EDUCATION_DIR`) is mounted read-only at `/workspace/<name>`, no git, no GitHub. See [Study projects](#study-projects) |
 
 ## Keys
 
@@ -516,14 +547,14 @@ Every 30 seconds, a background process (`scripts/dev-auto-backup.sh`, launched b
 
 It records progress to `/mnt/bounded/backup/{status,log}` on the bounded disk, which the host reads even when the container is stopped:
 
-- `dev list` shows a `BACKUP` column — the age of the last loop run for running containers (`STALE`/`never` means the loop is not working, `?` that the container could not be reached over SSH).
+- `dev list` shows a `BACKUP` column — the age of the last loop run for running containers (`STALE`/`never` means the loop is not working, `?` that the container could not be reached over SSH; study containers have no auto-backup and show `-`).
 - `dev see` / `dev show` warn if a container that has been up a while has an inactive auto-backup.
 
 ### Unclean stops
 
 `podman stop` ends in a SIGKILL of the microVM (its PID 1 ignores SIGTERM), and a hard stop throws away whatever the guest had not flushed to the bounded disk — git files written seconds earlier can come back zero-length. Two safeguards: a `dev` command that started a stopped container (`dev see`, `dev show`, `dev rebase`, ...) runs `sync` inside it before stopping it again, and at every start the entrypoint runs the same repairs as the sync behind `dev see` (`scripts/dev-workspace-sync.sh --repair`: zeroed `HEAD`, index, refs and objects, stale lock files; a zeroed branch ref is restored from its reflog). A workspace that is still unusable never prevents the container from starting — a warning is printed and sshd comes up, so `dev show` or `dev recreate` can restore it.
 
-If the whole mechanism fails and the container won't even start, the workspace still lives in the disk image's fuse-overlay upperdir (`~/.local/share/dev-sandbox-disks/<name>.img`, dir `ws-upper`) and can be recovered read-only with `debugfs`.
+If the whole mechanism fails and the container won't even start, the workspace still lives in the disk image's fuse-overlay upperdir (`~/.local/share/dev-sandbox-disks/<name>.img`, dir `ws-upper`; dir `ws-study` for study containers) and can be recovered read-only with `debugfs`.
 
 ## Known issues
 

@@ -22,6 +22,12 @@ fi
 _devshow_name=$(_dev_resolve_project_container "${1:-}" "$_devshow_hint")
 readonly _devshow_name
 
+if _dev_container_is_study "$_devshow_name"; then
+    echo "Nothing to show: ${_devshow_name} reads $(_dev_container_label "$_devshow_name" "dev-source-dir") live —"
+    echo "what you add or change there is already in its /workspace (read-only)."
+    exit 0
+fi
+
 _devshow_template_key=$(_dev_container_template_key "$_devshow_name")
 if [[ -z "$_devshow_template_key" ]]; then
     echo "Error: could not determine template from container labels" >&2

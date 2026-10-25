@@ -20,6 +20,8 @@ while IFS='|' read -r _devsync_key _devsync_src _devsync_rest; do
     [[ "$_devsync_key" =~ ^[[:space:]]*# || -z "$_devsync_key" ]] && continue
     [[ "$_devsync_key" == "DEFAULT" ]] && continue
     [[ -z "$_devsync_src" ]] && continue
+    # Study projects have no branches anywhere.
+    _dev_has_profile "${_devsync_rest##*|}" "study" && continue
     _devsync_src_dir="$_devsync_src"
     [[ "$_devsync_src_dir" != /* ]] && _devsync_src_dir="${DEV_SOURCES_DIR}/${_devsync_src_dir}"
     [[ ! -d "$_devsync_src_dir/.git" ]] && continue
@@ -103,5 +105,22 @@ ${_devsync_cname}"
     _dev_prune_automation_fork "$_devsync_src_dir" "$_devsync_repo"
 
 done < "$_devsync_conf"
+
+# ── Files of study containers on the host ────────────────────────────────────
+# Saved workspaces (dev delete, dev recreate) and the files of yours dev merge
+# replaced are kept DEV_BACKUP_MAX_AGE_DAYS. A review copy (dev see) goes when
+# its container is gone or no dev see refreshed it for as long: dev see fetches
+# it again.
+find "$DEV_STUDY_SAVE_DIR" -maxdepth 1 -type f -name '*.tar.gz' -mtime +"$DEV_BACKUP_MAX_AGE_DAYS" \
+    -printf '  Pruning old study backup: %f\n' -delete 2>/dev/null || true
+for _devsync_review in "$DEV_STUDY_SEE_DIR"/*/; do
+    [[ -d "$_devsync_review" ]] || continue
+    _devsync_review="${_devsync_review%/}"
+    if ! _dev_container_exists "${_devsync_review##*/}" \
+        || [[ -n "$(find "$_devsync_review" -maxdepth 0 -mtime +"$DEV_BACKUP_MAX_AGE_DAYS")" ]]; then
+        echo "  Removing review copy ${_devsync_review} (dev see fetches it again)"
+        rm -rf "$_devsync_review"
+    fi
+done
 
 echo "Branch sync complete."

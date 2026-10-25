@@ -2,12 +2,31 @@
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
+_devlocal_template_key=$(_dev_detect_template_from_cwd) || true
+
+# Study directory: no git, nothing to push — the container reads the directory
+# live (read-only at /workspace/<subject>). Its container is named after the
+# template (study/psychology -> psychology).
+if [[ -n "$_devlocal_template_key" ]] && _dev_template_is_study "$_devlocal_template_key"; then
+    _devlocal_name="${_devlocal_template_key#*/}"
+    echo "Study project: ${_devlocal_template_key}"
+    echo "Container: ${_devlocal_name}"
+    _dev_remember_container "$_devlocal_name"
+    if _dev_container_exists "$_devlocal_name"; then
+        exec "${DEV_SCRIPTS_DIR}/dev-enter.sh" "$_devlocal_name"
+    fi
+    _dev_lock_shared
+    _dev_create_container "$_devlocal_name" "$_devlocal_template_key"
+    echo "Entering container '${_devlocal_name}'..."
+    _dev_lock_release
+    exec podman start -ai "$_devlocal_name"
+fi
+
 if ! git rev-parse --is-inside-work-tree &>/dev/null; then
     echo "Error: not inside a git repository" >&2
     exit 1
 fi
 
-_devlocal_template_key=$(_dev_detect_template_from_cwd) || true
 if [[ -z "$_devlocal_template_key" ]]; then
     echo "Error: no project template matches the current directory" >&2
     echo "Add a template to configs/project-templates.conf or use 'dev new <name>' instead." >&2

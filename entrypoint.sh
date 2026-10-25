@@ -367,8 +367,52 @@ if [ -d /opt/dev-keys ]; then
     fi
 fi
 
+# ── Study workspace (profile study: no git, no GitHub) ───────────────────────
+# /workspace is a plain directory on the bounded disk that holds only what the
+# agents make. The study material — the host directory, mounted read-only at
+# /opt/project-src — is bind-mounted read-only at /workspace/<subject>: a live
+# view, files the user adds there show up, nothing in it can be changed. Not an
+# overlay like the git workspaces: fuse-overlayfs never shows files added to its
+# lower layer once it has listed their directory, and reads lower files changed
+# since then at their old size.
+if _has_profile study; then
+    _subject="${DEV_TEMPLATE_KEY#*/}"
+    mkdir -p /mnt/bounded/ws-study
+    chown dev:dev /mnt/bounded/ws-study
+    if ! mountpoint -q /workspace; then
+        cd /
+        rm -rf /workspace
+        mkdir -p /workspace
+        mount --bind /mnt/bounded/ws-study /workspace
+    fi
+    if [ -d /opt/project-src ]; then
+        mkdir -p "/workspace/${_subject}"
+        if ! { mount --bind /opt/project-src "/workspace/${_subject}" \
+                && mount -o remount,bind,ro "/workspace/${_subject}"; }; then
+            echo "FATAL: could not mount the study material read-only at /workspace/${_subject}" >&2
+            exit 1
+        fi
+    else
+        echo "WARNING: no study material mounted (the host directory is missing)" >&2
+    fi
+
+    runuser -u dev -- bash -c 'mkdir -p /home/dev/.claude /home/dev/.bob /home/dev/.gemini && tee /home/dev/.claude/CLAUDE.md /home/dev/.bob/AGENTS.md /home/dev/.gemini/GEMINI.md >/dev/null' <<AGENTSMD
+# Study environment: ${_subject}
+
+This is a sandbox VM for studying ${_subject} with the user. Nothing you do here changes files on their machine: they decide what to copy out of it.
+
+- /workspace/${_subject} is the user's study material — books, notes, slides and the like. It is a live, read-only view of their directory: files they add there show up here, and nothing in it can be changed.
+- The rest of /workspace is yours, and it is what the user takes home: keep in it only what you make for them — flashcards, Anki decks, printable sheets, summaries, practice questions. Lay it out like their directory: a corrected or reworked version of one of their files goes to the same relative path (/workspace/notes/lecture-03.md for /workspace/${_subject}/notes/lecture-03.md), a new file where it would belong in their directory. Scratch files, caches and virtual environments go to /tmp or your home directory.
+- The user fetches the files in /workspace with \`dev see\`, which marks the ones that replace a file of theirs, and takes those they want into their directory with \`dev merge\`. When you finish a task, tell them which files you created or changed.
+- There is no git repository and no GitHub project: do not create a repository in /workspace.
+- /tmp/workspace — additional documents copied in by the user (if any)
+
+## Tools
+Python 3 is installed, pip is not: install packages (genanki for Anki decks, pypdf, reportlab, ...) into a virtual environment outside /workspace, e.g. \`python3 -m venv ~/venv && ~/venv/bin/pip install genanki\`. There is no pdftotext, LaTeX or pandoc.
+AGENTSMD
+
 # ── Project workspace ────────────────────────────────────────────────────────
-if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
+elif [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
     _repo="${DEV_TEMPLATE_KEY#*/}"
     _org="${DEV_TEMPLATE_KEY%%/*}"
     chown dev:dev /workspace
@@ -649,7 +693,8 @@ fi
 # exec under krun — the old `runuser ... &` form (runuser itself backgrounded)
 # silently died there and backed up nothing. The script logs loudly to the
 # bounded disk; `dev see`/`dev show`/`dev list` read the status it writes.
-if [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
+# Not for study workspaces: they are no repository, and must not reach GitHub.
+if [ -n "${DEV_TEMPLATE_KEY:-}" ] && ! _has_profile study; then
     runuser -u dev -- bash -c 'nohup /opt/dev/dev-auto-backup.sh >> /mnt/bounded/backup/log 2>&1 &'
 fi
 

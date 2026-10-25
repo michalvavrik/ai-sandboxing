@@ -40,6 +40,17 @@ _comp_project_containers() {
     fi
 }
 
+# Paths of what the last dev see fetched from the current study directory's
+# container (dev merge in a study directory).
+_comp_study_paths() {
+    local _name _review
+    _name=$(_dev_resolve_project_container "" 2>/dev/null) || return 0
+    _review="${DEV_STUDY_SEE_DIR}/${_name}"
+    [[ -d "$_review" ]] || return 0
+    echo '%nospace'
+    (cd "$_review" && ls -dp ${_comp_cur}* 2>/dev/null)
+}
+
 # Remote path listing inside the current container (dev cpout, dev cp --to).
 _comp_remote_paths() {
     local _name _prefix="/workspace/"
@@ -116,6 +127,8 @@ case "$_comp_cmd" in
     merge)
         if [[ "$_comp_prev" == "-m" ]]; then exit 0
         elif $_comp_is_opt; then _comp_emit "-m"
+        elif _comp_tkey=$(_dev_detect_template_from_cwd 2>/dev/null) && _dev_template_is_study "$_comp_tkey"; then
+            _comp_study_paths
         else _comp_project_containers
         fi
         ;;

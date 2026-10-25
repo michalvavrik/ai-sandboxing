@@ -22,6 +22,8 @@ while IFS='|' read -r _dev_key _dev_src _dev_rest; do
     [[ "$_dev_key" =~ ^[[:space:]]*# || -z "$_dev_key" ]] && continue
     [[ "$_dev_key" == "DEFAULT" ]] && continue
     [[ -z "$_dev_src" ]] && continue
+    # Study projects have no upstream to fetch.
+    _dev_has_profile "${_dev_rest##*|}" "study" && continue
     _dev_src_dir="$_dev_src"
     [[ "$_dev_src_dir" != /* ]] && _dev_src_dir="${DEV_SOURCES_DIR}/${_dev_src_dir}"
     [[ ! -d "$_dev_src_dir/.git" ]] && continue

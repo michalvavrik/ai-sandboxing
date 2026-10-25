@@ -33,6 +33,10 @@ if [[ -z "$(_dev_container_template_key "$_devrebase_name")" ]]; then
     echo "Error: container '${_devrebase_name}' has no project (no upstream remote to rebase on)" >&2
     exit 1
 fi
+if _dev_container_is_study "$_devrebase_name"; then
+    echo "Error: container '${_devrebase_name}' is a study container (no git, no upstream to rebase on)" >&2
+    exit 1
+fi
 
 _dev_ensure_running "$_devrebase_name"
 

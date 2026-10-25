@@ -14,6 +14,8 @@ source "${DEV_BASE_DIR}/config.local"
 
 readonly DEV_AUTOMATION_USER DEV_AUTOMATION_EMAIL DEV_AUTOMATION_NAME
 readonly DEV_GHCR_USER DEV_IMAGE DEV_SOURCES_DIR
+# Parent directory of study projects (templates with the `study` profile).
+readonly DEV_EDUCATION_DIR="${DEV_EDUCATION_DIR:-${HOME}/education}"
 readonly DEV_LABEL="dev-sandbox"
 readonly DEV_RUNTIME="krun"
 readonly DEV_DEFAULT_RAM=8192
@@ -21,6 +23,10 @@ readonly DEV_DEFAULT_CPUS=4
 readonly DEV_DEFAULT_DISK_GIB=15
 readonly DEV_DEFAULT_PROFILES="java"
 readonly DEV_DISK_DIR="${HOME}/.local/share/dev-sandbox-disks"
+# Workspaces of deleted and recreated study containers (see _dev_study_save_workspace).
+readonly DEV_STUDY_SAVE_DIR="${HOME}/.local/share/dev-sandbox-saved"
+# What `dev see` fetched from each study container, for review (see _dev_study_fetch).
+readonly DEV_STUDY_SEE_DIR="${XDG_CACHE_HOME:-${HOME}/.cache}/dev-sandbox-see"
 readonly DEV_PROXY_BASE_PORT=9222
 # Base port + container slots (DEV_PROXY_PORTS in config.local; default 9 =
 # 8 containers). `dev install` rejects the whole range from the network — re-run
@@ -37,6 +43,19 @@ readonly -a DEV_SSH_DIRECT_OPTS=(-o BatchMode=yes -o ConnectTimeout=5 -o StrictH
 
 _dev_has_profile() {
     [[ ",${1}," == *",${2},"* ]]
+}
+
+# Absolute path of a template's source_dir: a relative one is under
+# DEV_EDUCATION_DIR for study templates, under DEV_SOURCES_DIR otherwise.
+_dev_template_dir() {
+    local _dev_dir="$1" _dev_profiles="$2"
+    if [[ -z "$_dev_dir" || "$_dev_dir" == /* ]]; then
+        echo "$_dev_dir"
+    elif _dev_has_profile "$_dev_profiles" "study"; then
+        echo "${DEV_EDUCATION_DIR}/${_dev_dir}"
+    else
+        echo "${DEV_SOURCES_DIR}/${_dev_dir}"
+    fi
 }
 
 _dev_podman_storage_gib() {
@@ -313,7 +332,9 @@ _dev_reconcile_port_mapping() {
         local _dev_tkey _dev_repo
         _dev_tkey=$(_dev_container_template_key "$_dev_cname")
         _dev_repo=""
-        [[ -n "$_dev_tkey" ]] && _dev_repo="${DEV_AUTOMATION_USER}/${_dev_tkey#*/}"
+        # Study containers get no repo: the git bridge refuses them everything.
+        [[ -n "$_dev_tkey" ]] && ! _dev_container_is_study "$_dev_cname" \
+            && _dev_repo="${DEV_AUTOMATION_USER}/${_dev_tkey#*/}"
         _dev_mapping=$(echo "$_dev_mapping" | jq --arg p "$_dev_port" \
             --arg c "$_dev_cname" \
             --arg b "dev-auto/${_dev_cname}" \
@@ -462,6 +483,18 @@ _dev_container_template_key() {
     podman inspect --format '{{index .Config.Labels "dev-template-key"}}' "$1" 2>/dev/null || true
 }
 
+# Succeeds when container <name> was created from a study template.
+_dev_container_is_study() {
+    _dev_has_profile "$(_dev_container_label "$1" "dev-profiles")" "study"
+}
+
+# Succeeds when template <org/repo> has the `study` profile.
+_dev_template_is_study() {
+    local _dev_tmpl
+    _dev_tmpl=$(_dev_lookup_template "$1") || return 1
+    _dev_has_profile "$(echo "$_dev_tmpl" | cut -d'|' -f5)" "study"
+}
+
 _dev_find_template_key_by_repo() {
     local _dev_repo="$1"
     local _dev_conf="${DEV_CONFIGS_DIR}/project-templates.conf"
@@ -596,8 +629,16 @@ _dev_create_container() {
         echo "Using default template (profiles=${_dev_profiles}, RAM=${_dev_ram}MiB, CPUs=${_dev_cpus}, Disk=${_dev_disk_gib}GiB)"
     fi
 
-    if [[ -n "$_dev_source_dir" && "$_dev_source_dir" != /* ]]; then
-        _dev_source_dir="${DEV_SOURCES_DIR}/${_dev_source_dir}"
+    _dev_source_dir=$(_dev_template_dir "$_dev_source_dir" "$_dev_profiles")
+
+    # Study containers have their directory as the material, nothing else.
+    local _dev_study=false
+    if _dev_has_profile "$_dev_profiles" "study"; then
+        _dev_study=true
+        if [[ ! -d "$_dev_source_dir" || "$_dev_source_dir" != "${DEV_EDUCATION_DIR}/"* ]]; then
+            echo "Error: study directory '${_dev_source_dir}' does not exist or is not under ${DEV_EDUCATION_DIR}/" >&2
+            return 1
+        fi
     fi
 
     _dev_ensure_proxy
@@ -655,7 +696,9 @@ _dev_create_container() {
     if [[ -d "$_dev_host_podman_storage" ]]; then
         _dev_volumes+=(-v "${_dev_host_podman_storage}:/opt/host-podman-storage:ro")
     fi
-    if [[ -n "$_dev_source_dir" && -d "$_dev_source_dir" && "$_dev_source_dir" == "${DEV_SOURCES_DIR}/"* ]]; then
+    if [[ "$_dev_study" == true ]]; then
+        _dev_volumes+=(-v "${_dev_source_dir}:/opt/project-src:ro")
+    elif [[ -n "$_dev_source_dir" && -d "$_dev_source_dir" && "$_dev_source_dir" == "${DEV_SOURCES_DIR}/"* ]]; then
         _dev_volumes+=(-v "${_dev_source_dir}:/opt/project-src:ro")
     elif [[ -n "$_dev_source_dir" ]]; then
         echo "WARNING: source dir '${_dev_source_dir}' is not under ${DEV_SOURCES_DIR}/, skipping mount" >&2
@@ -684,13 +727,18 @@ _dev_create_container() {
 
     # Containers created from an issue URL or by `dev new` have no host branch
     # yet; label them with the in-review branch `dev merge` will create.
-    if [[ -z "${DEV_ORIGINAL_BRANCH:-}" && -n "$_dev_template_key" ]]; then
+    if [[ -z "${DEV_ORIGINAL_BRANCH:-}" && -n "$_dev_template_key" && "$_dev_study" != true ]]; then
         export DEV_ORIGINAL_BRANCH="in-review/$(_dev_container_name_to_feature "$_dev_name" "${_dev_template_key#*/}")"
     fi
 
+    # The automation fork the git bridge lets the container use; none for
+    # study containers, so the bridge refuses them everything.
+    local _dev_fork_repo=""
+    if [[ -n "$_dev_template_key" && "$_dev_study" != true ]]; then
+        _dev_fork_repo="${DEV_AUTOMATION_USER}/${_dev_template_key#*/}"
+    fi
     local _dev_port
-    _dev_port=$(_dev_assign_proxy_port "$_dev_name" "$_dev_auth_method" \
-        "${_dev_template_key:+${DEV_AUTOMATION_USER}/${_dev_template_key#*/}}") || return 1
+    _dev_port=$(_dev_assign_proxy_port "$_dev_name" "$_dev_auth_method" "$_dev_fork_repo") || return 1
 
     if [[ "$_dev_auth_method" == "api-key" ]]; then
         _dev_auth_args=(
@@ -732,6 +780,7 @@ _dev_create_container() {
         --label="$DEV_LABEL" \
         --label="dev-source-dir=${_dev_source_dir}" \
         --label="dev-template-key=${_dev_template_key}" \
+        --label="dev-profiles=${_dev_profiles}" \
         --label="dev-auth-method=${_dev_auth_method}" \
         ${DEV_ORIGINAL_BRANCH:+--label="dev-original-branch=${DEV_ORIGINAL_BRANCH}"} \
         -e "PROXY_PORT=${_dev_port}" \
@@ -813,6 +862,56 @@ _dev_sync_workspace() {
     local _dev_branch="$2"
     _dev_ssh_cmd "$_dev_name" "bash -s -- '${_dev_branch}'" \
         < "${DEV_SCRIPTS_DIR}/dev-workspace-sync.sh"
+}
+
+# A study container's workspace is no git repository: what the agents produced
+# exists only on its bounded disk. Save it — /workspace without the read-only
+# material at /workspace/<subject> — to a tarball in DEV_STUDY_SAVE_DIR (pruned
+# by `dev sync` after DEV_BACKUP_MAX_AGE_DAYS) and print the tarball's path.
+# The container must be running. tar's exit code 1 (a file changed while it was
+# read) still makes a complete archive.
+_dev_study_save_workspace() {
+    local _dev_name="$1" _dev_subject _dev_file
+    _dev_subject=$(_dev_container_template_key "$_dev_name")
+    _dev_subject="${_dev_subject#*/}"
+    mkdir -p "$DEV_STUDY_SAVE_DIR"
+    _dev_file=$(mktemp --suffix=.tar.gz "${DEV_STUDY_SAVE_DIR}/${_dev_name}-$(date +%s)-XXXX") || return 1
+    if ! _dev_ssh_cmd "$_dev_name" \
+        "tar --one-file-system --exclude='./${_dev_subject}' -C /workspace -czf - .; [ \$? -le 1 ]" \
+        < /dev/null > "$_dev_file"; then
+        rm -f "$_dev_file"
+        return 1
+    fi
+    echo "$_dev_file"
+}
+
+# Replace <dest> with the files the agents made in running study container
+# <name>: the regular files of /workspace, without the material, at the same
+# relative paths. The stream comes from the agent's side, so the host keeps
+# nothing but regular files and directories (no symlinks or devices), made
+# read-only (it is a snapshot: the next dev see replaces it), and takes at most
+# what the container's bounded disk can hold.
+_dev_study_fetch() {
+    local _dev_name="$1" _dev_dest="$2" _dev_max
+    _dev_max=$(stat -c %s "${DEV_DISK_DIR}/${_dev_name}.img") || return 1
+    rm -rf "$_dev_dest"
+    mkdir -p "$_dev_dest"
+    _dev_ssh_cmd "$_dev_name" "cd /workspace && find . -xdev -type f -print0 | tar --null -T - -cf -" \
+        < /dev/null | head -c "$_dev_max" | tar -C "$_dev_dest" -xf - || return 1
+    find "$_dev_dest" -mindepth 1 ! -type f ! -type d -delete
+    find "$_dev_dest" -type f -exec chmod 0444 {} +
+}
+
+# How file <agents-file> relates to <your-file>, the same relative path in the
+# study directory: A (yours does not exist), = (same content), M (it differs).
+_dev_study_mark() {
+    if [[ ! -e "$2" ]]; then
+        echo "A"
+    elif cmp -s "$1" "$2"; then
+        echo "="
+    else
+        echo "M"
+    fi
 }
 
 _dev_ssh_cmd() {
@@ -910,10 +1009,7 @@ _dev_detect_template_from_cwd() {
     while IFS= read -r _dev_line; do
         [[ "$_dev_line" =~ ^[[:space:]]*# || -z "$_dev_line" ]] && continue
         [[ "$_dev_line" =~ ^DEFAULT\| ]] && continue
-        _dev_src_dir=$(echo "$_dev_line" | cut -d'|' -f2)
-        if [[ -n "$_dev_src_dir" && "$_dev_src_dir" != /* ]]; then
-            _dev_src_dir="${DEV_SOURCES_DIR}/${_dev_src_dir}"
-        fi
+        _dev_src_dir=$(_dev_template_dir "$(echo "$_dev_line" | cut -d'|' -f2)" "$(echo "$_dev_line" | cut -d'|' -f6)")
         # Compare resolved paths: DEV_SOURCES_DIR may go through a symlink.
         if [[ -n "$_dev_src_dir" ]]; then
             _dev_src_dir=$(cd "$_dev_src_dir" 2>/dev/null && pwd -P) || _dev_src_dir=""
@@ -1221,25 +1317,30 @@ _dev_prune_backup_branches() {
     done < <(git -C "$_dev_src_dir" ls-remote "$DEV_GHCR_USER" "refs/heads/backup/*" 2>/dev/null | awk '{print $2}')
 }
 
+# The template's git checkout on the host. Fails for study templates: their
+# directory is never a git project for dev, even when it is a repository.
 _dev_resolve_src_dir() {
     local _dev_tkey="$1"
     local _dev_tmpl
     _dev_tmpl=$(_dev_lookup_template "$_dev_tkey") || return 1
+    _dev_has_profile "$(echo "$_dev_tmpl" | cut -d'|' -f5)" "study" && return 1
     local _dev_src_dir
-    _dev_src_dir=$(echo "$_dev_tmpl" | cut -d'|' -f1)
-    if [[ -n "$_dev_src_dir" && "$_dev_src_dir" != /* ]]; then
-        _dev_src_dir="${DEV_SOURCES_DIR}/${_dev_src_dir}"
-    fi
+    _dev_src_dir=$(_dev_template_dir "$(echo "$_dev_tmpl" | cut -d'|' -f1)" "")
     if [[ -z "$_dev_src_dir" || ! -d "$_dev_src_dir/.git" ]]; then
         return 1
     fi
     echo "$_dev_src_dir"
 }
 
-# Source directory a container is bound to: its project's checkout, or "" when
-# the project has none (DEFAULT template, or the directory is not there).
+# Source directory a container is bound to: its project's checkout (a study
+# container's: its study directory), or "" when the project has none (DEFAULT
+# template, or the directory is not there).
 _dev_container_src_dir() {
     local _dev_tkey
+    if _dev_container_is_study "$1"; then
+        _dev_container_label "$1" "dev-source-dir"
+        return 0
+    fi
     _dev_tkey=$(_dev_container_template_key "$1")
     [[ -n "$_dev_tkey" ]] || return 0
     _dev_resolve_src_dir "$_dev_tkey" 2>/dev/null || true

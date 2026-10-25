@@ -42,10 +42,22 @@ if ! _dev_container_running "$_devrc_name"; then
 fi
 _dev_update_ssh_config "$_devrc_name"
 
-# Push workspace via git (same as dev see squash logic)
 readonly _devrc_branch="dev-auto/${_devrc_name}/main"
-echo "Pushing workspace to ${_devrc_branch}..."
-_dev_sync_workspace "$_devrc_name" "$_devrc_branch"
+_devrc_study=false
+_dev_container_is_study "$_devrc_name" && _devrc_study=true
+readonly _devrc_study
+_devrc_saved=""
+if [[ "$_devrc_study" == true ]]; then
+    # A study workspace is no git repository: save it like dev delete does
+    # (the tarball stays there if anything below fails).
+    echo "Saving workspace..."
+    _devrc_saved=$(_dev_study_save_workspace "$_devrc_name")
+    echo "Saved workspace to ${_devrc_saved}."
+else
+    # Push workspace via git (same as dev see squash logic)
+    echo "Pushing workspace to ${_devrc_branch}..."
+    _dev_sync_workspace "$_devrc_name" "$_devrc_branch"
+fi
 
 # Save Claude session and review history (small — scp is fine)
 readonly _devrc_staging="/tmp/dev-recreate-${_devrc_name}"
@@ -59,36 +71,43 @@ if _dev_ssh_cmd "$_devrc_name" "test -d /home/dev/.gemini" 2>/dev/null; then
     echo "Saving agy sessions..."
     DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cpout.sh" --to "$_devrc_staging" /home/dev/.gemini
 fi
-if _dev_ssh_cmd "$_devrc_name" "test -d /workspace/.reviews" 2>/dev/null; then
+# (a study workspace's .reviews is in its tarball)
+if [[ "$_devrc_study" != true ]] && _dev_ssh_cmd "$_devrc_name" "test -d /workspace/.reviews" 2>/dev/null; then
     echo "Saving review history..."
     DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cpout.sh" --to "$_devrc_staging" /workspace/.reviews
 fi
 
-# Move branch out of dev-auto/name/* before delete cleans it up
-readonly _devrc_repo="${_devrc_template_key#*/}"
-readonly _devrc_remote="git@github.com:${DEV_AUTOMATION_USER}/${_devrc_repo}.git"
-readonly _devrc_git_ssh="$(_dev_git_ssh)"
-readonly _devrc_tmp_branch="dev-recreate/${_devrc_name}"
-GIT_SSH_COMMAND="$_devrc_git_ssh" \
-    git push "$_devrc_remote" "refs/heads/${_devrc_branch}:refs/heads/${_devrc_tmp_branch}" 2>/dev/null
+if [[ "$_devrc_study" != true ]]; then
+    # Move branch out of dev-auto/name/* before delete cleans it up
+    readonly _devrc_repo="${_devrc_template_key#*/}"
+    readonly _devrc_remote="git@github.com:${DEV_AUTOMATION_USER}/${_devrc_repo}.git"
+    readonly _devrc_git_ssh="$(_dev_git_ssh)"
+    readonly _devrc_tmp_branch="dev-recreate/${_devrc_name}"
+    GIT_SSH_COMMAND="$_devrc_git_ssh" \
+        git push "$_devrc_remote" "refs/heads/${_devrc_branch}:refs/heads/${_devrc_tmp_branch}" 2>/dev/null
+fi
 
 # Delete old container (cleans up dev-auto/name/* branches, revokes OAuth, removes disks)
 # Skip lifecycle branch cleanup — we're preserving the workspace
 DEV_SKIP_BRANCH_CLEANUP=1 "${DEV_SCRIPTS_DIR}/dev-delete.sh" "$_devrc_name"
 
-# Restore branch and clean up temp
-GIT_SSH_COMMAND="$_devrc_git_ssh" \
-    git push "$_devrc_remote" "refs/heads/${_devrc_tmp_branch}:refs/heads/${_devrc_branch}" 2>/dev/null
-GIT_SSH_COMMAND="$_devrc_git_ssh" \
-    git push "$_devrc_remote" --delete "refs/heads/${_devrc_tmp_branch}" 2>/dev/null || true
+if [[ "$_devrc_study" != true ]]; then
+    # Restore branch and clean up temp
+    GIT_SSH_COMMAND="$_devrc_git_ssh" \
+        git push "$_devrc_remote" "refs/heads/${_devrc_tmp_branch}:refs/heads/${_devrc_branch}" 2>/dev/null
+    GIT_SSH_COMMAND="$_devrc_git_ssh" \
+        git push "$_devrc_remote" --delete "refs/heads/${_devrc_tmp_branch}" 2>/dev/null || true
+
+    # The fresh container checks the branch out
+    export DEV_FORK_ORG="$DEV_AUTOMATION_USER"
+    export DEV_BRANCH_NAME="$_devrc_branch"
+fi
 
 # Create fresh container with same metadata and enter
-export DEV_FORK_ORG="$DEV_AUTOMATION_USER"
-export DEV_BRANCH_NAME="$_devrc_branch"
 _dev_create_container "$_devrc_name" "$_devrc_template_key"
 
 # Restore saved data if any
-if [[ -d "$_devrc_staging/projects" || -d "$_devrc_staging/.reviews" || -d "$_devrc_staging/.gemini" ]]; then
+if [[ -d "$_devrc_staging/projects" || -d "$_devrc_staging/.reviews" || -d "$_devrc_staging/.gemini" || -n "$_devrc_saved" ]]; then
     podman start "$_devrc_name" >/dev/null
     _dev_update_ssh_config "$_devrc_name"
     echo "Waiting for SSH..."
@@ -108,6 +127,10 @@ if [[ -d "$_devrc_staging/projects" || -d "$_devrc_staging/.reviews" || -d "$_de
         echo "Restoring review history..."
         DEV_LAST_CONTAINER="$_devrc_name" "${DEV_SCRIPTS_DIR}/dev-cp.sh" --to /workspace "$_devrc_staging/.reviews"
         _dev_ssh_cmd "$_devrc_name" "grep -qxF '.reviews' /workspace/.git/info/exclude 2>/dev/null || echo '.reviews' >> /workspace/.git/info/exclude"
+    fi
+    if [[ -n "$_devrc_saved" ]]; then
+        echo "Restoring workspace..."
+        _dev_ssh_cmd "$_devrc_name" "tar -C /workspace -xzf -" < "$_devrc_saved"
     fi
     rm -rf "$_devrc_staging"
     echo "Entering container '${_devrc_name}'..."

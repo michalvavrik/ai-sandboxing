@@ -2,7 +2,8 @@
 # dev merge / dev squash — put the agent's work on in-review/<feature> as your
 # own commit. Both work on what `dev see` fetched (the host branch
 # dev-auto/<container>/main), never on the container directly, never rebase and
-# never push. See _devmerge_usage.
+# never push. For a study container, dev merge copies files `dev see` fetched
+# into the study directory instead (_devmerge_study). See _devmerge_usage.
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
@@ -33,12 +34,100 @@ The target branch is the branch the container was created from with `dev .`
 created from an issue, a PR or by `dev new` use in-review/<feature>
 (keycloak-53157 -> in-review/53157, keycloak-pr-51877 -> in-review/pr-51877;
 a PR container of your own PR targets the PR's in-review/* branch).
+
+Study containers:
+       dev merge [name] [path...]
+
+Copies files the last `dev see` fetched into the study directory, at the same
+relative paths (relative to /workspace, as dev see lists them). Without paths
+only the new files (A); a file that replaces one of yours (M) is only taken
+when you name it or a directory it is in, and your version is saved to a
+tarball first.
 USAGE
+}
+
+# Study container <name>: copy files of the last `dev see` — its review
+# directory, so only what you could look at — into the study directory, at the
+# same relative paths. Without paths only the new files; one that replaces a
+# file of yours is taken only when its path or a directory it is in is given,
+# after your version was saved to a tarball in DEV_STUDY_SAVE_DIR.
+_devmerge_study() {
+    local _name="$1" _review _study _p _start _f _saved=""
+    shift
+    local _named=true _new=() _repl=() _left=()
+    local -A _seen=()
+    _review="${DEV_STUDY_SEE_DIR}/${_name}"
+    _study=$(_dev_container_label "$_name" "dev-source-dir")
+    if [[ ! -d "$_study" ]]; then
+        echo "Error: the study directory ${_study} does not exist" >&2
+        return 1
+    fi
+    if [[ ! -d "$_review" ]]; then
+        echo "Error: nothing fetched from '${_name}' yet — run 'dev see' first" >&2
+        return 1
+    fi
+    if (( $# == 0 )); then
+        _named=false
+        set -- .
+    fi
+    for _p in "$@"; do
+        while [[ "$_p" == ./* ]]; do _p="${_p#./}"; done
+        while [[ "$_p" == */ ]]; do _p="${_p%/}"; done
+        if [[ -z "$_p" || "$_p" == "." ]]; then
+            _start="."
+        elif [[ "$_p" != /* && "/${_p}/" != */../* && -e "${_review}/${_p}" ]]; then
+            _start="./${_p}"
+        else
+            echo "Error: '${_p}' is not among the files the last dev see fetched (paths are relative to /workspace)" >&2
+            return 1
+        fi
+        while IFS= read -r -d '' _f; do
+            _f="${_f#./}"
+            [[ -n "${_seen[$_f]:-}" ]] && continue
+            _seen[$_f]=1
+            if [[ -d "${_study}/${_f}" ]]; then
+                echo "Error: ${_study}/${_f} is a directory — not replacing it with a file" >&2
+                return 1
+            fi
+            case "$(_dev_study_mark "${_review}/${_f}" "${_study}/${_f}")" in
+                A) _new+=("$_f") ;;
+                M) if [[ "$_named" == true ]]; then _repl+=("$_f"); else _left+=("$_f"); fi ;;
+            esac
+        done < <(cd "$_review" && find "$_start" -type f -print0 | sort -z)
+    done
+
+    if (( ${#_repl[@]} > 0 )); then
+        mkdir -p "$DEV_STUDY_SAVE_DIR"
+        _saved=$(mktemp --suffix=.tar.gz "${DEV_STUDY_SAVE_DIR}/${_name}-merge-$(date +%s)-XXXX")
+        if ! printf '%s\0' "${_repl[@]}" | tar -C "$_study" --null -T - -czf "$_saved"; then
+            rm -f "$_saved"
+            echo "Error: could not save your files that would be replaced — nothing taken" >&2
+            return 1
+        fi
+    fi
+    for _f in "${_new[@]}" "${_repl[@]}"; do
+        mkdir -p "$(dirname "${_study}/${_f}")"
+        cp -fT --no-preserve=mode "${_review}/${_f}" "${_study}/${_f}"
+    done
+
+    if (( ${#_new[@]} + ${#_repl[@]} == 0 )); then
+        echo "Nothing to take into ${_study}."
+    else
+        echo "Took $(( ${#_new[@]} + ${#_repl[@]} )) file(s) into ${_study}:"
+        for _f in "${_new[@]}"; do echo "  A ${_f}"; done
+        for _f in "${_repl[@]}"; do echo "  M ${_f}"; done
+    fi
+    [[ -n "$_saved" ]] && echo "Your versions of the replaced files: ${_saved} (kept ${DEV_BACKUP_MAX_AGE_DAYS} days)"
+    if (( ${#_left[@]} > 0 )); then
+        echo "Not taken, they would replace files of yours (name them to take them):"
+        for _f in "${_left[@]}"; do echo "  M ${_f}"; done
+    fi
+    return 0
 }
 
 _devmerge_mode="merge"
 _devmerge_message=""
-_devmerge_name_arg=""
+_devmerge_args=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --squash) _devmerge_mode="squash"; shift ;;
@@ -46,7 +135,7 @@ while [[ $# -gt 0 ]]; do
         -m*) _devmerge_message="${1#-m}"; shift ;;
         --help|-h) _devmerge_usage; exit 0 ;;
         -*) echo "dev ${_devmerge_mode}: unknown option '$1'" >&2; _devmerge_usage >&2; exit 1 ;;
-        *) _devmerge_name_arg="$1"; shift ;;
+        *) _devmerge_args+=("$1"); shift ;;
     esac
 done
 if [[ "$_devmerge_mode" == "squash" && -n "$_devmerge_message" ]]; then
@@ -54,9 +143,31 @@ if [[ "$_devmerge_mode" == "squash" && -n "$_devmerge_message" ]]; then
     exit 1
 fi
 
+# The first argument names the container when one of that name exists; the
+# others are paths, which only a study container takes.
+_devmerge_name_arg=""
+if (( ${#_devmerge_args[@]} > 0 )) && _dev_container_exists "${_devmerge_args[0]}"; then
+    _devmerge_name_arg="${_devmerge_args[0]}"
+    _devmerge_args=("${_devmerge_args[@]:1}")
+fi
+
 # Only inside the project's source directory, only its containers.
 _devmerge_name=$(_dev_resolve_project_container "$_devmerge_name_arg")
 readonly _devmerge_name
+
+if _dev_container_is_study "$_devmerge_name"; then
+    if [[ "$_devmerge_mode" == "squash" || -n "$_devmerge_message" ]]; then
+        echo "Error: ${_devmerge_name} is a study container — there is no commit to squash or to write a message for" >&2
+        echo "('dev merge [path...]' copies files of the last dev see into its directory)" >&2
+        exit 1
+    fi
+    _devmerge_study "$_devmerge_name" "${_devmerge_args[@]}"
+    exit 0
+fi
+if (( ${#_devmerge_args[@]} > 0 )); then
+    echo "Error: container '${_devmerge_args[0]}' does not exist" >&2
+    exit 1
+fi
 
 _devmerge_template_key=$(_dev_container_template_key "$_devmerge_name")
 if [[ -z "$_devmerge_template_key" ]]; then
