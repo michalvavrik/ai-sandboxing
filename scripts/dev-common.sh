@@ -69,19 +69,45 @@ _dev_podman_storage_gib() {
 }
 
 # ── Workspace auto-backup status (written by scripts/dev-auto-backup.sh) ──────
-# Human-readable age of an epoch; "STALE (...)" once older than the threshold,
-# "never" if empty/missing. Integer math only (no `date -d`) to stay macOS-safe.
-_dev_fmt_backup_age() {
-    local _epoch="${1:-}" _now="${2:-$(date +%s)}" _thresh="${DEV_BACKUP_STALE_SECS:-90}" _age _h
+# Human-readable age of an epoch ("42s ago"), "never" if empty or no number.
+# Integer math only (no `date -d`) to stay macOS-safe.
+_dev_fmt_age() {
+    local _epoch="${1:-}" _now="${2:-$(date +%s)}" _age
     [[ "$_epoch" =~ ^[0-9]+$ ]] || { echo "never"; return 0; }
-    _age=$(( _now - _epoch ))
+    _age=$(( _now - 10#$_epoch ))
     (( _age < 0 )) && _age=0
-    if   (( _age < 60 ));    then _h="${_age}s"
-    elif (( _age < 3600 ));  then _h="$(( _age / 60 ))m"
-    elif (( _age < 86400 )); then _h="$(( _age / 3600 ))h"
-    else                          _h="$(( _age / 86400 ))d"
+    if   (( _age < 60 ));    then echo "${_age}s ago"
+    elif (( _age < 3600 ));  then echo "$(( _age / 60 ))m ago"
+    elif (( _age < 86400 )); then echo "$(( _age / 3600 ))h ago"
+    else                          echo "$(( _age / 86400 ))d ago"
     fi
-    if (( _age > _thresh )); then echo "STALE (${_h} ago)"; else echo "${_h} ago"; fi
+}
+
+# Value of <key> in the raw backup status <status> ("" when unset).
+_dev_backup_status_value() {
+    printf '%s\n' "$1" | sed -n "s/^${2}=//p" | tail -1
+}
+
+# State of an auto-backup from its raw status: the age of the loop's last run,
+# "STALE (...)" once older than the threshold or "never" (the loop is not
+# running), or "PUSH FAILING (last ok: <age>)" when it runs but its last push
+# failed — the backup on the automation fork is then that old. Only numbers
+# are taken from the status: the container writes it.
+_dev_fmt_backup_state() {
+    local _status="$1" _now="${2:-$(date +%s)}" _thresh="${DEV_BACKUP_STALE_SECS:-90}" _run _push _fail
+    _run=$(_dev_backup_status_value "$_status" last_run)
+    _push=$(_dev_backup_status_value "$_status" last_push)
+    _fail=$(_dev_backup_status_value "$_status" last_fail)
+    [[ "$_push" =~ ^[0-9]+$ ]] || _push=""
+    if [[ ! "$_run" =~ ^[0-9]+$ ]]; then
+        echo "never"
+    elif (( _now - 10#$_run > _thresh )); then
+        echo "STALE ($(_dev_fmt_age "$_run" "$_now"))"
+    elif [[ "$_fail" =~ ^[0-9]+$ ]] && (( 10#$_fail > 10#${_push:-0} )); then
+        echo "PUSH FAILING (last ok: $(_dev_fmt_age "$_push" "$_now"))"
+    else
+        _dev_fmt_age "$_run" "$_now"
+    fi
 }
 
 # Raw backup status file of a container, best-effort: SSH while running, else
@@ -94,7 +120,7 @@ _dev_fmt_backup_age() {
 # `dev enter` that started the container none exists, which showed as "?".
 # </dev/null: ssh would otherwise swallow the caller's stdin (dev list's loop).
 _dev_backup_status_raw() {
-    local _name="$1" _port="${2:-}" _img="${DEV_DISK_DIR}/${_name}.img"
+    local _name="$1" _port="${2:-}" _img="${DEV_DISK_DIR}/${1}.img"
     local _cmd='cat /mnt/bounded/backup/status 2>/dev/null || true'
     if [[ -z "$_port" && "$(podman inspect "$_name" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]]; then
         _port=$(_dev_ssh_port "$_name")
@@ -106,31 +132,37 @@ _dev_backup_status_raw() {
     fi
 }
 
-# Formatted age of a container's last auto-backup run (loop liveness: "STALE"/
-# "never" means the in-container backup loop is not running, "?" that its
-# status could not be read). <ssh-port>: see _dev_backup_status_raw.
-_dev_backup_age() {
-    local _name="$1" _status _lr
-    _status=$(_dev_backup_status_raw "$_name" "${2:-}") || { echo "?"; return 0; }
-    _lr=$(printf '%s\n' "$_status" | sed -n 's/^last_run=//p' | tail -1)
-    _dev_fmt_backup_age "$_lr"
+# State of a container's auto-backup (see _dev_fmt_backup_state), "?" when its
+# status could not be read. <ssh-port>: see _dev_backup_status_raw.
+_dev_backup_state() {
+    local _status
+    _status=$(_dev_backup_status_raw "$1" "${2:-}") || { echo "?"; return 0; }
+    _dev_fmt_backup_state "$_status"
 }
 
-# Warn (stderr) when a running container's auto-backup loop looks dead/stale.
-# Skips freshly-started containers (the loop needs one interval to run first)
-# and hosts without GNU `date -d` (can't measure uptime) to avoid false alarms.
+# Warn (stderr) when a running container's auto-backup loop looks dead/stale,
+# or cannot push — with git's error, cut to printable characters (the container
+# writes it). Skips freshly-started containers (the loop needs one interval to
+# run first) to avoid false alarms. The start time is asked for as an epoch:
+# podman's own format ("... +0000 UTC") is one `date -d` cannot read.
 _dev_warn_if_backup_stale() {
-    local _name="$1" _started _started_epoch _up _age
+    local _name="$1" _started _up _status _state
     [[ "$(podman inspect "$_name" --format '{{.State.Running}}' 2>/dev/null)" == "true" ]] || return 0
-    _started=$(podman inspect "$_name" --format '{{.State.StartedAt}}' 2>/dev/null) || return 0
-    _started_epoch=$(date -d "$_started" +%s 2>/dev/null) || return 0
-    _up=$(( $(date +%s) - _started_epoch ))
+    _started=$(podman inspect "$_name" --format '{{.State.StartedAt.Unix}}' 2>/dev/null) || return 0
+    [[ "$_started" =~ ^[0-9]+$ ]] || return 0
+    _up=$(( $(date +%s) - _started ))
     (( _up < 120 )) && return 0
-    _age=$(_dev_backup_age "$_name")
-    case "$_age" in
+    _status=$(_dev_backup_status_raw "$_name") || return 0
+    _state=$(_dev_fmt_backup_state "$_status")
+    case "$_state" in
         never | STALE*)
-            echo "WARNING: auto-backup for '${_name}' looks inactive (last run: ${_age})." >&2
+            echo "WARNING: auto-backup for '${_name}' looks inactive (last run: ${_state})." >&2
             echo "         Check /mnt/bounded/backup/log inside the container." >&2
+            ;;
+        PUSH\ FAILING*)
+            echo "WARNING: auto-backup for '${_name}' cannot push to the automation fork ${_state#PUSH FAILING }:" >&2
+            _dev_backup_status_value "$_status" last_error \
+                | LC_ALL=C tr -cd '[:print:]' | cut -c1-300 | sed 's/^/         /' >&2
             ;;
     esac
 }

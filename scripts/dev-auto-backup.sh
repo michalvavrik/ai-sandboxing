@@ -17,6 +17,14 @@
 #   DEV_BACKUP_REMOTE   git remote to push to         (default origin)
 #   DEV_BACKUP_INTERVAL seconds between snapshots      (default 30)
 # Pass --once to take a single snapshot and exit (used by the tests).
+#
+# The status file has key=value lines, read by the host (dev list, dev see,
+# dev show; see _dev_fmt_backup_state in dev-common.sh):
+#   last_run    epoch of the last run (the loop is alive)
+#   last_commit the last snapshot
+#   last_push   epoch of the last push that succeeded
+#   last_fail   epoch of the last push that failed (newer than last_push: failing)
+#   last_error  git's output of that failed push
 set -uo pipefail
 
 readonly _ab_workspace="${DEV_WORKSPACE:-/workspace}"
@@ -73,6 +81,7 @@ _ab_once() {
         _ab_log "pushed ${_commit} -> ${_ab_remote}/${_ab_branch}"
     else
         _ab_status_set last_error "$(printf '%s' "$_err" | tr '\n' ' ')"
+        _ab_status_set last_fail "$_now"
         _ab_warn "push to ${_ab_remote}/${_ab_branch} failed (snapshot ${_commit} kept locally): ${_err}"
     fi
     return 0
