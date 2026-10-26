@@ -1130,9 +1130,13 @@ _dev_fork_branch_commits() {
 
 # Delete branches on the automation fork of <repo> that nothing needs any more:
 # dev-auto/<container>/* of containers that no longer exist, and
-# dev-auto/<container>/backup/{see,show}/<timestamp> older than
+# dev-auto/<container>/backup-{see,show}/<timestamp> older than
 # DEV_BACKUP_MAX_AGE_DAYS. `dev delete` normally removes a container's branches;
 # this catches containers removed otherwise (podman rm, failed delete).
+# Anything below dev-auto/<container>/backup/ (the dev see/show backups' old
+# name) goes at once: while it exists, the container's auto-backup cannot push
+# dev-auto/<container>/backup. What they backed up is in the host's (see) or
+# the container's (show) reflog.
 _dev_prune_automation_fork() {
     local _dev_src_dir="$1" _dev_repo="$2"
     local _dev_url _dev_ref _dev_branch _dev_cname _dev_rest _dev_ts _dev_now _dev_max_age
@@ -1150,12 +1154,15 @@ _dev_prune_automation_fork() {
         if ! _dev_container_exists "$_dev_cname"; then
             echo "  ${_dev_branch} — no container '${_dev_cname}', deleting from ${DEV_AUTOMATION_USER}/${_dev_repo}..."
             _dev_delete+=("$_dev_ref")
-        elif [[ "$_dev_rest" =~ ^/backup/(see|show)/([0-9]+)$ ]]; then
+        elif [[ "$_dev_rest" =~ ^/backup-(see|show)/([0-9]+)$ ]]; then
             _dev_ts="${BASH_REMATCH[2]}"
             if (( _dev_now - _dev_ts > _dev_max_age )); then
                 echo "  ${_dev_branch} — backup older than ${DEV_BACKUP_MAX_AGE_DAYS} days, deleting..."
                 _dev_delete+=("$_dev_ref")
             fi
+        elif [[ "$_dev_rest" == /backup/* ]]; then
+            echo "  ${_dev_branch} — blocks the auto-backup branch dev-auto/${_dev_cname}/backup, deleting..."
+            _dev_delete+=("$_dev_ref")
         fi
     done < <(GIT_SSH_COMMAND="$(_dev_git_ssh)" \
         git -C "$_dev_src_dir" ls-remote --refs "$_dev_url" 'refs/heads/dev-auto/*' 2>/dev/null | awk '{print $2}')

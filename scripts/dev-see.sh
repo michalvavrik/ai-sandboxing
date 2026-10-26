@@ -9,7 +9,7 @@
 # Nothing of the host is carried over. Whatever dev-auto/<name>/main had that
 # the container does not — its own commits, uncommitted changes while it is
 # checked out (saved as a "WIP" commit first) — is backed up to
-# dev-auto/<name>/backup/see/<timestamp> on the automation fork and stays in the
+# dev-auto/<name>/backup-see/<timestamp> on the automation fork and stays in the
 # host's reflog. Uncommitted changes on any other branch are left alone: commit
 # or stash them first.
 #
@@ -120,7 +120,10 @@ if git -C "$_devsee_src" rev-parse -q --verify "refs/heads/${_devsee_branch}" >/
     _devsee_old=$(git -C "$_devsee_src" rev-parse "refs/heads/${_devsee_branch}")
     # Nothing to back up when the container's state contains the host's.
     if ! git -C "$_devsee_src" merge-base --is-ancestor "$_devsee_old" "$_devsee_new"; then
-        _devsee_backup="dev-auto/${_devsee_name}/backup/see/$(date +%s)"
+        # Not backup/see/: dev-auto/<name>/backup is the container's auto-backup
+        # branch, and a branch cannot also be a directory of branches — of the two,
+        # the later push is rejected ("cannot lock ref").
+        _devsee_backup="dev-auto/${_devsee_name}/backup-see/$(date +%s)"
         echo "Backing up host state ($(git -C "$_devsee_src" rev-parse --short "$_devsee_old")) to ${_devsee_backup}..."
         # Sanitized like dev show: commits made on this host branch can mention issues.
         if ! _devsee_out=$(_dev_push_to_container_branch "$_devsee_src" "$_devsee_name" "$_devsee_old" \

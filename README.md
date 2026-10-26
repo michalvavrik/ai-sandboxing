@@ -185,11 +185,11 @@ git push --force-with-lease michalvavrik in-review/53157     # (printed by dev s
 
 ### `dev see`
 
-Commits whatever the container's workspace has (as the sandbox identity), pushes it to `dev-auto/<container>/main` on the automation fork, fetches it and checks it out in the project's source directory: the host branch and its working tree are then exactly the container's workspace. Commits are kept as they are. Nothing of the host is carried over — if `dev-auto/<container>/main` had anything the container does not (commits of your own, uncommitted changes while it was checked out, which become a `WIP` commit first), that state is backed up to `dev-auto/<container>/backup/see/<timestamp>` on the automation fork and stays in the host's reflog. With uncommitted changes on any other branch `dev see` refuses to run (commit or stash them first); untracked files are left alone.
+Commits whatever the container's workspace has (as the sandbox identity), pushes it to `dev-auto/<container>/main` on the automation fork, fetches it and checks it out in the project's source directory: the host branch and its working tree are then exactly the container's workspace. Commits are kept as they are. Nothing of the host is carried over — if `dev-auto/<container>/main` had anything the container does not (commits of your own, uncommitted changes while it was checked out, which become a `WIP` commit first), that state is backed up to `dev-auto/<container>/backup-see/<timestamp>` on the automation fork and stays in the host's reflog. With uncommitted changes on any other branch `dev see` refuses to run (commit or stash them first); untracked files are left alone.
 
 ### `dev show`
 
-Pushes the host's current branch into the container, from any branch that belongs to the container: `dev-auto/<container>/main`, `in-review/<feature>`, `wip/<feature>` or the branch the container was created from. Uncommitted changes are committed first (`sync from host`). Everything the container's workspace has, committed or not, is backed up to `dev-auto/<container>/backup/show/<timestamp>` and then replaced: afterwards the container's checkout has exactly the content of the host's HEAD (`dev show` verifies that). See [Commit messages and issue links](#commit-messages-and-issue-links) for what exactly is pushed.
+Pushes the host's current branch into the container, from any branch that belongs to the container: `dev-auto/<container>/main`, `in-review/<feature>`, `wip/<feature>` or the branch the container was created from. Uncommitted changes are committed first (`sync from host`). Everything the container's workspace has, committed or not, is backed up to `dev-auto/<container>/backup-show/<timestamp>` and then replaced: afterwards the container's checkout has exactly the content of the host's HEAD (`dev show` verifies that). See [Commit messages and issue links](#commit-messages-and-issue-links) for what exactly is pushed.
 
 ### `dev rebase`
 
@@ -210,7 +210,7 @@ The target branch is the base the container's commits are added to, and it is ex
 
 GitHub links every pushed commit whose message mentions an issue or PR (`closes: https://github.com/org/repo/issues/123`, `#123`, `org/repo#123`, `GH-123`) to that issue — so your PR commit, pushed to the automation fork by `dev show`, used to show up in the issue's timeline under the automation account. The URL form is linked without `https://`, with any host, in any case and even with no host at all (`github.com/org/repo/issues/123`, `org/repo/Issues/123`), and `GH-123` also as `gh-123`. Therefore no `dev` command pushes such a commit to the automation fork, and no container ever has one:
 
-- `dev show` and `dev .` copy the branch's own commits (those not on origin) through `scripts/dev-git-sanitize.sh` before pushing: same trees, authors and dates, but `https://github.com/org/repo/issues/123` and all the variants above become `org/repo issue 123` (`/pull/` → `org/repo PR 123`, `/discussions/` → `org/repo discussion 123`), `#123` becomes `issue 123`, `org/repo#123` becomes `org/repo issue 123`, `GH-123` / `gh-123` becomes `GH 123` / `gh 123`. Your host branch is not changed. Commits without references keep their ids, so `dev show` from a clean `dev-auto` branch pushes exactly what it fetched. The host-state backup `dev see` pushes (`dev-auto/<container>/backup/see/<timestamp>`) goes through the same copy.
+- `dev show` and `dev .` copy the branch's own commits (those not on origin) through `scripts/dev-git-sanitize.sh` before pushing: same trees, authors and dates, but `https://github.com/org/repo/issues/123` and all the variants above become `org/repo issue 123` (`/pull/` → `org/repo PR 123`, `/discussions/` → `org/repo discussion 123`), `#123` becomes `issue 123`, `org/repo#123` becomes `org/repo issue 123`, `GH-123` / `gh-123` becomes `GH 123` / `gh 123`. Your host branch is not changed. Commits without references keep their ids, so `dev show` from a clean `dev-auto` branch pushes exactly what it fetched. The host-state backup `dev see` pushes (`dev-auto/<container>/backup-see/<timestamp>`) goes through the same copy.
 - `dev <pr-url>` and `dev <tree-url>` (container creation and refresh) rewrite the commits fetched from GitHub the same way right after the checkout, using GitHub's own list of the PR's / branch's commits.
 - Agents are told never to reference issues or PRs in commit messages.
 
@@ -223,7 +223,7 @@ Because the sanitized copy has the same tree, `dev merge` and `dev squash` work 
 | `in-review/<feature>` (host, your fork) | `dev merge` | no open PR has this head |
 | `wip/<feature>` (host) | you, optionally (`git checkout -b wip/x && dev .`) | `in-review/<feature>` exists, or no commit for 20 days |
 | `dev-auto/<container>/main` (host, automation fork) | `dev see`, `dev show`, `dev .`, `dev delete` | the container does not exist |
-| `dev-auto/<container>/backup/{see,show}/<ts>` (automation fork) | `dev see`, `dev show` | the container does not exist, or older than 20 days |
+| `dev-auto/<container>/backup-{see,show}/<ts>` (automation fork) | `dev see`, `dev show` | the container does not exist, or older than 20 days |
 | `dev-auto/<container>/backup` (automation fork) | the container's auto-backup (every 30 s) | the container does not exist |
 | `backup/<feature>/<type>/<timestamp>` (your fork) | before any host branch is deleted | older than 20 days |
 
@@ -245,7 +245,7 @@ Superset of `dev pull`. Pulls images and sources, then prunes dead branches acro
 2. **`wip/<x>`** — deleted when `in-review/<x>` exists or the branch had no commit for 20 days
 3. **`in-review/<x>`** — deleted when no open PR is associated (checked via `gh pr list`)
 4. **`backup/*/<timestamp>`** on your fork — deleted when timestamp is older than 20 days
-5. **`dev-auto/<x>/*`** on the automation fork — deleted when no container `<x>` exists; `dev-auto/<x>/backup/{see,show}/<timestamp>` of existing containers deleted after 20 days
+5. **`dev-auto/<x>/*`** on the automation fork — deleted when no container `<x>` exists; `dev-auto/<x>/backup-{see,show}/<timestamp>` of existing containers deleted after 20 days, anything below `dev-auto/<x>/backup/` (their old name, which blocks the auto-backup) at once
 6. **Study files** — saved workspaces (`dev delete`, `dev recreate`) and the files of yours `dev merge` replaced, in `~/.local/share/dev-sandbox-saved/`, deleted after 20 days; a review copy in `~/.cache/dev-sandbox-see/<x>/` (`dev see`) deleted when no container `<x>` exists or no `dev see` refreshed it for 20 days
 
 Before any host branch deletion, the branch is backed up to `backup/<feature>/<type>/<timestamp>` on the `DEV_GHCR_USER` remote (your GitHub fork).

@@ -88,7 +88,9 @@ _dev_warn_if_backup_stale "$_devshow_name"
 # Everything in the container's workspace is committed (the same sync as dev
 # see, including its repair of a workspace damaged by an unclean stop) and
 # pushed to the backup branch, so the checkout below replaces it completely.
-_devshow_backup="dev-auto/${_devshow_name}/backup/show/$(date +%s)"
+# Not backup/show/: it would clash with the container's auto-backup branch
+# dev-auto/<name>/backup (see the dev see backup).
+_devshow_backup="dev-auto/${_devshow_name}/backup-show/$(date +%s)"
 echo "Backing up container state to ${_devshow_backup}..."
 _dev_sync_workspace "$_devshow_name" "$_devshow_backup" \
     || echo "WARNING: could not back up the container's workspace to ${_devshow_backup}" >&2
