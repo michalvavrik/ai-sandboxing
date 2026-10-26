@@ -224,7 +224,7 @@ Because the sanitized copy has the same tree, `dev merge` and `dev squash` work 
 | `wip/<feature>` (host) | you, optionally (`git checkout -b wip/x && dev .`) | `in-review/<feature>` exists, or no commit for 20 days |
 | `dev-auto/<container>/main` (host, automation fork) | `dev see`, `dev show`, `dev .`, `dev delete` | the container does not exist |
 | `dev-auto/<container>/backup-{see,show}/<ts>` (automation fork) | `dev see`, `dev show` | the container does not exist, or older than 20 days |
-| `dev-auto/<container>/backup` (automation fork) | the container's auto-backup (every 30 s) | the container does not exist |
+| `dev-auto/<container>/backup` (automation fork) | the container's [auto-backup](#auto-backup) (snapshots on change, checked every 30 s) | the container does not exist |
 | `backup/<feature>/<type>/<timestamp>` (your fork) | before any host branch is deleted | older than 20 days |
 
 ### How branches map to container names
@@ -543,7 +543,15 @@ Result:
 
 ## Auto-backup
 
-Every 30 seconds, a background process (`scripts/dev-auto-backup.sh`, launched by the entrypoint) snapshots the workspace — including uncommitted and untracked files — and force-pushes it to `dev-auto/<name>/backup` on the automation fork, without touching the workspace. A push failure (e.g. the proxy is down) is logged but the local snapshot commit is kept, so the work is still recoverable with `dev see` or directly from the disk image.
+Every 30 seconds, a background process (`scripts/dev-auto-backup.sh`, launched by the entrypoint) checks the workspace — including uncommitted and untracked files — and its HEAD. When either changed since the last snapshot, it adds a snapshot commit (`backup`) and force-pushes the snapshots to `dev-auto/<name>/backup` on the automation fork, without touching the workspace; while nothing changes, nothing is pushed. A push failure (e.g. the proxy is down) is logged and retried every 30 seconds, and the snapshots are kept locally (`refs/dev-auto-backup` in the workspace), so the work is still recoverable with `dev see` or directly from the disk image.
+
+The branch is a chain: each snapshot's first parent is the snapshot before it, its second the workspace's HEAD at that time (so commits made in the container are backed up too). It keeps every snapshot that was the current state in the last 10 minutes and, before that, the newest of every 20 minutes on the clock (:00, :20, :40). To get something back:
+
+```bash
+git fetch dev-automation dev-auto/<name>/backup
+git log --first-parent --format='%h %ci %s' FETCH_HEAD   # newest first; add -p for what each one changed
+git restore --source=<snapshot> -- <path>                # or: git diff <snapshot>
+```
 
 It records progress to `/mnt/bounded/backup/{status,log}` on the bounded disk, which the host reads even when the container is stopped:
 
