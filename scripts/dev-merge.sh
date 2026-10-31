@@ -2,20 +2,21 @@
 # dev merge / dev squash — put the agent's work on in-review/<feature> as your
 # own commit. Both work on what `dev see` fetched (the host branch
 # dev-auto/<container>/main), never on the container directly, never rebase and
-# never push. For a study container, dev merge copies files `dev see` fetched
-# into the study directory instead (_devmerge_study). See _devmerge_usage.
+# push only with -p (a force push to your fork). For a study container, dev
+# merge copies files `dev see` fetched into the study directory instead
+# (_devmerge_study). See _devmerge_usage.
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
 _devmerge_usage() {
     cat <<'USAGE'
-Usage: dev merge [-m <message>] [name]
-       dev squash [name]
+Usage: dev merge [-m <message>] [-p] [name]
+       dev squash [-p] [name]
 
 Takes the agent's changes as fetched by the last `dev see` (host branch
 dev-auto/<container>/main) and records them on in-review/<feature> as a commit
-of your host git identity. Nothing is pushed; in-review/<feature> is checked
-out when done.
+of your host git identity. in-review/<feature> is checked out when done;
+nothing is pushed unless you pass -p.
 
   dev merge   One new commit (message from -m or your editor, Signed-off-by
               added). in-review/<feature> is created when it does not exist
@@ -23,6 +24,8 @@ out when done.
   dev squash  The changes are folded into the current HEAD commit of
               in-review/<feature> (message and author date kept — like
               git commit --amend). The branch must exist.
+  -p          Then force-push in-review/<feature> to your fork (the
+              DEV_GHCR_USER remote), also when there was nothing new to add.
 
 The target branch is the base the container's commits are added to; it is
 expected not to change behind the container's back. If it did (no commit in
@@ -127,12 +130,14 @@ _devmerge_study() {
 
 _devmerge_mode="merge"
 _devmerge_message=""
+_devmerge_push=false
 _devmerge_args=()
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --squash) _devmerge_mode="squash"; shift ;;
         -m) _devmerge_message="${2:?'-m requires a message'}"; shift 2 ;;
         -m*) _devmerge_message="${1#-m}"; shift ;;
+        -p) _devmerge_push=true; shift ;;
         --help|-h) _devmerge_usage; exit 0 ;;
         -*) echo "dev ${_devmerge_mode}: unknown option '$1'" >&2; _devmerge_usage >&2; exit 1 ;;
         *) _devmerge_args+=("$1"); shift ;;
@@ -156,8 +161,8 @@ _devmerge_name=$(_dev_resolve_project_container "$_devmerge_name_arg")
 readonly _devmerge_name
 
 if _dev_container_is_study "$_devmerge_name"; then
-    if [[ "$_devmerge_mode" == "squash" || -n "$_devmerge_message" ]]; then
-        echo "Error: ${_devmerge_name} is a study container — there is no commit to squash or to write a message for" >&2
+    if [[ "$_devmerge_mode" == "squash" || -n "$_devmerge_message" || "$_devmerge_push" == true ]]; then
+        echo "Error: ${_devmerge_name} is a study container — there is no commit to squash, push or write a message for" >&2
         echo "('dev merge [path...]' copies files of the last dev see into its directory)" >&2
         exit 1
     fi
@@ -187,6 +192,23 @@ readonly _devmerge_agent="dev-auto/${_devmerge_name}/main"
 _devmerge_label=$(_dev_container_label "$_devmerge_name" "dev-original-branch")
 
 _dg() { git -C "$_devmerge_src" "$@"; }
+
+if [[ "$_devmerge_push" == true ]] && ! _dg remote get-url "$DEV_GHCR_USER" &>/dev/null; then
+    echo "Error: ${_devmerge_src} has no git remote '${DEV_GHCR_USER}' (your fork) for -p to push to" >&2
+    exit 1
+fi
+
+# -p: force-push the target branch to your fork. A branch this run created gets
+# it as its upstream; an existing one keeps the upstream it has.
+_devmerge_push_target() {
+    local _upstream=()
+    [[ "$_devmerge_target_exists" == true ]] || _upstream=(-u)
+    if ! _dg push --force "${_upstream[@]}" "$DEV_GHCR_USER" \
+            "refs/heads/${_devmerge_target}:refs/heads/${_devmerge_target}"; then
+        echo "Error: could not push ${_devmerge_target} to ${DEV_GHCR_USER}" >&2
+        exit 1
+    fi
+}
 
 if ! _dg rev-parse -q --verify "refs/heads/${_devmerge_agent}" >/dev/null; then
     echo "Error: host branch ${_devmerge_agent} not found — run 'dev see ${_devmerge_name}' first" >&2
@@ -292,6 +314,9 @@ if [[ "$_devmerge_tree" == "$_devmerge_parent_tree" ]]; then
     else
         echo "Nothing to merge: no changes on top of $(_dg log -1 --format='%h' "$_devmerge_parent")."
     fi
+    if [[ "$_devmerge_push" == true && "$_devmerge_target_exists" == true ]]; then
+        _devmerge_push_target
+    fi
     exit 0
 fi
 
@@ -387,12 +412,6 @@ else
 fi
 echo "Author: ${_devmerge_user_name} <${_devmerge_user_email}>"
 
-if _dg remote get-url "$DEV_GHCR_USER" &>/dev/null; then
-    if [[ "$_devmerge_mode" == "squash" ]]; then
-        echo "Push with: git push --force-with-lease ${DEV_GHCR_USER} ${_devmerge_target}"
-    elif [[ "$_devmerge_target_exists" == true ]]; then
-        echo "Push with: git push ${DEV_GHCR_USER} ${_devmerge_target}"
-    else
-        echo "Push with: git push -u ${DEV_GHCR_USER} ${_devmerge_target}"
-    fi
+if [[ "$_devmerge_push" == true ]]; then
+    _devmerge_push_target
 fi

@@ -121,12 +121,15 @@ case "$_comp_cmd" in
     enter|rebase|use)
         $_comp_is_opt || _comp_containers
         ;;
-    see|show|squash)
+    see|show)
         $_comp_is_opt || _comp_project_containers
+        ;;
+    squash)
+        if $_comp_is_opt; then _comp_emit "-p"; else _comp_project_containers; fi
         ;;
     merge)
         if [[ "$_comp_prev" == "-m" ]]; then exit 0
-        elif $_comp_is_opt; then _comp_emit "-m"
+        elif $_comp_is_opt; then _comp_emit "-m" "-p"
         elif _comp_tkey=$(_dev_detect_template_from_cwd 2>/dev/null) && _dev_template_is_study "$_comp_tkey"; then
             _comp_study_paths
         else _comp_project_containers

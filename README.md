@@ -56,7 +56,7 @@ All machine-specific values live in `config.local` (gitignored). The install scr
 | `DEV_AUTOMATION_USER`  | GitHub account for the automation agent       |
 | `DEV_AUTOMATION_EMAIL` | Git commit email inside containers            |
 | `DEV_AUTOMATION_NAME`  | Git commit author name inside containers      |
-| `DEV_GHCR_USER`        | GitHub username for GHCR image pulls and branch backups |
+| `DEV_GHCR_USER`        | GitHub username for GHCR image pulls, branch backups and `dev merge -p` / `dev squash -p` |
 | `DEV_IMAGE`            | Container image to pull and run               |
 | `DEV_SOURCES_DIR`      | Parent directory for project source checkouts |
 | `DEV_EDUCATION_DIR`    | Parent directory of [study projects](#study-projects) (optional, default `~/education`) |
@@ -107,6 +107,7 @@ dev show fix-auth          # push the host's current branch into the container (
 dev merge                  # one new commit by you on in-review/<feature> from the last dev see (asks for the message)
 dev merge -m "message"     # same, message given
 dev squash                 # fold the last dev see into the HEAD commit of in-review/<feature>
+dev squash -p              # same, then force-push in-review/<feature> to your fork (dev merge -p too)
 dev rebase fix-auth        # rebase container workspace on latest upstream main
 dev cp ~/docs/analysis.md  # copy files/dirs into container's /tmp/workspace
 dev cp --to /workspace f.patch # copy into a specific container directory
@@ -151,7 +152,7 @@ When nothing is remembered and multiple containers exist, commands resolve by cw
 
 ## Development flow
 
-The flow is always the same four commands; nothing rebases, nothing merges upstream, nothing pushes to GitHub on your behalf:
+The flow is always the same four commands; nothing rebases, nothing merges upstream, and nothing pushes to GitHub on your behalf unless you pass `-p`:
 
 ```
 dev see      container → host     fetch the agent's workspace, check out dev-auto/<container>/main
@@ -171,7 +172,7 @@ dev see                    # ...
 
 # 3. Looks good: make it your commit and open the PR
 dev merge                  # editor opens for the message; creates in-review/53157, checks it out
-git push -u michalvavrik in-review/53157      # (the exact command is printed)
+git push -u michalvavrik in-review/53157
 # open the PR from in-review/53157
 
 # 4. Review comments: the agent works on top of the PR branch
@@ -180,7 +181,7 @@ git checkout in-review/53157 && dev show     # PR branch → container (commit m
 dev see                    # review the result
 dev squash                 # reviewers are fine with amending: fold into the PR commit
 dev merge                  # reviewers want separate commits: new commit on top (asks for the message)
-git push --force-with-lease michalvavrik in-review/53157     # (printed by dev squash / dev merge)
+git push --force-with-lease michalvavrik in-review/53157     # or pass -p to dev squash / dev merge
 ```
 
 ### `dev see`
@@ -197,10 +198,10 @@ Rebases the container's workspace on the latest upstream default branch (`main`/
 
 ### `dev merge` and `dev squash`
 
-Both take **what the last `dev see` fetched** (the host branch `dev-auto/<container>/main` — not the container, so you only ever merge what you reviewed) and record the agent's changes on `in-review/<feature>` as a commit of your host git identity (`user.name`/`user.email` of the source repo; `-S` when `commit.gpgsign` is set). Nothing is pushed; `in-review/<feature>` is checked out when done and the push command is printed.
+Both take **what the last `dev see` fetched** (the host branch `dev-auto/<container>/main` — not the container, so you only ever merge what you reviewed) and record the agent's changes on `in-review/<feature>` as a commit of your host git identity (`user.name`/`user.email` of the source repo; `-S` when `commit.gpgsign` is set). `in-review/<feature>` is checked out when done. Nothing is pushed unless you pass `-p`: then `in-review/<feature>` is force-pushed to your fork (the `DEV_GHCR_USER` remote), also when there was nothing new to add; a branch `dev merge` just created gets it as its upstream.
 
-- `dev merge [-m <message>]` — one new commit. Without `-m` your git editor opens (like `git commit`, with the diff stat as comments; an empty message aborts). `Signed-off-by` is added. If `in-review/<feature>` does not exist yet it is created; its first commit starts where the container's work started (the newest commit on the agent branch that was not made by the sandbox), or at the branch the container was created from with `dev .`.
-- `dev squash` — the changes are folded into the current HEAD commit of `in-review/<feature>` (message and author date kept, like `git commit --amend`). The branch must exist.
+- `dev merge [-m <message>] [-p]` — one new commit. Without `-m` your git editor opens (like `git commit`, with the diff stat as comments; an empty message aborts). `Signed-off-by` is added. If `in-review/<feature>` does not exist yet it is created; its first commit starts where the container's work started (the newest commit on the agent branch that was not made by the sandbox), or at the branch the container was created from with `dev .`.
+- `dev squash [-p]` — the changes are folded into the current HEAD commit of `in-review/<feature>` (message and author date kept, like `git commit --amend`). The branch must exist.
 
 The target branch is the branch the container was created from with `dev .` (`main` → `main`, `feature-x` → `feature-x`; `wip/x` graduates to `in-review/x`). Containers created from an issue, a PR or by `dev new` target `in-review/<feature>` (`keycloak-53157` → `in-review/53157`, `keycloak-pr-51877` → `in-review/pr-51877`); a `dev <pr-url>` container of your own PR has the PR's `in-review/*` head branch as its label and targets that. The target is printed before anything happens.
 
