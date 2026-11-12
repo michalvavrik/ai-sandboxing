@@ -3,13 +3,14 @@ set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
 _devreview_usage() {
-    echo "Usage: dev review [options] [url|container-name|follow-up-text]"
-    echo "       dev <github-url> --loop[=profile|list] [options]"
+    echo "Usage: dev review [options] [url|.|container-name|follow-up-text]"
+    echo "       dev <github-url>|. --loop[=profile|list] [options]"
     echo ""
     echo "Run a headless AI review in a dev container."
     echo ""
     echo "Modes:"
     echo "  dev review <url>                Set up container from GitHub URL and review"
+    echo "  dev review .                    Push the current project's branch into its container (like dev .) and review"
     echo "  dev review [container-name]     Run first review in named/current container"
     echo '  dev review "follow-up text"     Resume session with follow-up question'
     echo ""
@@ -158,28 +159,53 @@ fi
 _devreview_mode="review"
 _devreview_name=""
 
+# The container a setup script reports through the per-shell file (see
+# _dev_remember_container): dev-issue.sh for a URL, dev-local.sh for ".".
+_devreview_setup_container() {
+    local _n
+    _n=$(cat "/run/user/$(id -u)/dev-last-container.${_DEV_SHELL_PID:-}" 2>/dev/null) || true
+    [[ -z "$_n" ]] && _n=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
+    if [[ -z "$_n" ]]; then
+        echo "Error: container setup did not produce a container name" >&2
+        return 1
+    fi
+    echo "$_n"
+}
+
 if [[ -z "$_devreview_positional" ]]; then
     _devreview_name=$(_dev_resolve_name "")
 
 elif [[ "$_devreview_positional" =~ ^https?:// ]]; then
     DEV_SKIP_ENTER=1 _DEV_SHELL_PID="${_DEV_SHELL_PID:-}" "${DEV_SCRIPTS_DIR}/dev-issue.sh" "$_devreview_positional"
-    _devreview_name=$(cat "/run/user/$(id -u)/dev-last-container.${_DEV_SHELL_PID:-}" 2>/dev/null) || true
-    [[ -z "$_devreview_name" ]] && _devreview_name=$(cat "/run/user/$(id -u)/dev-last-container" 2>/dev/null) || true
-    if [[ -z "$_devreview_name" ]]; then
-        echo "Error: container setup did not produce a container name" >&2
+    _devreview_name=$(_devreview_setup_container) || exit 1
+
+elif [[ "$_devreview_positional" == "." ]]; then
+    # Like `dev .`: push the current project's branch (uncommitted changes
+    # included) to its container, creating it if needed, then review there.
+    _devreview_tkey=$(_dev_detect_template_from_cwd 2>/dev/null) || _devreview_tkey=""
+    if [[ -n "$_devreview_tkey" ]] && _dev_template_is_study "$_devreview_tkey"; then
+        echo "Error: ${_devreview_tkey} is a study project — there is no code to review" >&2
         exit 1
     fi
+    DEV_SKIP_ENTER=1 _DEV_SHELL_PID="${_DEV_SHELL_PID:-}" "${DEV_SCRIPTS_DIR}/dev-local.sh"
+    _devreview_name=$(_devreview_setup_container) || exit 1
 
 elif _dev_container_exists "$_devreview_positional"; then
     _devreview_name="$_devreview_positional"
 
 else
+    # Anything else is a question for the last review session in the current
+    # container.
     _devreview_mode="followup"
     _devreview_name=$(_dev_resolve_name "")
 fi
 
 if ! _dev_container_exists "$_devreview_name"; then
     echo "Error: container '${_devreview_name}' does not exist" >&2
+    exit 1
+fi
+if _dev_container_is_study "$_devreview_name"; then
+    echo "Error: '${_devreview_name}' is a study container — there is no code to review" >&2
     exit 1
 fi
 _dev_remember_container "$_devreview_name"

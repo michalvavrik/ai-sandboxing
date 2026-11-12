@@ -98,6 +98,7 @@ _dev_sync_workspace "$_devshow_name" "$_devshow_backup" \
 echo "Pulling inside container..."
 _dev_ssh_cmd "$_devshow_name" \
     "cd /workspace && git fetch origin ${_devshow_branch} && git checkout -B '${_devshow_branch}' FETCH_HEAD"
+_dev_write_base "$_devshow_name" "$_DEV_PUSHED_BASE"
 
 # The container must now have exactly the host's content.
 _devshow_state=$(_dev_ssh_cmd "$_devshow_name" \

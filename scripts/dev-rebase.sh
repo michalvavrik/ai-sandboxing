@@ -80,6 +80,10 @@ fi
 _dev_ssh_cmd "$_devrebase_name" "cd /workspace && git push -f origin HEAD:refs/heads/${_devrebase_branch}" \
     || _devrebase_fail "Error: rebased, but could not push the result to ${_devrebase_branch} (the container has it; retry with 'dev see')"
 
+# The branch now starts at upstream's tip: that is what reviews diff against.
+_devrebase_base=$(_dev_ssh_cmd "$_devrebase_name" "git -C /workspace rev-parse 'upstream/${_devrebase_default}'" </dev/null 2>/dev/null) || _devrebase_base=""
+_dev_write_base "$_devrebase_name" "$_devrebase_base"
+
 echo "Rebased on upstream/${_devrebase_default}: $(_dev_ssh_cmd "$_devrebase_name" "cd /workspace && git log -1 --format='%h %s'")"
 echo "Run 'dev see ${_devrebase_name}' to get it on the host."
 

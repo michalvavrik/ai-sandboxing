@@ -828,6 +828,7 @@ _dev_create_container() {
         ${DEV_ISSUE_NUMBER:+-e "DEV_ISSUE_NUMBER=${DEV_ISSUE_NUMBER}"} \
         ${DEV_FORK_ORG:+-e "DEV_FORK_ORG=${DEV_FORK_ORG}"} \
         ${DEV_BRANCH_NAME:+-e "DEV_BRANCH_NAME=${DEV_BRANCH_NAME}"} \
+        ${DEV_BASE_COMMIT:+-e "DEV_BASE_COMMIT=${DEV_BASE_COMMIT}"} \
         -p "127.0.0.1::2222" \
         "${_dev_volumes[@]}" \
         "${_dev_bob_secret[@]}" \
@@ -1096,6 +1097,10 @@ _dev_default_branch() {
     return 1
 }
 
+# Set by _dev_push_to_container_branch: the upstream commit the pushed branch
+# is based on (see _dev_write_base).
+_DEV_PUSHED_BASE=""
+
 # Push the host's <rev> to <branch> (default dev-auto/<name>/main) on the
 # automation fork. Every commit that is not already on the upstream repo
 # (origin's branches and tags) is first rewritten by dev-git-sanitize.sh so that
@@ -1105,7 +1110,7 @@ _dev_default_branch() {
 # Usage: _dev_push_to_container_branch <src-dir> <name> <rev> [<repo>] [<branch>]
 _dev_push_to_container_branch() {
     local _dev_src_dir="$1" _dev_name="$2" _dev_rev="$3"
-    local _dev_repo _dev_branch _dev_head _dev_new _dev_count _dev_commits=()
+    local _dev_repo _dev_branch _dev_head _dev_new _dev_count _dev_commits=() _dev_oldest
     _dev_repo="${4:-$(_dev_container_template_key "$_dev_name")}"
     _dev_repo="${_dev_repo#*/}"
     _dev_branch="${5:-dev-auto/${_dev_name}/main}"
@@ -1126,12 +1131,32 @@ _dev_push_to_container_branch() {
         echo "Error: ${_dev_count} commits on ${_dev_rev} are not on origin; refusing to rewrite that many (is origin the upstream repo?)" >&2
         return 1
     fi
+    # The upstream commit the branch is based on (parent of its oldest own
+    # commit along the first parents): recorded in the container as .base, see
+    # _dev_write_base. The rewrite below does not change it.
+    _DEV_PUSHED_BASE="$_dev_head"
+    if (( _dev_count > 0 )); then
+        _dev_oldest=$(git -C "$_dev_src_dir" rev-list --first-parent "$_dev_head" --not --remotes=origin --tags | tail -n1)
+        _DEV_PUSHED_BASE=$(git -C "$_dev_src_dir" rev-parse -q --verify "${_dev_oldest}^" 2>/dev/null) || _DEV_PUSHED_BASE=""
+    fi
     _dev_new=$("${DEV_SCRIPTS_DIR}/dev-git-sanitize.sh" -C "$_dev_src_dir" "$_dev_head" "${_dev_commits[@]}") || return 1
 
     echo "Pushing to ${_dev_branch} on ${DEV_AUTOMATION_USER}/${_dev_repo}..."
     GIT_SSH_COMMAND="$(_dev_git_ssh)" \
         git -C "$_dev_src_dir" push -f "$(_dev_automation_remote_url "$_dev_repo")" \
         "${_dev_new}:refs/heads/${_dev_branch}"
+}
+
+# Record in /workspace/.base the upstream commit the container's branch is
+# based on; reviews diff against it. The workspace is a shallow clone whose
+# history of the upstream branch ends at the clone, so git there cannot find
+# the merge base of a branch that started from an older commit. Excluded from
+# git like .pr and .issue.
+_dev_write_base() {
+    local _dev_name="$1" _dev_base="$2"
+    [[ "$_dev_base" =~ ^[0-9a-f]{40}$ ]] || return 0
+    _dev_ssh_cmd "$_dev_name" "cd /workspace && printf '%s\n' '${_dev_base}' > .base && { grep -qxF '.base' .git/info/exclude 2>/dev/null || echo '.base' >> .git/info/exclude; }" </dev/null 2>/dev/null \
+        || echo "WARNING: could not record the branch's base commit in the container (.base)" >&2
 }
 
 # Rewrite the given commits inside a container (see dev-git-sanitize.sh) and

@@ -570,8 +570,9 @@ ${_fmt_section}
 ## Task context
 - .pr — PR details (\`gh pr view\` output), present when working on a pull request
 - .issue — issue details (\`gh issue view\` output), present when working on an issue
+- .base — the upstream commit the working branch is based on, present for a branch pushed from the host or fetched from a fork; the branch's changes are \`git diff \$(cat .base)\`
 AGENTSMD
-        runuser -u dev -- bash -c 'printf ".pr\n.issue\n.pnpm-store\n" >> /workspace/.git/info/exclude'
+        runuser -u dev -- bash -c 'printf ".pr\n.issue\n.base\n.pnpm-store\n" >> /workspace/.git/info/exclude'
         runuser -u dev -- git -C /workspace config core.untrackedCache true 2>/dev/null || true
         # Warm virtio-fs dentry cache for workspace + Claude Code binary (async)
         (runuser -u dev -- git -C /workspace status; cat /usr/local/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe) &>/dev/null &
@@ -637,6 +638,26 @@ AGENTSMD
         if ! [ -f /workspace/.issue ]; then
             runuser -u dev -- bash -c \
                 "gh issue view ${DEV_ISSUE_NUMBER} --repo ${DEV_TEMPLATE_KEY} 2>/dev/null | tr -d '\r' > /workspace/.issue" || true
+        fi
+    fi
+
+    # Base commit of the working branch (first run only): what reviews diff
+    # against. A branch pushed from the host comes with it (dev . / dev show /
+    # dev recreate, which also keep it current later); for a branch fetched
+    # from a GitHub fork, GitHub knows the merge base. PRs have .pr instead.
+    if ! [ -f /workspace/.base ]; then
+        if [ -n "${DEV_BASE_COMMIT:-}" ]; then
+            runuser -u dev -- bash -c "printf '%s\n' '${DEV_BASE_COMMIT}' > /workspace/.base" || true
+        elif [ -n "${DEV_BRANCH_NAME:-}" ] && [ -z "${DEV_PR_NUMBER:-}" ]; then
+            [ -n "$_gh_auth_pid" ] && wait "$_gh_auth_pid" 2>/dev/null
+            _default=$(runuser -u dev -- gh repo view "${DEV_TEMPLATE_KEY}" --json defaultBranchRef --jq '.defaultBranchRef.name' 2>/dev/null) || _default=""
+            _base=$(runuser -u dev -- gh api "repos/${DEV_TEMPLATE_KEY}/compare/${_default:-main}...${DEV_FORK_ORG}:${DEV_BRANCH_NAME}" \
+                --jq '.merge_base_commit.sha' 2>/dev/null) || _base=""
+            if echo "$_base" | grep -qE '^[0-9a-f]{40}$'; then
+                runuser -u dev -- bash -c "printf '%s\n' '${_base}' > /workspace/.base" || true
+            else
+                echo "WARNING: could not determine the branch's base commit (no .base); reviews fall back to guessing it" >&2
+            fi
         fi
     fi
 

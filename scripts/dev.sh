@@ -30,7 +30,8 @@ _dev_usage() {
     echo "  sync           Pull images/sources + prune dead branches (host and automation fork)"
     echo "  install        Install prerequisites and configure"
     echo "  .              Create/enter container from current git project or study directory"
-    echo "  review [opts] [url|container-name|\"follow-up\"]  Headless agent review"
+    echo "  . --loop[=profile]  Push the project into its container and run a review loop there"
+    echo "  review [opts] [url|.|container-name|\"follow-up\"]  Headless agent review"
     echo "                 (--agent=claude|bob|agy, --model=opus|fable|flash|pro, --loop[=normal|best|all|list])"
     echo "  <github-url>   Create/enter container for a GitHub issue/PR"
     echo "  <github-url> --loop[=profile]  Set up the container and run a multi-model review loop"
@@ -49,6 +50,19 @@ _dev_sub() {
     local _dev_script="$1"
     shift
     _DEV_SHELL_PID=$$ DEV_LAST_CONTAINER="${DEV_LAST_CONTAINER:-}" "${_dev_dir}/${_dev_script}" "$@"
+}
+
+# Succeeds when the arguments contain a dev review option: `dev <url>` and
+# `dev .` then run a headless review instead of entering the container.
+_dev_has_review_opts() {
+    local _dev_a
+    for _dev_a in "$@"; do
+        case "$_dev_a" in
+            --loop|--loop=*|--agent|--agent=*|--model|--model=*|--prompt|--prompt=*|--append-to-prompt|--append-to-prompt=*)
+                return 0 ;;
+        esac
+    done
+    return 1
 }
 
 _dev_dispatch() {
@@ -77,19 +91,22 @@ _dev_dispatch() {
             "${_dev_dir}/dev-${_dev_cmd}.sh"
             ;;
         .)
-            _dev_sub dev-local.sh "$@"
+            # `dev .` creates/enters the project's container. With review
+            # options it runs a headless review there instead (same as
+            # `dev review . ...`).
+            if _dev_has_review_opts "$@"; then
+                _dev_sub dev-review.sh "$@" "."
+            elif (( $# > 0 )); then
+                echo "dev: unexpected arguments after '.': $* (use --loop to run a review)" >&2
+                return 1
+            else
+                _dev_sub dev-local.sh
+            fi
             ;;
         http://*|https://*)
             # `dev <url>` creates/enters the container. With review options it
             # runs a headless review there instead (same as `dev review <url> ...`).
-            local _dev_review=false _dev_a
-            for _dev_a in "$@"; do
-                case "$_dev_a" in
-                    --loop|--loop=*|--agent|--agent=*|--model|--model=*|--prompt|--prompt=*|--append-to-prompt|--append-to-prompt=*)
-                        _dev_review=true ;;
-                esac
-            done
-            if [[ "$_dev_review" == true ]]; then
+            if _dev_has_review_opts "$@"; then
                 _dev_sub dev-review.sh "$@" "$_dev_cmd"
             elif (( $# > 0 )); then
                 echo "dev: unexpected arguments after <url>: $* (use --loop to run a review)" >&2
@@ -181,5 +198,5 @@ _dev_main() {
 
 _dev_main "$@"
 _dev_main_rc=$?
-unset -f _dev_main _dev_dispatch _dev_sub _dev_usage
+unset -f _dev_main _dev_dispatch _dev_sub _dev_usage _dev_has_review_opts
 eval "unset _dev_main_rc; return ${_dev_main_rc} 2>/dev/null || exit ${_dev_main_rc}"

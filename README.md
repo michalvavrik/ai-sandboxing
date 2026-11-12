@@ -116,6 +116,7 @@ dev cpout /tmp/file.txt    # copy from container (absolute path)
 dev cpout --to ~/review src # copy from container into a specific host directory
 dev review fix-auth        # headless review (default: claude; --agent=claude|bob|agy, --model=opus|fable|flash|pro)
 dev review --loop          # multi-model review loop (normal = bob, flash, opus; also best, all, or a list)
+dev review . --loop=best   # push the current project's branch into its container first (like dev .), then loop
 dev use fix-auth           # set current container without entering
 dev list                   # show all dev containers
 dev pull                   # pull newer images and fetch sources
@@ -123,6 +124,7 @@ dev sync                   # pull + prune dead branches (host and automation for
 
 # From the current git project directory:
 cd ~/sources/keycloak && dev .   # detect template, push local HEAD to container
+cd ~/sources/keycloak && dev . --loop   # same, then run a review loop there instead of entering
 
 # From a study directory (no git, see Study projects):
 cd ~/education/psychology && dev .   # create or enter container psychology
@@ -364,6 +366,11 @@ Run an AI review without entering the container — output streams to your termi
 # Review a PR (sets up container like `dev <url>`, then runs agent)
 dev review https://github.com/keycloak/keycloak/pull/50801
 
+# Review local work: push the current project's branch into its container
+# (created if needed, uncommitted changes included — like `dev .`), then review it
+cd ~/sources/keycloak && git checkout wip/spiffe
+dev review . --loop=all      # or: dev . --loop=all
+
 # Review in an existing container
 dev review keycloak-pr-50801
 
@@ -394,6 +401,10 @@ Review prompts use a two-layer system in `configs/review-prompts/`:
 - `loop.txt` — extra instructions for review loops (see below)
 
 Edit these files to improve prompts over time. `--prompt` replaces only the agent-specific part; `--append-to-prompt` appends to the combined prompt.
+
+A positional argument that is neither a URL, `.`, nor the name of a container is a follow-up question for the last review session in the current container; `--loop` and `--prompt` are refused there. Study containers have no code to review.
+
+Without a PR (a `dev .` or `dev show` branch, a branch URL), the review is the diff between the branch and the upstream commit it is based on, uncommitted edits in the container included. The host records that commit in the container's `/workspace/.base` whenever it pushes the branch (`dev .`, `dev show`; `dev rebase` moves it to the new upstream tip, `dev recreate` keeps it; a branch-URL container asks GitHub for it), because the workspace is a shallow clone in which git cannot find the merge base of a branch that started from a commit older than the clone. The prompt tells the reviewer to use `.base`, `gh pr diff` for a PR, and only otherwise to guess.
 
 For interactive follow-up (when headless isn't enough): `dev enter` then `claude-resume` — it resumes the Claude session of the last `dev review` in that container (recorded by the review; falls back to the most recent Claude session in `/workspace`). Extra arguments are passed to `claude`, e.g. `claude-resume --model fable`. The session ID is also printed at the end of each review for `claude -r <session-id>`.
 

@@ -83,6 +83,6 @@ if [[ "$_repair_only" == true ]]; then
 fi
 
 git add -A
-git reset HEAD -- .pr .issue .pnpm-store 2>/dev/null
+git reset HEAD -- .pr .issue .base .pnpm-store 2>/dev/null
 git diff --cached --quiet || git commit -m 'WIP sync'
 git push -f origin "HEAD:refs/heads/${_branch}"

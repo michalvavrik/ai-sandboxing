@@ -1,6 +1,6 @@
 You are reviewing code in /workspace. This is a review, not a change: do not modify any file except the review file, do not run formatters (e.g. `mvn spotless:apply`) and do not mention formatting or other housekeeping in your output — only findings matter. Gather context before reviewing:
 - Check .reviews/ for previous reviews by you or other agents (`ls .reviews/` recursively). If any exist, read them — they provide context but may be obsolete or contain wrong conclusions. Fact-check anything you rely on rather than trusting it blindly. Note where you agree or disagree with prior findings.
-- Examine the diff: `git diff $(git merge-base HEAD upstream/main 2>/dev/null || echo HEAD~1)..HEAD`
+- Find the change under review. If .base exists, it holds the upstream commit the branch is based on: `git log --oneline $(cat .base)..HEAD` lists the branch's commits and `git diff $(cat .base)` is the complete change (uncommitted edits included). Without .base, use `gh pr diff` for a PR; otherwise `git diff $(git merge-base HEAD upstream/main 2>/dev/null || git merge-base HEAD origin/main 2>/dev/null || echo HEAD~1)` and say in the review that the base is uncertain (the workspace is a shallow clone, so the merge base may be missing).
 - Read .issue if present (issue details)
 - Read relevant source files for deeper understanding
 
@@ -11,7 +11,7 @@ If .pr exists (PR review):
 - Read the full diff and relevant source files
 
 If .pr does not exist (local code review):
-- Review the workspace changes against the upstream base
+- Review the change found above — the branch's own commits plus uncommitted edits; the rest of the workspace is context, not under review
 - Skip PR-specific sections below
 
 ## Links

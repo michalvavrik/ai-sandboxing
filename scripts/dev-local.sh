@@ -4,6 +4,23 @@ source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
 _devlocal_template_key=$(_dev_detect_template_from_cwd) || true
 
+# Enter the container — or, for a caller that runs something in it itself
+# (dev review ., DEV_SKIP_ENTER=1), just start it and wait until SSH answers.
+_devlocal_start() {
+    if [[ "${DEV_SKIP_ENTER:-}" == "1" ]]; then
+        echo "Starting container '${_devlocal_name}'..."
+        podman start "$_devlocal_name" >/dev/null
+        _dev_update_ssh_config "$_devlocal_name"
+        if ! _dev_wait_ssh "$_devlocal_name"; then
+            echo "Error: container '${_devlocal_name}' did not become reachable via SSH in time" >&2
+            exit 1
+        fi
+        exit 0
+    fi
+    echo "Entering container '${_devlocal_name}'..."
+    exec podman start -ai "$_devlocal_name"
+}
+
 # Study directory: no git, nothing to push — the container reads the directory
 # live (read-only at /workspace/<subject>). Its container is named after the
 # template (study/psychology -> psychology).
@@ -13,13 +30,13 @@ if [[ -n "$_devlocal_template_key" ]] && _dev_template_is_study "$_devlocal_temp
     echo "Container: ${_devlocal_name}"
     _dev_remember_container "$_devlocal_name"
     if _dev_container_exists "$_devlocal_name"; then
+        [[ "${DEV_SKIP_ENTER:-}" == "1" ]] && exit 0
         exec "${DEV_SCRIPTS_DIR}/dev-enter.sh" "$_devlocal_name"
     fi
     _dev_lock_shared
     _dev_create_container "$_devlocal_name" "$_devlocal_template_key"
-    echo "Entering container '${_devlocal_name}'..."
     _dev_lock_release
-    exec podman start -ai "$_devlocal_name"
+    _devlocal_start
 fi
 
 if ! git rev-parse --is-inside-work-tree &>/dev/null; then
@@ -88,21 +105,22 @@ if _dev_container_exists "$_devlocal_name"; then
     echo "Refreshing container..."
     _dev_ssh_cmd "$_devlocal_name" \
         "cd /workspace && git fetch origin ${_devlocal_push_branch} && git checkout -B '${_devlocal_push_branch}' FETCH_HEAD"
+    _dev_write_base "$_devlocal_name" "$_DEV_PUSHED_BASE"
 
     _dev_lock_release
-    _dev_ssh_cmd "$_devlocal_name"
+    [[ "${DEV_SKIP_ENTER:-}" == "1" ]] || _dev_ssh_cmd "$_devlocal_name"
     exit 0
 fi
 
 # New container
 export DEV_FORK_ORG="$DEV_AUTOMATION_USER"
 export DEV_BRANCH_NAME="$_devlocal_push_branch"
+export DEV_BASE_COMMIT="$_DEV_PUSHED_BASE"
 if [[ ! "$_devlocal_branch" =~ ^dev-auto/ ]]; then
     export DEV_ORIGINAL_BRANCH="$_devlocal_branch"
 fi
 
 _dev_create_container "$_devlocal_name" "$_devlocal_template_key"
 
-echo "Entering container '${_devlocal_name}'..."
 _dev_lock_release
-exec podman start -ai "$_devlocal_name"
+_devlocal_start

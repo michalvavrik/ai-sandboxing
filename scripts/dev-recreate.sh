@@ -78,6 +78,12 @@ if [[ "$_devrc_study" != true ]] && _dev_ssh_cmd "$_devrc_name" "test -d /worksp
 fi
 
 if [[ "$_devrc_study" != true ]]; then
+    # The upstream commit the branch is based on (reviews diff against it) is
+    # a file in the workspace; the fresh container gets the branch from the
+    # fork without it, so pass it on.
+    export DEV_BASE_COMMIT
+    DEV_BASE_COMMIT=$(_dev_ssh_cmd "$_devrc_name" "cat /workspace/.base 2>/dev/null" </dev/null 2>/dev/null) || DEV_BASE_COMMIT=""
+
     # Move branch out of dev-auto/name/* before delete cleans it up
     readonly _devrc_repo="${_devrc_template_key#*/}"
     readonly _devrc_remote="git@github.com:${DEV_AUTOMATION_USER}/${_devrc_repo}.git"

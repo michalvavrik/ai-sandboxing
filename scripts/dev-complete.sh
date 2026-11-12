@@ -142,13 +142,10 @@ case "$_comp_cmd" in
         if $_comp_is_opt; then _comp_emit "--dont-sync"; else _comp_containers; fi
         ;;
     review)
-        if $_comp_is_opt; then _comp_emit $_COMP_REVIEW_OPTS; else _comp_containers; fi
+        if $_comp_is_opt; then _comp_emit $_COMP_REVIEW_OPTS; else _comp_emit "."; _comp_containers; fi
         ;;
-    http://*|https://*)
+    http://*|https://*|.)
         $_comp_is_opt && _comp_emit $_COMP_REVIEW_OPTS
-        ;;
-    .)
-        $_comp_is_opt && _comp_emit "--auth-method="
         ;;
     cp)
         if [[ "$_comp_prev" == "--to" ]]; then _comp_remote_paths
