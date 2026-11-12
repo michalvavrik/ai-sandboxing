@@ -678,7 +678,7 @@ if [[ -n "$HOST_IP" ]]; then
         chown dev:dev "$_claude_json"
 
         _settings="/home/dev/.claude/settings.json"
-        _perms=$(echo "$_mcp_names" | jq '[.[] | "mcp__\(.)__*(*)"]')
+        _perms=$(echo "$_mcp_names" | jq '[.[] | "mcp__\(.)__*"]')
         jq --argjson p "$_perms" '.permissions.allow += $p' "$_settings" \
             > "${_settings}.tmp" && mv "${_settings}.tmp" "$_settings"
         chown dev:dev "$_settings"

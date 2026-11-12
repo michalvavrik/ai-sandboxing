@@ -5,13 +5,13 @@
   "permissions": {
     "defaultMode": "bypassPermissions",
     "allow": [
-      "Bash(*)",
-      "Read(*)",
-      "Write(*)",
-      "Edit(*)",
-      "NotebookEdit(*)",
-      "WebFetch(*)",
-      "WebSearch(*)"
+      "Bash",
+      "Read",
+      "Write",
+      "Edit",
+      "NotebookEdit",
+      "WebFetch",
+      "WebSearch"
     ]
   }
 }
