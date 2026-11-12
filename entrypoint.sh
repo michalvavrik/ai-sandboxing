@@ -396,6 +396,22 @@ if _has_profile study; then
         echo "WARNING: no study material mounted (the host directory is missing)" >&2
     fi
 
+    # The user's own instructions for the project, if the study directory has
+    # an AGENTS.md. Claude Code loads instruction files at startup only from
+    # the directory it starts in (/workspace) and that directory's parents; a
+    # subdirectory's load only once Claude reads a file there. The @ line is
+    # Claude Code's import syntax — in this user-level file it is expanded at
+    # every session start with no approval — so the file is in context from the
+    # first prompt. For Bob and Gemini the sentence says to read it first.
+    # Checked at every start: an AGENTS.md added later counts after a restart.
+    _project_md=""
+    if [ -f "/workspace/${_subject}/AGENTS.md" ]; then
+        _project_md="
+- /workspace/${_subject}/AGENTS.md holds this project's own instructions: read it first.
+
+@/workspace/${_subject}/AGENTS.md"
+    fi
+
     runuser -u dev -- bash -c 'mkdir -p /home/dev/.claude /home/dev/.bob /home/dev/.gemini && tee /home/dev/.claude/CLAUDE.md /home/dev/.bob/AGENTS.md /home/dev/.gemini/GEMINI.md >/dev/null' <<AGENTSMD
 # Study environment: ${_subject}
 
@@ -405,7 +421,7 @@ This is a sandbox VM for studying ${_subject} with the user. Nothing you do here
 - The rest of /workspace is yours, and it is what the user takes home: keep in it only what you make for them — flashcards, Anki decks, printable sheets, summaries, practice questions. Lay it out like their directory: a corrected or reworked version of one of their files goes to the same relative path (/workspace/notes/lecture-03.md for /workspace/${_subject}/notes/lecture-03.md), a new file where it would belong in their directory. Scratch files, caches and virtual environments go to /tmp or your home directory.
 - The user fetches the files in /workspace with \`dev see\`, which marks the ones that replace a file of theirs, and takes those they want into their directory with \`dev merge\`. When you finish a task, tell them which files you created or changed.
 - There is no git repository and no GitHub project: do not create a repository in /workspace.
-- /tmp/workspace — additional documents copied in by the user (if any)
+- /tmp/workspace — additional documents copied in by the user (if any)${_project_md}
 
 ## Tools
 Python 3 is installed, pip is not: install packages (genanki for Anki decks, pypdf, reportlab, ...) into a virtual environment outside /workspace, e.g. \`python3 -m venv ~/venv && ~/venv/bin/pip install genanki\`. There is no pdftotext, LaTeX or pandoc.
