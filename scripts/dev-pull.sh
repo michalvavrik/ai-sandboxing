@@ -68,7 +68,7 @@ if [[ -n "$_devpull_repo" ]]; then
 fi
 
 # ── Claude Code baked into the image vs newest release ─────────────────────
-# New Claude models are gated on the client version (Opus 5.5 needs 2.1.280+),
+# New Claude models are gated on the client version (Fable 5.2 needs 2.1.321+),
 # so when the image lags, the opus/fable aliases lag with it.
 _devpull_img_claude=$(podman run --rm --pull=never --network none --entrypoint /usr/bin/claude "$DEV_IMAGE" --version 2>/dev/null \
     | awk '{print $1}') || true

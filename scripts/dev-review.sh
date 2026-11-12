@@ -217,17 +217,20 @@ _devreview_claude_model_arg() {
     printf -- "--model '%s'" "$_m"
 }
 
-# Antigravity: flash/pro mean the newest Gemini Flash/Pro at the highest effort.
-# DEV_AGY_FLASH_MODEL / DEV_AGY_PRO_MODEL in config.local pin a model; otherwise
-# the newest matching entry of `agy models` in the container is used, falling
-# back to a built-in default.
+# Antigravity: flash/pro mean the newest Gemini of that tier at the highest
+# effort listed. Gemini 4 dropped the Flash/Pro names: Hydrogen is the fast
+# tier (flash), Argon the flagship (pro); Carbon is Ultra-only and not matched.
+# opus/claude (legacy "Claude through Antigravity") is the newest Claude Opus.
+# DEV_AGY_FLASH_MODEL / DEV_AGY_PRO_MODEL / DEV_AGY_CLAUDE_MODEL in config.local
+# pin a model id; otherwise the newest matching id of `agy models` in the
+# container is used, falling back to a built-in default.
 _devreview_agy_models=""
 _devreview_agy_model() {
-    local _kind="$1" _default="" _pinned="" _found=""
+    local _kind="$1" _default="" _pinned="" _re="" _found=""
     case "$_kind" in
-        flash) _pinned="${DEV_AGY_FLASH_MODEL:-}"; _default="gemini-3.8-flash-high" ;;
-        pro)   _pinned="${DEV_AGY_PRO_MODEL:-}";   _default="gemini-3.1-pro-high" ;;
-        opus|claude) echo "${DEV_AGY_CLAUDE_MODEL:-claude-opus-4-6-thinking}"; return 0 ;;
+        flash)       _pinned="${DEV_AGY_FLASH_MODEL:-}";  _re='gemini-[0-9]+(\.[0-9]+)?-(flash|hydrogen)-x?high'; _default="gemini-4-hydrogen-xhigh" ;;
+        pro)         _pinned="${DEV_AGY_PRO_MODEL:-}";    _re='gemini-[0-9]+(\.[0-9]+)?-(pro|argon)-x?high';      _default="gemini-4-argon-high" ;;
+        opus|claude) _pinned="${DEV_AGY_CLAUDE_MODEL:-}"; _re='claude-opus-[0-9]+(-[0-9]+)?-x?high';              _default="claude-opus-5-5-high" ;;
         *) echo "$_kind"; return 0 ;;
     esac
     if [[ -n "$_pinned" ]]; then
@@ -238,13 +241,10 @@ _devreview_agy_model() {
         _devreview_agy_models=$(ssh -q "$_devreview_name" "agy models 2>/dev/null" </dev/null 2>/dev/null | tr -d '\r') || true
         [[ -n "$_devreview_agy_models" ]] || _devreview_agy_models="(unavailable)"
     fi
-    _found=$(printf '%s\n' "$_devreview_agy_models" \
-        | grep -oiE "gemini-[0-9]+(\.[0-9]+)?-${_kind}-high" | tr '[:upper:]' '[:lower:]' | sort -uV | tail -n1) || true
-    if [[ -z "$_found" ]]; then
-        _found=$(printf '%s\n' "$_devreview_agy_models" \
-            | grep -oiE "gemini [0-9]+(\.[0-9]+)? ${_kind} \(high\)" | tr '[:upper:]' '[:lower:]' \
-            | sed -E 's/gemini ([0-9.]+) ([a-z]+) \(high\)/gemini-\1-\2-high/' | sort -uV | tail -n1) || true
-    fi
+    # First column of `agy models` is the id. Newest version wins, then the
+    # highest effort (sort -V orders xhigh after high).
+    _found=$(printf '%s\n' "$_devreview_agy_models" | awk '{print tolower($1)}' \
+        | grep -xE "$_re" | sort -uV | tail -n1) || true
     echo "${_found:-$_default}"
 }
 

@@ -64,7 +64,7 @@ All machine-specific values live in `config.local` (gitignored). The install scr
 | `DEV_AUTH_METHOD`      | Claude Code auth for new containers: `api-key` (default, Claude subscription) or `vertex`. See [Claude auth and models](#claude-auth-and-models) |
 | `DEV_SUBSCRIPTION_MODEL` | Default Claude model in `api-key` containers (default `opus` = latest Opus) |
 | `DEV_VERTEX_OPUS_MODEL`, `DEV_VERTEX_FABLE_MODEL` | What `opus` / `fable` mean in `vertex` containers (opus defaults to the model in `configs/claude-settings.json`; fable has no default, so Fable is skipped on Vertex unless set) |
-| `DEV_AGY_FLASH_MODEL`, `DEV_AGY_PRO_MODEL` | Pin the Antigravity models behind `flash` / `pro` (default: newest `*-flash-high` / `*-pro-high` from `agy models`) |
+| `DEV_AGY_FLASH_MODEL`, `DEV_AGY_PRO_MODEL`, `DEV_AGY_CLAUDE_MODEL` | Pin the Antigravity model ids behind `flash` / `pro` / `opus` (default: the newest Gemini Flash or Hydrogen, Gemini Pro or Argon, and Claude Opus listed by `agy models`, at the highest effort listed) |
 | `DEV_LOOP_NORMAL`, `DEV_LOOP_BEST`, `DEV_LOOP_ALL` | Override the review loop profiles (comma-separated reviewer lists) |
 
 Project-specific source dirs in `configs/project-templates.conf` are relative to `DEV_SOURCES_DIR` (those of study projects to `DEV_EDUCATION_DIR`).
@@ -376,7 +376,7 @@ dev review "what about thread safety in the token store?"
 # Use a different agent or model (default agent: claude with the container's default model)
 dev review --agent=bob https://github.com/keycloak/keycloak/pull/50801
 dev review --model=fable keycloak-pr-50801          # claude, latest Fable
-dev review --model=pro keycloak-pr-50801            # agy (implied by flash/pro), latest Gemini Pro, highest effort
+dev review --model=pro keycloak-pr-50801            # agy (implied by flash/pro), newest Gemini Pro/Argon, highest effort
 dev review --agent=agy --model=flash keycloak-pr-50801
 
 # Custom prompt (replaces agent-specific template, base kept)
@@ -386,7 +386,7 @@ dev review --prompt "focus only on security issues"
 dev review --append-to-prompt "also check for Java 21 API usage"
 ```
 
-Model shortcuts always mean the newest model available, so they never need updating: `opus` / `fable` are Claude Code aliases for the latest model of each family (on Vertex they are pinned by `DEV_VERTEX_OPUS_MODEL` / `DEV_VERTEX_FABLE_MODEL`), and `flash` / `pro` pick the newest `gemini-*-flash-high` / `gemini-*-pro-high` from `agy models` (pin with `DEV_AGY_FLASH_MODEL` / `DEV_AGY_PRO_MODEL`).
+Model shortcuts always mean the newest model available, so they never need updating: `opus` / `fable` are Claude Code aliases for the latest model of each family (on Vertex they are pinned by `DEV_VERTEX_OPUS_MODEL` / `DEV_VERTEX_FABLE_MODEL`), and `flash` / `pro` pick the newest Gemini Flash or Hydrogen / Gemini Pro or Argon id from `agy models` at the highest effort listed (Gemini 4 renamed the tiers: Hydrogen is the fast one, Argon the flagship; Carbon is Ultra-only and never picked; pin with `DEV_AGY_FLASH_MODEL` / `DEV_AGY_PRO_MODEL`).
 
 Review prompts use a two-layer system in `configs/review-prompts/`:
 - `base.txt` — shared context instructions (always included)
@@ -414,8 +414,8 @@ dev review --loop --append-to-prompt "focus on the token store"
 
 | Profile  | Reviewers, in order                                    |
 |----------|--------------------------------------------------------|
-| `normal` | `bob`, `flash` (Gemini Flash, highest effort), `opus`  |
-| `best`   | `opus`, `pro` (Gemini Pro, highest effort), `fable`    |
+| `normal` | `bob`, `flash` (Gemini Flash/Hydrogen, highest effort), `opus`  |
+| `best`   | `opus`, `pro` (Gemini Pro/Argon, highest effort), `fable`    |
 | `all`    | `bob`, `pro`, `opus`, `flash`, `fable`                 |
 
 List entries: `bob`, `flash`, `pro`, `opus`, `fable`; `gemini` means `flash`, `claude` means `opus`, and `agent:model` (e.g. `agy:pro`, `claude:fable`) also works. Ran out of Bob credits? Leave `bob` out: `--loop=flash,opus`. Profiles can be redefined with `DEV_LOOP_NORMAL`, `DEV_LOOP_BEST`, `DEV_LOOP_ALL` in `config.local`.
@@ -492,7 +492,7 @@ On first `api-key` use, `dev` asks for a token from `env -u CLAUDE_CODE_USE_VERT
 
 **Models.** Claude Code picks the model in this order: `--model` > `ANTHROPIC_MODEL` > `model` in `~/.claude/settings.json`. The aliases `opus` and `fable` always mean the latest model of that family, so they never need updating.
 
-**What "latest" means.** An alias resolves to the newest model of that family *known to the installed Claude Code*, and the API refuses newer models from older clients (Opus 5.5 needs 2.1.280+; a 2.1.267 client gets `400 ... version 2.1.280 or newer is required` even with the full model ID). So the Claude Code version in the image decides how new `opus`/`fable` can be. The image installs Claude Code from the `latest` RPM channel (`stable` trails new-model releases by weeks) and is rebuilt every 3 days; `dev pull` / `dev sync` print a note when the image's Claude Code is older than the newest release. To update a single running container without waiting for a new image, run `claude install latest` inside it (installs into `~/.local/bin`, which precedes `/usr/bin` in PATH).
+**What "latest" means.** An alias resolves to the newest model of that family *known to the installed Claude Code* (Fable 5.2 needs 2.1.321+, Opus 5.5 2.1.280+): an older client keeps resolving `fable` to the previous Fable, and the full model ID is no better — the API may refuse it (`400 ... version 2.1.280 or newer is required`) or the client runs it as an unrecognized model with a 200K context window. So the Claude Code version in the image decides how new `opus`/`fable` can be. The image installs Claude Code from the `latest` RPM channel (`stable` trails new-model releases by weeks) and is rebuilt every 3 days; `dev pull` / `dev sync` print a note when the image's Claude Code is older than the newest release. To update a single running container without waiting for a new image, run `claude install latest` inside it (installs into `~/.local/bin`, which precedes `/usr/bin` in PATH).
 
 - Subscription containers set `ANTHROPIC_MODEL=opus` (change with `DEV_SUBSCRIPTION_MODEL` in `config.local`).
 - Vertex containers use the `model` from `configs/claude-settings.json` and pin the aliases with `ANTHROPIC_DEFAULT_OPUS_MODEL` / `ANTHROPIC_DEFAULT_FABLE_MODEL` (from `DEV_VERTEX_OPUS_MODEL` / `DEV_VERTEX_FABLE_MODEL`), because the newest model of a family may not be enabled for the Vertex project.
