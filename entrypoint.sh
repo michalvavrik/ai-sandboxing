@@ -598,6 +598,7 @@ Write for information density. Every sentence carries something the reader needs
 - .pr — PR details (\`gh pr view\` output), present when working on a pull request
 - .issue — issue details (\`gh issue view\` output), present when working on an issue
 - .base — the upstream commit the working branch is based on, present for a branch pushed from the host or fetched from a fork; the branch's changes are \`git diff \$(cat .base)\`
+- .backport — in a backport container, the original PR, its merged commit (also at refs/backport/source) and the target branch; port that commit onto this branch
 AGENTSMD
         runuser -u dev -- bash -c 'printf ".pr\n.issue\n.base\n.pnpm-store\n" >> /workspace/.git/info/exclude'
         runuser -u dev -- git -C /workspace config core.untrackedCache true 2>/dev/null || true
@@ -621,6 +622,31 @@ AGENTSMD
             echo "WARNING: sanitizing commit messages failed — do not push this branch before fixing it" >&2
         fi
     }
+
+    # Backport (first run only): check out the project's maintenance branch from
+    # upstream as the working branch and prepare the original merged change for the
+    # agent to port. No sanitizing here — this is upstream's own history.
+    # DEV_BACKPORT_* is set by dev-backport.sh.
+    if [ -n "${DEV_BACKPORT_PR:-}" ] && [ "$_ws_first_run" = true ]; then
+        if [ -n "${_gh_auth_pid:-}" ]; then wait "$_gh_auth_pid" 2>/dev/null || true; fi
+        echo "Backport: checking out ${DEV_BACKPORT_BRANCH} for PR #${DEV_BACKPORT_PR}..."
+        if runuser -u dev -- bash -c \
+            "cd /workspace && git fetch --quiet upstream '${DEV_BACKPORT_BRANCH}' && git checkout -q -B '${_target_branch}' FETCH_HEAD"; then
+            # Reviews and dev pr diff the backport against the maintenance branch tip.
+            runuser -u dev -- bash -c "cd /workspace && git rev-parse HEAD > .base" 2>/dev/null || true
+            # The original merged commit, for the agent to inspect and cherry-pick.
+            if runuser -u dev -- git -C /workspace fetch --quiet upstream "$DEV_BACKPORT_MERGE_COMMIT" 2>/dev/null; then
+                runuser -u dev -- git -C /workspace update-ref refs/backport/source "$DEV_BACKPORT_MERGE_COMMIT" 2>/dev/null || true
+            else
+                echo "WARNING: could not fetch the original commit ${DEV_BACKPORT_MERGE_COMMIT}; the agent must fetch it" >&2
+            fi
+            runuser -u dev -- bash -c "gh pr view ${DEV_BACKPORT_PR} --repo ${DEV_TEMPLATE_KEY} 2>/dev/null | tr -d '\r' > /workspace/.pr" || true
+            runuser -u dev -- bash -c "cd /workspace && printf 'source_pr=%s\nmerge_commit=%s\ntarget_branch=%s\ntarget_version=%s\ncloses_issue=%s\n' '${DEV_BACKPORT_SOURCE_URL}' '${DEV_BACKPORT_MERGE_COMMIT}' '${DEV_BACKPORT_BRANCH}' '${DEV_BACKPORT_TARGET}' '${DEV_BACKPORT_ISSUE}' > .backport" || true
+            runuser -u dev -- bash -c "grep -qxF '.backport' /workspace/.git/info/exclude 2>/dev/null || echo '.backport' >> /workspace/.git/info/exclude" || true
+        else
+            echo "WARNING: could not check out ${DEV_BACKPORT_BRANCH} for the backport" >&2
+        fi
+    fi
 
     # PR checkout and details (first run only — subsequent starts reuse the working branch)
     if [ -n "${DEV_PR_NUMBER:-}" ]; then
@@ -753,7 +779,7 @@ AGENTSMD
 
     # Skip PR work (based on the PR's own base) and someone else's fork branch
     # (dev <branch-url>); dev . / dev new / dev <issue-url> freshen from main.
-    if [ "$_ws_first_run" = true ] && [ -z "${DEV_PR_NUMBER:-}" ] \
+    if [ "$_ws_first_run" = true ] && [ -z "${DEV_PR_NUMBER:-}" ] && [ -z "${DEV_BACKPORT_PR:-}" ] \
         && ! { [ -n "${DEV_BRANCH_NAME:-}" ] && [ -n "${DEV_FORK_ORG:-}" ] \
                && [ "${DEV_FORK_ORG}" != "${DEV_AUTOMATION_USER:-dev-automation}" ]; }; then
         _auto_freshen_main

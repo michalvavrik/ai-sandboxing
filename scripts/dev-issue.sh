@@ -4,30 +4,17 @@ source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
 readonly _devissue_url="${1:?'Usage: dev-issue.sh <github-url>'}"
 
-if [[ "$_devissue_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/(issues|pull)/([0-9]+) ]]; then
-    readonly _devissue_org="${BASH_REMATCH[1]}"
-    readonly _devissue_repo="${BASH_REMATCH[2]}"
-    readonly _devissue_type="${BASH_REMATCH[3]}"
-    readonly _devissue_number="${BASH_REMATCH[4]}"
-    readonly _devissue_branch=""
-elif [[ "$_devissue_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/(tree|pull/new)/(.+)$ ]]; then
-    readonly _devissue_org="${BASH_REMATCH[1]}"
-    readonly _devissue_repo="${BASH_REMATCH[2]}"
-    readonly _devissue_type="tree"
-    readonly _devissue_number=""
-    readonly _devissue_branch="${BASH_REMATCH[4]}"
-elif [[ "$_devissue_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/compare/.*\.\.\.([^:]+):([^:]+):(.+) ]]; then
-    readonly _devissue_org="${BASH_REMATCH[3]}"
-    readonly _devissue_repo="${BASH_REMATCH[4]}"
-    readonly _devissue_type="tree"
-    readonly _devissue_number=""
-    readonly _devissue_branch="${BASH_REMATCH[5]%%\?*}"
-else
+if ! _dev_parse_github_url "$_devissue_url"; then
     echo "Error: could not parse GitHub URL" >&2
     echo "Expected: https://github.com/{org}/{repo}/{issues|pull}/{number}" >&2
     echo "      or: https://github.com/{org}/{repo}/tree/{branch}" >&2
     exit 1
 fi
+readonly _devissue_org="$_DEV_URL_ORG"
+readonly _devissue_repo="$_DEV_URL_REPO"
+readonly _devissue_type="$_DEV_URL_TYPE"
+readonly _devissue_number="$_DEV_URL_NUMBER"
+readonly _devissue_branch="$_DEV_URL_BRANCH"
 
 # Resolve template key — for known user accounts, match by repo name
 if [[ "$_devissue_type" == "tree" ]]; then

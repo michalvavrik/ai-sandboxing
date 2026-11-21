@@ -18,7 +18,7 @@ _comp_cur="${_comp_words[_comp_cword]:-}"
 _comp_prev=""
 (( _comp_cword >= 1 )) && _comp_prev="${_comp_words[_comp_cword-1]}"
 
-_COMP_COMMANDS="new enter recreate delete see show merge squash rebase cp cpout use list pull sync install review ."
+_COMP_COMMANDS="new enter recreate delete see show merge squash rebase cp cpout use list pull sync install review backport pr ."
 _COMP_AGENTS="claude bob agy"
 _COMP_MODELS="opus fable flash pro"
 _COMP_LOOPS="normal best all bob flash pro opus fable"
@@ -121,8 +121,11 @@ case "$_comp_cmd" in
     enter|rebase|use)
         $_comp_is_opt || _comp_containers
         ;;
-    see|show)
+    see|show|pr)
         $_comp_is_opt || _comp_project_containers
+        ;;
+    backport)
+        $_comp_is_opt && _comp_emit "-b"
         ;;
     squash)
         if $_comp_is_opt; then _comp_emit "-p"; else _comp_project_containers; fi

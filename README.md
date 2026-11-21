@@ -200,6 +200,16 @@ Rebases the container's workspace on the latest upstream default branch (`main`/
 
 The first time a container starts, before any code is written, this happens automatically: the entrypoint fast-forwards the workspace to the current upstream default branch, so a fresh container does not begin on a stale `main` (the image is rebuilt every 3 days, and host/GitHub clones can lag too). It runs only for a clean workspace based on that branch — not a PR, not someone else's branch, and never once the workspace already has work of its own, which is left for `dev rebase` — and when the fetch cannot reach upstream (offline) it is skipped and the container starts anyway.
 
+### `dev backport`
+
+`dev backport <pr-url> [-b <X.Y>]` ports a merged pull request to a maintenance branch. It reads the PR, picks the target branch, brings up a container checked out on that branch with the original change staged at `refs/backport/source`, then runs an agent that ports the change and judges whether every part of it still applies on the older branch. The agent writes a report you read after, and the container stays up for `dev enter`, a `dev review` follow-up, `dev see`, or `dev pr`.
+
+The target branch comes from `-b`, or from the backport labels when you omit it. Keycloak carries them on the PR's closing issue, Quarkus on the PR itself. When several labels match and you pass no `-b`, the command lists them and stops so you rerun it once per branch. Each run makes its own container, named `<repo>-pr-<n>-<X.Y>`, so one container maps to one branch and `dev see` and `dev show` stay simple. Per-project settings live in `configs/backport.conf`, one row per project, giving the label source, the label prefix, the branch template, and whether the PR body closes the issue.
+
+### `dev pr`
+
+`dev pr [name]` opens the pull request from a finished backport container. It runs only deterministic code on the host, never an agent. It fetches the container's ported change, builds one commit under your host git identity with no co-author and no other author, pushes it to your fork, and opens the PR against the maintenance branch. The title is `[<X.Y>] <original title>` and the body is `* backports: <pr-url>`, plus `* closes: <issue-url>` for Keycloak. The commit is diffed against the maintenance-branch base the agent worked from, so the PR shows exactly the backport.
+
 ### `dev merge` and `dev squash`
 
 Both take **what the last `dev see` fetched** (the host branch `dev-auto/<container>/main` — not the container, so you only ever merge what you reviewed) and record the agent's changes on `in-review/<feature>` as a commit of your host git identity (`user.name`/`user.email` of the source repo; `-S` when `commit.gpgsign` is set). `in-review/<feature>` is checked out when done. Nothing is pushed unless you pass `-p`: then `in-review/<feature>` is force-pushed to your fork (the `DEV_GHCR_USER` remote), also when there was nothing new to add; a branch `dev merge` just created gets it as its upstream.

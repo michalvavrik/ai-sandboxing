@@ -22,6 +22,8 @@ _dev_usage() {
     echo "  squash [-p] [name]  Fold the last dev see into the HEAD commit of in-review/<feature>"
     echo "                 (merge/squash -p: then force-push in-review/<feature> to your fork)"
     echo "  rebase [name]  Rebase container workspace on latest upstream main"
+    echo "  backport <pr-url> [-b <X.Y>]  Backport a merged PR to a maintenance branch"
+    echo "  pr [name]      Open a PR from a container (backport containers for now)"
     echo "  cp [--to <dir>] <path>  Copy files/dirs into container (default: /tmp/workspace)"
     echo "  cpout [--to <dir>] <path> Copy files/dirs from container (default: cwd)"
     echo "  use <name>     Set current container without entering"
@@ -69,7 +71,7 @@ _dev_dispatch() {
     local _dev_cmd="$1"
     shift
     case "$_dev_cmd" in
-        new|enter|recreate|delete|see|show|merge|rebase|cp|cpout|review)
+        new|enter|recreate|delete|see|show|merge|rebase|cp|cpout|review|backport|pr)
             _dev_sub "dev-${_dev_cmd}.sh" "$@"
             ;;
         squash)

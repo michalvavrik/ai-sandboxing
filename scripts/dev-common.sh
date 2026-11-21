@@ -58,6 +58,205 @@ _dev_template_dir() {
     fi
 }
 
+# Parse a GitHub URL into globals _DEV_URL_ORG, _DEV_URL_REPO, _DEV_URL_TYPE
+# (issues|pull|tree), _DEV_URL_NUMBER and _DEV_URL_BRANCH. Returns 1 when the URL
+# is not recognized. Shared by dev-issue.sh and dev-backport.sh.
+_dev_parse_github_url() {
+    local _dev_url="$1"
+    _DEV_URL_ORG=""
+    _DEV_URL_REPO=""
+    _DEV_URL_TYPE=""
+    _DEV_URL_NUMBER=""
+    _DEV_URL_BRANCH=""
+    if [[ "$_dev_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/(issues|pull)/([0-9]+) ]]; then
+        _DEV_URL_ORG="${BASH_REMATCH[1]}"
+        _DEV_URL_REPO="${BASH_REMATCH[2]}"
+        _DEV_URL_TYPE="${BASH_REMATCH[3]}"
+        _DEV_URL_NUMBER="${BASH_REMATCH[4]}"
+    elif [[ "$_dev_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/(tree|pull/new)/(.+)$ ]]; then
+        _DEV_URL_ORG="${BASH_REMATCH[1]}"
+        _DEV_URL_REPO="${BASH_REMATCH[2]}"
+        _DEV_URL_TYPE="tree"
+        _DEV_URL_BRANCH="${BASH_REMATCH[4]}"
+    elif [[ "$_dev_url" =~ ^https?://github\.com/([^/]+)/([^/]+)/compare/.*\.\.\.([^:]+):([^:]+):(.+) ]]; then
+        _DEV_URL_ORG="${BASH_REMATCH[3]}"
+        _DEV_URL_REPO="${BASH_REMATCH[4]}"
+        _DEV_URL_TYPE="tree"
+        _DEV_URL_BRANCH="${BASH_REMATCH[5]%%\?*}"
+    else
+        return 1
+    fi
+    return 0
+}
+
+# Echo a project's backport fields "label_source|label_prefix|branch_template|closes"
+# from configs/backport.conf, or return 1 when the project has no row. Modelled on
+# _dev_lookup_template; the file documents the format.
+_dev_backport_row() {
+    local _dev_key="$1" _dev_conf="${DEV_CONFIGS_DIR}/backport.conf" _dev_k _dev_rest
+    [[ -f "$_dev_conf" ]] || return 1
+    while IFS='|' read -r _dev_k _dev_rest; do
+        [[ "$_dev_k" =~ ^[[:space:]]*# || -z "$_dev_k" ]] && continue
+        if [[ "$_dev_k" == "$_dev_key" ]]; then
+            echo "$_dev_rest"
+            return 0
+        fi
+    done < "$_dev_conf"
+    return 1
+}
+
+# The maintenance branch for a version, from a branch_template whose %s is the
+# version (release/%s + 26.8 -> release/26.8).
+_dev_backport_branch() {
+    local _dev_tmpl="$1" _dev_ver="$2"
+    echo "${_dev_tmpl//%s/$_dev_ver}"
+}
+
+# Echo the MAJOR.MINOR versions named by labels matching <prefix><MAJOR.MINOR>,
+# one per line. Version-less labels (backport/main, triage/backport?) do not match
+# and are skipped. Usage: _dev_backport_versions_from_labels <prefix> <label>...
+_dev_backport_versions_from_labels() {
+    local _dev_prefix="$1" _dev_label _dev_ver
+    shift
+    for _dev_label in "$@"; do
+        [[ "$_dev_label" == "${_dev_prefix}"* ]] || continue
+        _dev_ver="${_dev_label#"$_dev_prefix"}"
+        if [[ "$_dev_ver" =~ ^[0-9]+\.[0-9]+$ ]]; then
+            echo "$_dev_ver"
+        fi
+    done
+}
+
+# Run one agent pass headless in a container, streaming progress to stderr. Shared
+# by dev-review.sh and dev-backport.sh; the caller resolves <model_arg> and
+# <agent_continue> and prints its own "Running ..." line first. The agent is asked
+# to write <report_file> in the container, and its captured output is saved there
+# when it did not. The session id for follow-ups goes to <session_file>. <label> is
+# the word used in messages (default: run). Returns 1 when the agent produced no
+# output.
+# Usage: _dev_run_agent <name> <agent> <model_arg> <agent_continue> <report_file> <session_file> <prompt> [<label>]
+_dev_run_agent() {
+    local _dev_name="$1" _dev_agent="$2" _dev_model_arg="$3" _dev_continue="$4"
+    local _dev_report="$5" _dev_session="$6" _dev_prompt="$7" _dev_label="${8:-run}"
+    local _dev_tmp _dev_rc=0 _dev_line _dev_evt _dev_sub _dev_ct _dev_tool _dev_input _dev_thought
+    _dev_tmp=$(mktemp /tmp/dev-agent-prompt.XXXXXX)
+
+    printf '%s\n' "$_dev_prompt" > "$_dev_tmp"
+    scp -q "$_dev_tmp" "${_dev_name}:/tmp/dev-agent-prompt.txt"
+    rm -f "$_dev_tmp.out"
+
+    ssh -q "$_dev_name" "mkdir -p '$(dirname "$_dev_report")' && grep -qxF '.reviews' /workspace/.git/info/exclude 2>/dev/null || echo '.reviews' >> /workspace/.git/info/exclude" </dev/null
+
+    case "$_dev_agent" in
+        claude)
+            ssh -q "$_dev_name" \
+                "cd /workspace && claude ${_dev_continue} ${_dev_model_arg} -p --verbose --output-format stream-json \"\$(cat /tmp/dev-agent-prompt.txt)\"" \
+                < /dev/null \
+            | while IFS= read -r _dev_line; do
+                _dev_evt=$(printf '%s' "$_dev_line" | jq -r '.type // empty' 2>/dev/null) || continue
+                case "$_dev_evt" in
+                    system)
+                        _dev_sub=$(printf '%s' "$_dev_line" | jq -r '.subtype // empty' 2>/dev/null)
+                        [[ "$_dev_sub" == "init" ]] && printf '  ⚡ agent ready\n' >&2
+                        ;;
+                    assistant)
+                        _dev_ct=$(printf '%s' "$_dev_line" | jq -r '.message.content[-1].type // empty' 2>/dev/null)
+                        case "$_dev_ct" in
+                            tool_use)
+                                _dev_tool=$(printf '%s' "$_dev_line" | jq -r '.message.content[-1].name // empty' 2>/dev/null)
+                                _dev_input=$(printf '%s' "$_dev_line" | jq -r '(.message.content[-1].input.command // .message.content[-1].input.file_path // .message.content[-1].input.query // "") | tostring | .[0:120]' 2>/dev/null)
+                                printf '  → %s %s\n' "$_dev_tool" "$_dev_input" >&2
+                                ;;
+                            thinking)
+                                _dev_thought=$(printf '%s' "$_dev_line" | jq -r '.message.content[-1].thinking // empty' 2>/dev/null)
+                                [[ -n "$_dev_thought" ]] && printf '  ✦ %s\n' "$_dev_thought" >&2
+                                ;;
+                            text)
+                                printf '%s' "$_dev_line" | jq -r '.message.content[-1].text // empty' 2>/dev/null >&2
+                                ;;
+                        esac
+                        ;;
+                    result)
+                        printf '\n════════════════════ %s ════════════════════\n\n' "${_dev_label^^}" >&2
+                        printf '%s' "$_dev_line" | jq -r '.result // empty' | tee "$_dev_tmp.out"
+                        printf '%s' "$_dev_line" | jq -r '.session_id // empty' > "${_dev_session}.tmp"
+                        break
+                        ;;
+                esac
+            done || true
+            echo
+            [[ -s "$_dev_tmp.out" ]] || _dev_rc=1
+            if [[ -s "${_dev_session}.tmp" ]]; then
+                mv "${_dev_session}.tmp" "$_dev_session"
+                # Also record it in the container for `claude-resume`.
+                ssh -q "$_dev_name" "mkdir -p /home/dev/.config/dev-sandbox && printf '%s\n' '$(cat "$_dev_session")' > /home/dev/.config/dev-sandbox/last-review-session" </dev/null 2>/dev/null || true
+            fi
+            ;;
+        bob)
+            ssh -qt "$_dev_name" \
+                "cd /workspace && bob run ${_dev_continue} -- \"\$(cat /tmp/dev-agent-prompt.txt)\"" \
+                | tee "$_dev_tmp.out" || _dev_rc=1
+            sed -r 's/\x1b\[[0-9;]*[a-zA-Z]//g' "$_dev_tmp.out" | awk '/Task ID:/ {id=$NF} END {if (id) print id}' > "${_dev_session}.tmp"
+            [[ -s "${_dev_session}.tmp" ]] && mv "${_dev_session}.tmp" "$_dev_session"
+            ;;
+        agy)
+            ssh -qt "$_dev_name" \
+                "cd /workspace && exec agy ${_dev_continue} ${_dev_model_arg} -p \"\$(cat /tmp/dev-agent-prompt.txt)\"" \
+                | tee "$_dev_tmp.out" || _dev_rc=1
+            ;;
+    esac
+    rm -f "${_dev_session}.tmp"
+
+    if [[ -s "$_dev_tmp.out" ]]; then
+        if ssh -q "$_dev_name" "test -s '${_dev_report}'" </dev/null; then
+            echo "${_dev_label^} saved to ${_dev_report}" >&2
+        elif scp -q "$_dev_tmp.out" "${_dev_name}:${_dev_report}" 2>/dev/null; then
+            echo "${_dev_label^} saved to ${_dev_report}" >&2
+        fi
+    fi
+    if [[ -f "$_dev_session" ]]; then
+        if [[ "$_dev_agent" == "claude" ]]; then
+            echo "Session: $(cat "$_dev_session") (continue it: dev review \"question\", or dev enter + claude-resume)" >&2
+        else
+            echo "Session: $(cat "$_dev_session")" >&2
+        fi
+    fi
+    rm -f "$_dev_tmp" "$_dev_tmp.out"
+    return "$_dev_rc"
+}
+
+# Create a commit under the host git identity (author and committer = the repo's
+# user.name/user.email), signed when commit.gpgsign is set, with no extra trailers.
+# Echoes the new commit sha, or returns 1 when no identity is configured.
+# <author_date> may be empty (then the commit time is now).
+# Usage: _dev_commit_as_host <src_dir> <tree> <message-file> <author_date> <parent>...
+_dev_commit_as_host() {
+    local _dev_src="$1" _dev_tree="$2" _dev_msgfile="$3" _dev_adate="$4"
+    shift 4
+    local _dev_cah_name _dev_cah_email
+    _dev_cah_name=$(git -C "$_dev_src" config user.name 2>/dev/null) || true
+    _dev_cah_email=$(git -C "$_dev_src" config user.email 2>/dev/null) || true
+    if [[ -z "$_dev_cah_name" || -z "$_dev_cah_email" ]]; then
+        echo "Error: set git user.name and user.email in ${_dev_src} before committing" >&2
+        return 1
+    fi
+    local _dev_sign=()
+    if [[ "$(git -C "$_dev_src" config --type=bool commit.gpgsign 2>/dev/null)" == "true" ]]; then
+        _dev_sign=(-S)
+    fi
+    local _dev_parents=() _dev_p
+    for _dev_p in "$@"; do
+        _dev_parents+=(-p "$_dev_p")
+    done
+    local _dev_env=("GIT_AUTHOR_NAME=$_dev_cah_name" "GIT_AUTHOR_EMAIL=$_dev_cah_email"
+                    "GIT_COMMITTER_NAME=$_dev_cah_name" "GIT_COMMITTER_EMAIL=$_dev_cah_email")
+    if [[ -n "$_dev_adate" ]]; then
+        _dev_env+=("GIT_AUTHOR_DATE=$_dev_adate")
+    fi
+    env "${_dev_env[@]}" git -C "$_dev_src" commit-tree "$_dev_tree" \
+        ${_dev_parents[@]+"${_dev_parents[@]}"} ${_dev_sign[@]+"${_dev_sign[@]}"} -F "$_dev_msgfile"
+}
+
 _dev_podman_storage_gib() {
     local _dev_profiles="${1:-java}"
     if _dev_has_profile "$_dev_profiles" "kind"; then
@@ -815,6 +1014,11 @@ _dev_create_container() {
         --label="dev-profiles=${_dev_profiles}" \
         --label="dev-auth-method=${_dev_auth_method}" \
         ${DEV_ORIGINAL_BRANCH:+--label="dev-original-branch=${DEV_ORIGINAL_BRANCH}"} \
+        ${DEV_BACKPORT_PR:+--label="dev-backport-pr=${DEV_BACKPORT_PR}"} \
+        ${DEV_BACKPORT_SOURCE_URL:+--label="dev-backport-source-url=${DEV_BACKPORT_SOURCE_URL}"} \
+        ${DEV_BACKPORT_BRANCH:+--label="dev-backport-branch=${DEV_BACKPORT_BRANCH}"} \
+        ${DEV_BACKPORT_TARGET:+--label="dev-backport-target=${DEV_BACKPORT_TARGET}"} \
+        ${DEV_BACKPORT_ISSUE:+--label="dev-backport-issue=${DEV_BACKPORT_ISSUE}"} \
         -e "PROXY_PORT=${_dev_port}" \
         "${_dev_auth_args[@]}" \
         -e "CLAUDE_CODE_EFFORT_LEVEL=${CLAUDE_CODE_EFFORT_LEVEL:-max}" \
@@ -829,6 +1033,12 @@ _dev_create_container() {
         ${DEV_FORK_ORG:+-e "DEV_FORK_ORG=${DEV_FORK_ORG}"} \
         ${DEV_BRANCH_NAME:+-e "DEV_BRANCH_NAME=${DEV_BRANCH_NAME}"} \
         ${DEV_BASE_COMMIT:+-e "DEV_BASE_COMMIT=${DEV_BASE_COMMIT}"} \
+        ${DEV_BACKPORT_PR:+-e "DEV_BACKPORT_PR=${DEV_BACKPORT_PR}"} \
+        ${DEV_BACKPORT_SOURCE_URL:+-e "DEV_BACKPORT_SOURCE_URL=${DEV_BACKPORT_SOURCE_URL}"} \
+        ${DEV_BACKPORT_MERGE_COMMIT:+-e "DEV_BACKPORT_MERGE_COMMIT=${DEV_BACKPORT_MERGE_COMMIT}"} \
+        ${DEV_BACKPORT_BRANCH:+-e "DEV_BACKPORT_BRANCH=${DEV_BACKPORT_BRANCH}"} \
+        ${DEV_BACKPORT_TARGET:+-e "DEV_BACKPORT_TARGET=${DEV_BACKPORT_TARGET}"} \
+        ${DEV_BACKPORT_ISSUE:+-e "DEV_BACKPORT_ISSUE=${DEV_BACKPORT_ISSUE}"} \
         -p "127.0.0.1::2222" \
         "${_dev_volumes[@]}" \
         "${_dev_bob_secret[@]}" \
