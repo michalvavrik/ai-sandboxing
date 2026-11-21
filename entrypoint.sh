@@ -425,6 +425,9 @@ This is a sandbox VM for studying ${_subject} with the user. Nothing you do here
 
 ## Tools
 Python 3 is installed, pip is not: install packages (genanki for Anki decks, pypdf, reportlab, ...) into a virtual environment outside /workspace, e.g. \`python3 -m venv ~/venv && ~/venv/bin/pip install genanki\`. There is no pdftotext, LaTeX or pandoc.
+
+## Writing
+Write for information density. Every sentence carries something the reader needs. Cut filler, not substance. Length is fine when the content earns it, so do not pad and do not trim real information just to look short. Use the plain voice of a technical writer in full English sentences. Write short separate sentences instead of joining clauses with dashes, colons, or semicolons. Leave out only what every reader already knows. When unsure whether a detail matters, keep it. The user can delete a line in a second but cannot notice a line you never wrote.
 AGENTSMD
 
 # ── Project workspace ────────────────────────────────────────────────────────
@@ -587,6 +590,9 @@ Whenever you mention a GitHub comment, review, issue, pull request, commit or CI
 ## Testing
 Docker is NOT installed. Podman is the container runtime. Testcontainers works with Podman out of the box (already configured via DOCKER_HOST). Always try running tests before claiming they can't run.
 ${_fmt_section}
+
+## Comments and documentation
+Write for information density. Every sentence carries something the reader needs. Cut filler, not substance. Length is fine when the content earns it, so do not pad and do not trim real information just to look short. Use the plain voice of a technical writer in full English sentences. In documentation, especially .adoc files, write short separate sentences instead of joining clauses with dashes, colons, or semicolons. Leave out only what every reader already knows, like what a loop does. Never leave something out because it looks obvious to you after reading the code. Your familiarity is not the test. When unsure whether a detail matters, keep it. The user can delete a line in a second but cannot notice a line you never wrote. Prefer clear names over comments, and let a comment explain why rather than what the code already shows. Keep comments and javadoc minimal. Add javadoc only for a public API, a public class meant for users, a point the code does not make clear, or when asked. When you move or port existing code, keep its original comments. Write a configuration property name in full every time, never only its trailing segment.
 
 ## Task context
 - .pr — PR details (\`gh pr view\` output), present when working on a pull request
