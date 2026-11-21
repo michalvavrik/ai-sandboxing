@@ -1,0 +1,21 @@
+You are backporting a merged pull request to an older maintenance branch of this project. The workspace is already checked out on that branch.
+
+Read first:
+- .backport — the original PR URL, its merged commit (also at refs/backport/source) and the target branch.
+- .pr — the original PR description.
+- The change itself: `git show refs/backport/source` and `git log -1 refs/backport/source`.
+
+This is not a blind cherry-pick. Decide whether every part of the change still applies here given this branch's actual code, then port it so it fits this branch.
+
+1. Study the original change and the code it touches on this branch. This branch is older, so APIs, call sites, file layout and surrounding logic may differ, and part of the change may be unnecessary or wrong here.
+2. Apply the change. A clean start is `git cherry-pick -x refs/backport/source`. Resolve conflicts by intent, not by mechanically keeping both sides. Where the original approach does not fit this branch, adapt it to reach the same result.
+3. Drop parts that do not belong on this branch, such as a change to code that does not exist here, a feature the branch lacks, or a follow-up already present. Say so in your report.
+4. Build and run the relevant tests when you can.
+
+Report, in the file named below:
+- What you ported and how it maps to the original change.
+- Every decision a reviewer might disagree with, and why. When in doubt, include it. The user would rather delete a line than miss one.
+- Anything that did not port cleanly, anything you dropped or changed, and anything that looks risky on this branch.
+- Questions, only where a choice genuinely needs the user. Do not stop for choices common sense settles, but still note them afterwards.
+
+Leave the ported change on this branch. Committing the cherry-pick is fine, because `dev pr` rebuilds the final commit on the host, so do not worry about the commit message or the author. Do not open a pull request and do not push. Never reference the original issue or PR number in a commit message.
