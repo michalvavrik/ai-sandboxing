@@ -498,8 +498,13 @@ elif [ -n "${DEV_TEMPLATE_KEY:-}" ]; then
     # same repairs dev see runs fix what they can, and a workspace that is
     # still unusable must not keep the container — and sshd — from starting.
     _target_branch="dev-auto/$(hostname)/main"
+    _ws_first_run=false
     runuser -u dev -- /opt/dev/dev-workspace-sync.sh --repair "$_target_branch" || true
     if runuser -u dev -- git -C /workspace rev-parse --git-dir >/dev/null 2>&1; then
+        # No working branch yet means this is the container's very first start;
+        # later starts restore it from the bounded disk.
+        runuser -u dev -- git -C /workspace rev-parse --verify "$_target_branch" >/dev/null 2>&1 \
+            || _ws_first_run=true
         _origin_url="http://host.internal:${PROXY_PORT}/git/${DEV_AUTOMATION_USER:-dev-automation}/${_repo}.git"
         runuser -u dev -- git -C /workspace remote set-url origin "$_origin_url" 2>/dev/null \
             || runuser -u dev -- git -C /workspace remote add origin "$_origin_url" 2>/dev/null || true
@@ -696,6 +701,56 @@ AGENTSMD
         # Until the first sync pushes the branch, let it count as up to date.
         runuser -u dev -- git -C /workspace rev-parse -q --verify "refs/remotes/origin/${_target_branch}" &>/dev/null \
             || runuser -u dev -- git -C /workspace update-ref "refs/remotes/origin/${_target_branch}" "$_target_branch" 2>/dev/null || true
+    fi
+
+    # Fast-forward a brand-new workspace to the current upstream default branch.
+    # The baked-in image repo rebuilds only every 3 days, so a fresh container
+    # would otherwise start on a main that is up to 3 days stale. Done only when
+    # nothing has been written yet (HEAD still at the branch's base): a plain
+    # fast-forward, no commits to replay and no conflicts. A workspace that
+    # already carries work is left for 'dev rebase'. Never fatal — like the rest
+    # of first-run setup, any failure is skipped and the container still starts.
+    _auto_freshen_main() {
+        local _def _tip _head _base _recorded
+        _def=$(runuser -u dev -- bash -c "cd /workspace && git ls-remote --symref upstream HEAD 2>/dev/null | sed -n 's|^ref: refs/heads/\(.*\)[[:space:]]HEAD\$|\1|p'") || _def=""
+        _def="${_def:-main}"
+        echo "Freshening workspace on upstream/${_def}..."
+        if ! runuser -u dev -- git -C /workspace fetch --quiet upstream "$_def" 2>/dev/null; then
+            echo "  skipped: could not fetch upstream/${_def} (offline?)"
+            return 0
+        fi
+        _tip=$(runuser -u dev -- git -C /workspace rev-parse --verify -q "refs/remotes/upstream/${_def}" 2>/dev/null) || return 0
+        _head=$(runuser -u dev -- git -C /workspace rev-parse --verify -q HEAD 2>/dev/null) || return 0
+        # What reviews diff against: .base if recorded, else HEAD (e.g. dev new).
+        _base="$_head"
+        _recorded=$(runuser -u dev -- cat /workspace/.base 2>/dev/null) || _recorded=""
+        if [[ "$_recorded" =~ ^[0-9a-f]{40}$ ]]; then _base="$_recorded"; fi
+        if [ "$_head" != "$_base" ]; then
+            echo "  skipped: the workspace already has work (run 'dev rebase' to update it)"
+            return 0
+        fi
+        if [ "$_base" = "$_tip" ]; then return 0; fi
+        if ! runuser -u dev -- git -C /workspace merge-base --is-ancestor "$_base" "$_tip" 2>/dev/null; then
+            echo "  skipped: work is not based on upstream/${_def}"
+            return 0
+        fi
+        if ! runuser -u dev -- git -C /workspace merge --ff-only "$_tip" >/dev/null 2>&1; then
+            echo "  skipped: could not fast-forward to upstream/${_def}"
+            return 0
+        fi
+        # Record the new base for reviews and keep the branch counting as up to
+        # date until the first sync pushes it.
+        runuser -u dev -- bash -c "cd /workspace && printf '%s\n' '${_tip}' > .base && { grep -qxF '.base' .git/info/exclude 2>/dev/null || echo '.base' >> .git/info/exclude; }" 2>/dev/null || true
+        runuser -u dev -- git -C /workspace update-ref "refs/remotes/origin/${_target_branch}" "$_target_branch" 2>/dev/null || true
+        echo "Freshened workspace to upstream/${_def}: $(runuser -u dev -- git -C /workspace log -1 --format='%h %s')"
+    }
+
+    # Skip PR work (based on the PR's own base) and someone else's fork branch
+    # (dev <branch-url>); dev . / dev new / dev <issue-url> freshen from main.
+    if [ "$_ws_first_run" = true ] && [ -z "${DEV_PR_NUMBER:-}" ] \
+        && ! { [ -n "${DEV_BRANCH_NAME:-}" ] && [ -n "${DEV_FORK_ORG:-}" ] \
+               && [ "${DEV_FORK_ORG}" != "${DEV_AUTOMATION_USER:-dev-automation}" ]; }; then
+        _auto_freshen_main
     fi
 fi
 
