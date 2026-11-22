@@ -16,7 +16,7 @@ _dev_usage() {
     echo "  delete [name]  Remove container (saves workspace to dev-auto/<name>/main first; --dont-sync to skip)"
     echo "  see [name]     Fetch the container's workspace to the host and check out dev-auto/<name>/main"
     echo "                 (study container: fetch the files the agents made for review)"
-    echo "  show [name]    Push the host's current branch into the container (dev-auto/*, in-review/*, wip/*)"
+    echo "  show [name]    Push the host's current branch into the container (dev-auto/*, in-review/*)"
     echo "  merge [-m msg] [-p] [name]  New commit by you on in-review/<feature> from the last dev see"
     echo "                 (study container: merge [path...] copies its files into your directory)"
     echo "  squash [-p] [name]  Fold the last dev see into the HEAD commit of in-review/<feature>"
@@ -35,6 +35,7 @@ _dev_usage() {
     echo "  . --loop[=profile]  Push the project into its container and run a review loop there"
     echo "  review [opts] [url|.|container-name|\"follow-up\"]  Headless agent review"
     echo "                 (--agent=claude|bob|agy, --model=opus|fable|flash|pro, --loop[=normal|best|all|list])"
+    echo "  <number>       Create/enter container for an issue of the current project"
     echo "  <github-url>   Create/enter container for a GitHub issue/PR"
     echo "  <github-url> --loop[=profile]  Set up the container and run a multi-model review loop"
     echo ""
@@ -119,6 +120,15 @@ _dev_dispatch() {
             ;;
         help|--help|-h)
             _dev_usage
+            ;;
+        [0-9]*)
+            if [[ "$_dev_cmd" =~ ^[0-9]+$ ]]; then
+                _dev_sub dev-issue.sh "$_dev_cmd"
+            else
+                echo "dev: unknown command '${_dev_cmd}'" >&2
+                _dev_usage >&2
+                return 1
+            fi
             ;;
         *)
             echo "dev: unknown command '${_dev_cmd}'" >&2

@@ -1455,7 +1455,7 @@ _dev_container_label() {
 
 # Host branch `dev merge` / `dev squash` put the agent's work on:
 #   - the branch the container was created from with `dev .` (main -> main,
-#     feature-x -> feature-x), where wip/<f> graduates to in-review/<f>;
+#     feature-x -> feature-x);
 #   - in-review/<feature> for containers created from an issue, a PR or by
 #     `dev new` (a PR container of your own PR has the PR's in-review/* head
 #     as its label and targets that).
@@ -1464,7 +1464,6 @@ _dev_container_target_branch() {
     _dev_label=$(_dev_container_label "$_dev_name" "dev-original-branch")
     case "$_dev_label" in
         in-review/*) echo "$_dev_label"; return 0 ;;
-        wip/*) echo "in-review/${_dev_label#wip/}"; return 0 ;;
     esac
     _dev_pr=$(podman inspect --format '{{range .Config.Env}}{{.}}{{"\n"}}{{end}}' "$_dev_name" 2>/dev/null \
         | sed -n 's/^DEV_PR_NUMBER=//p') || _dev_pr=""
@@ -1503,8 +1502,8 @@ _dev_branch_to_container_name() {
         _dev_name="${BASH_REMATCH[1]}"
     else
         local _dev_feature="$_dev_branch"
-        if [[ "$_dev_branch" =~ ^(wip|in-review)/(.*) ]]; then
-            _dev_feature="${BASH_REMATCH[2]}"
+        if [[ "$_dev_branch" =~ ^in-review/(.*) ]]; then
+            _dev_feature="${BASH_REMATCH[1]}"
         fi
         local _dev_sanitized="${_dev_feature//\//-}"
         _dev_sanitized="${_dev_sanitized#-}"
@@ -1525,8 +1524,8 @@ _dev_branch_to_container_name() {
 
 _dev_strip_lifecycle_prefix() {
     local _dev_branch="$1"
-    if [[ "$_dev_branch" =~ ^(wip|in-review)/(.*) ]]; then
-        echo "${BASH_REMATCH[2]}"
+    if [[ "$_dev_branch" =~ ^in-review/(.*) ]]; then
+        echo "${BASH_REMATCH[1]}"
     elif [[ "$_dev_branch" =~ ^dev-auto/([^/]+) ]]; then
         echo "${BASH_REMATCH[1]}"
     else
@@ -1552,9 +1551,7 @@ _dev_backup_and_delete_branch() {
     _dev_ts=$(date +%s)
     local _dev_backup_branch
 
-    if [[ "$_dev_branch" == wip/* ]]; then
-        _dev_backup_branch="backup/${_dev_feature}/wip/${_dev_ts}"
-    elif [[ "$_dev_branch" == in-review/* ]]; then
+    if [[ "$_dev_branch" == in-review/* ]]; then
         _dev_backup_branch="backup/${_dev_feature}/in-review/${_dev_ts}"
     elif [[ "$_dev_branch" == dev-auto/* ]]; then
         _dev_backup_branch="backup/${_dev_feature}/dev-auto/${_dev_ts}"

@@ -53,55 +53,44 @@ ${_devsync_cname}"
         fi
     done < <(git -C "$_devsync_src_dir" branch --list 'dev-auto/*' 2>/dev/null)
 
-    # ── 2. Delete wip/* where in-review/* exists or wip is stale ─────────
+    # ── 2. Delete in-review/* with no open PR, once it has also gone stale ──
+    # A fresh in-review/<feature> with no PR yet is active work you have not run
+    # dev pr on, so keep it. Prune only once it has no open PR and no commit for
+    # DEV_BACKUP_MAX_AGE_DAYS. The branch is backed up before deletion either way.
     _devsync_now=$(date +%s)
     _devsync_stale_age=$(( DEV_BACKUP_MAX_AGE_DAYS * 86400 ))
-    while read -r _devsync_wip; do
-        [[ -z "$_devsync_wip" ]] && continue
-        _devsync_wip="${_devsync_wip#\* }"
-        _devsync_wip="${_devsync_wip## }"
-        _devsync_feature="${_devsync_wip#wip/}"
-        if git -C "$_devsync_src_dir" rev-parse --verify "in-review/${_devsync_feature}" &>/dev/null; then
-            echo "  ${_devsync_wip} — in-review exists, deleting..."
-            _dev_backup_and_delete_branch "$_devsync_src_dir" "$_devsync_wip"
-            continue
-        fi
-        _devsync_last_commit=$(git -C "$_devsync_src_dir" log -1 --format=%ct "$_devsync_wip" 2>/dev/null) || continue
-        if (( _devsync_now - _devsync_last_commit > _devsync_stale_age )); then
-            echo "  ${_devsync_wip} — stale ($(( (_devsync_now - _devsync_last_commit) / 86400 )) days), deleting..."
-            _dev_backup_and_delete_branch "$_devsync_src_dir" "$_devsync_wip"
-        fi
-    done < <(git -C "$_devsync_src_dir" branch --list 'wip/*' 2>/dev/null)
-
-    # ── 3. Delete in-review/* where no associated PR exists ───────────────
     while read -r _devsync_ir; do
         [[ -z "$_devsync_ir" ]] && continue
         _devsync_ir="${_devsync_ir#\* }"
         _devsync_ir="${_devsync_ir## }"
 
-        _devsync_pr_json=""
         _devsync_pr_json=$(gh pr list --state open --head "${_devsync_ir}" \
             --repo "${_devsync_key}" --json number,title --jq '.[0] // empty' 2>/dev/null) || true
-
         if [[ -z "$_devsync_pr_json" ]]; then
             _devsync_pr_json=$(gh pr list --state open --head "${DEV_GHCR_USER}:${_devsync_ir}" \
                 --repo "${_devsync_key}" --json number,title --jq '.[0] // empty' 2>/dev/null) || true
         fi
 
-        if [[ -z "$_devsync_pr_json" ]]; then
-            echo "  ${_devsync_ir} — no open PR, deleting..."
-            _dev_backup_and_delete_branch "$_devsync_src_dir" "$_devsync_ir"
-        else
+        if [[ -n "$_devsync_pr_json" ]]; then
             _devsync_pr_num=$(echo "$_devsync_pr_json" | jq -r '.number')
             _devsync_pr_title=$(echo "$_devsync_pr_json" | jq -r '.title')
             echo "  ${_devsync_ir} — PR #${_devsync_pr_num}: ${_devsync_pr_title}"
+            continue
+        fi
+
+        _devsync_last_commit=$(git -C "$_devsync_src_dir" log -1 --format=%ct "$_devsync_ir" 2>/dev/null) || continue
+        if (( _devsync_now - _devsync_last_commit > _devsync_stale_age )); then
+            echo "  ${_devsync_ir} — no open PR, stale ($(( (_devsync_now - _devsync_last_commit) / 86400 )) days), deleting..."
+            _dev_backup_and_delete_branch "$_devsync_src_dir" "$_devsync_ir"
+        else
+            echo "  ${_devsync_ir} — no PR yet, keeping (active work)"
         fi
     done < <(git -C "$_devsync_src_dir" branch --list 'in-review/*' 2>/dev/null)
 
-    # ── 4. Delete old backup branches ─────────────────────────────────────
+    # ── 3. Delete old backup branches ─────────────────────────────────────
     _dev_prune_backup_branches "$_devsync_src_dir"
 
-    # ── 5. Delete stale dev-auto/* branches on the automation fork ─────────
+    # ── 4. Delete stale dev-auto/* branches on the automation fork ─────────
     _dev_prune_automation_fork "$_devsync_src_dir" "$_devsync_repo"
 
 done < "$_devsync_conf"

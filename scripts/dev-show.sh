@@ -10,7 +10,7 @@ source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 # ── Resolve container name ────────────────────────────────────────────────────
 # Only inside the project's source directory, only its containers. Without a
 # name: the remembered container, else the one the current branch maps to
-# (wip/<f> -> <repo>-<f>), else the project's only container.
+# (in-review/<f> -> <repo>-<f>), else the project's only container.
 _devshow_hint=""
 if [[ -z "${1:-}" ]]; then
     _devshow_tkey=$(_dev_detect_template_from_cwd 2>/dev/null) || _devshow_tkey=""
@@ -45,12 +45,10 @@ _devshow_current=$(git -C "$_devshow_src_dir" branch --show-current 2>/dev/null)
 
 # ── Verify current branch belongs to the container ───────────────────────────
 # Accepted: the container's dev-auto branch, the branch dev merge/squash
-# target (which is the branch a `dev .` container was created from), wip/<f>
-# for an in-review/<f> target, and any branch that maps to the container by
-# name.
+# target (which is the branch a `dev .` container was created from), and any
+# branch that maps to the container by name.
 _devshow_target=$(_dev_container_target_branch "$_devshow_name" "$_devshow_repo")
 _devshow_accepted=("$_devshow_branch" "$_devshow_target")
-[[ "$_devshow_target" == in-review/* ]] && _devshow_accepted+=("wip/${_devshow_target#in-review/}")
 _devshow_ok=false
 if [[ -n "$_devshow_current" ]]; then
     for _devshow_b in "${_devshow_accepted[@]}"; do

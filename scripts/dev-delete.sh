@@ -12,7 +12,7 @@ for _devdel_arg in "$@"; do
             echo "Removes the container, its disks and its dev-auto/* branches. The workspace is first"
             echo "synced to the host branch dev-auto/<name>/main, which is backed up to your fork"
             echo "(backup/<feature>/dev-auto/<timestamp>, kept ${DEV_BACKUP_MAX_AGE_DAYS} days) before it is deleted."
-            echo "in-review/* and wip/* branches are not touched. --dont-sync skips the sync."
+            echo "in-review/* branches are not touched. --dont-sync skips the sync."
             echo "A study container's workspace is saved to ${DEV_STUDY_SAVE_DIR}/<name>-<timestamp>-*.tar.gz"
             echo "instead (kept ${DEV_BACKUP_MAX_AGE_DAYS} days); --dont-sync skips that too."
             exit 0
@@ -86,8 +86,7 @@ if [[ -n "$_devdel_template_key" && "$_devdel_study" != true ]]; then
             || echo "WARNING: could not delete dev-auto/${_devdel_name}/* on ${DEV_AUTOMATION_USER}/${_devdel_repo} ('dev sync' retries later)" >&2
     fi
 
-    # Clean up local lifecycle branches (dev-auto/*, wip/*)
-    # Keep in-review/* if it exists; delete wip/* and dev-auto/*
+    # Clean up local dev-auto/* branches; keep in-review/* if it exists.
     # Skipped during dev recreate (DEV_SKIP_BRANCH_CLEANUP=1)
     if [[ -n "$_devdel_src_dir" && "${DEV_SKIP_BRANCH_CLEANUP:-}" != "1" ]]; then
         _devdel_feature=$(_dev_container_name_to_feature "$_devdel_name" "$_devdel_repo")
@@ -102,11 +101,7 @@ if [[ -n "$_devdel_template_key" && "$_devdel_study" != true ]]; then
             _dev_backup_and_delete_branch "$_devdel_src_dir" "$_devdel_da"
         done < <(git -C "$_devdel_src_dir" branch --list "dev-auto/${_devdel_name}/*" 2>/dev/null)
 
-        # Delete wip branch only when in-review exists (work has progressed to review)
         if [[ "$_devdel_has_ir" == true ]]; then
-            if git -C "$_devdel_src_dir" rev-parse --verify "wip/${_devdel_feature}" &>/dev/null; then
-                _dev_backup_and_delete_branch "$_devdel_src_dir" "wip/${_devdel_feature}"
-            fi
             echo "Kept in-review/${_devdel_feature}."
         fi
     fi

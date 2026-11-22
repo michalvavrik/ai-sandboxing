@@ -7,7 +7,7 @@
 # aborted and the workspace is left as it was.
 #
 # The host is not touched: run `dev see` afterwards. `dev merge` / `dev squash`
-# expect their target branch (in-review/*, wip/*) to be the base the container
+# expect their target branch (in-review/*) to be the base the container
 # works on, so rebase that branch on the same upstream before using them.
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"

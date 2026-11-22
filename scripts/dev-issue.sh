@@ -2,7 +2,18 @@
 set -euo pipefail
 source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 
-readonly _devissue_url="${1:?'Usage: dev-issue.sh <github-url>'}"
+_devissue_url="${1:?'Usage: dev-issue.sh <github-url-or-issue-number>'}"
+
+# A bare number is an issue in the current directory's project.
+if [[ "$_devissue_url" =~ ^[0-9]+$ ]]; then
+    _devissue_cwd_key=$(_dev_detect_template_from_cwd 2>/dev/null) || _devissue_cwd_key=""
+    if [[ -z "$_devissue_cwd_key" ]]; then
+        echo "Error: 'dev ${_devissue_url}' needs a project directory; no template matches $(pwd)" >&2
+        exit 1
+    fi
+    _devissue_url="https://github.com/${_devissue_cwd_key}/issues/${_devissue_url}"
+fi
+readonly _devissue_url
 
 if ! _dev_parse_github_url "$_devissue_url"; then
     echo "Error: could not parse GitHub URL" >&2
@@ -25,9 +36,9 @@ if [[ "$_devissue_type" == "tree" ]]; then
     readonly _devissue_template_key="${_devissue_template_key:-${_devissue_org}/${_devissue_repo}}"
     readonly _devissue_name=$(_dev_branch_to_container_name "$_devissue_branch" "$_devissue_repo")
 
-    # For in-review/wip branches from user's org, update local branch from remote
+    # For in-review branches from user's org, update local branch from remote
     if [[ ("$_devissue_org" == "$DEV_AUTOMATION_USER" || "$_devissue_org" == "$DEV_GHCR_USER") \
-          && "$_devissue_branch" =~ ^(wip|in-review)/ ]]; then
+          && "$_devissue_branch" =~ ^in-review/ ]]; then
         _devissue_src_dir=$(_dev_resolve_src_dir "$_devissue_template_key" 2>/dev/null) || true
         if [[ -n "$_devissue_src_dir" ]]; then
             if git -C "$_devissue_src_dir" rev-parse --verify "$_devissue_branch" &>/dev/null; then

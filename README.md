@@ -103,7 +103,7 @@ dev enter fix-auth         # (re-)enter an existing container, starting it if st
 dev recreate fix-auth      # fresh container, preserves workspace and Claude session
 dev delete fix-auth        # save workspace to dev-auto/<name>/main, then remove (--dont-sync to skip)
 dev see fix-auth           # fetch the container's workspace, check out dev-auto/<name>/main on the host
-dev show fix-auth          # push the host's current branch into the container (dev-auto/*, in-review/*, wip/*)
+dev show fix-auth          # push the host's current branch into the container (dev-auto/*, in-review/*)
 dev merge                  # one new commit by you on in-review/<feature> from the last dev see (asks for the message)
 dev merge -m "message"     # same, message given
 dev squash                 # fold the last dev see into the HEAD commit of in-review/<feature>
@@ -192,11 +192,11 @@ Commits whatever the container's workspace has (as the sandbox identity), pushes
 
 ### `dev show`
 
-Pushes the host's current branch into the container, from any branch that belongs to the container: `dev-auto/<container>/main`, `in-review/<feature>`, `wip/<feature>` or the branch the container was created from. Uncommitted changes are committed first (`sync from host`). Everything the container's workspace has, committed or not, is backed up to `dev-auto/<container>/backup-show/<timestamp>` and then replaced: afterwards the container's checkout has exactly the content of the host's HEAD (`dev show` verifies that). See [Commit messages and issue links](#commit-messages-and-issue-links) for what exactly is pushed.
+Pushes the host's current branch into the container, from any branch that belongs to the container: `dev-auto/<container>/main`, `in-review/<feature>` or the branch the container was created from. Uncommitted changes are committed first (`sync from host`). Everything the container's workspace has, committed or not, is backed up to `dev-auto/<container>/backup-show/<timestamp>` and then replaced: afterwards the container's checkout has exactly the content of the host's HEAD (`dev show` verifies that). See [Commit messages and issue links](#commit-messages-and-issue-links) for what exactly is pushed.
 
 ### `dev rebase`
 
-Rebases the container's workspace on the latest upstream default branch (`main`/`master` of the project) and pushes the result to `dev-auto/<container>/main`. The workspace is committed and pushed there first, so the state before the rebase stays in the container's reflog; on conflicts the rebase is aborted and the workspace is left as it was. The host is not touched — run `dev see` afterwards. `dev merge` / `dev squash` expect their target branch to be the base the container works on, so rebase `in-review/<feature>` / `wip/<feature>` on the same upstream before using them.
+Rebases the container's workspace on the latest upstream default branch (`main`/`master` of the project) and pushes the result to `dev-auto/<container>/main`. The workspace is committed and pushed there first, so the state before the rebase stays in the container's reflog; on conflicts the rebase is aborted and the workspace is left as it was. The host is not touched — run `dev see` afterwards. `dev merge` / `dev squash` expect their target branch to be the base the container works on, so rebase `in-review/<feature>` on the same upstream before using them.
 
 The first time a container starts, before any code is written, this happens automatically: the entrypoint fast-forwards the workspace to the current upstream default branch, so a fresh container does not begin on a stale `main` (the image is rebuilt every 3 days, and host/GitHub clones can lag too). It runs only for a clean workspace based on that branch — not a PR, not someone else's branch, and never once the workspace already has work of its own, which is left for `dev rebase` — and when the fetch cannot reach upstream (offline) it is skipped and the container starts anyway.
 
@@ -217,7 +217,7 @@ Both take **what the last `dev see` fetched** (the host branch `dev-auto/<contai
 - `dev merge [-m <message>] [-p]` — one new commit. Without `-m` your git editor opens (like `git commit`, with the diff stat as comments; an empty message aborts). `Signed-off-by` is added. If `in-review/<feature>` does not exist yet it is created; its first commit starts where the container's work started (the newest commit on the agent branch that was not made by the sandbox), or at the branch the container was created from with `dev .`.
 - `dev squash [-p]` — the changes are folded into the current HEAD commit of `in-review/<feature>` (message and author date kept, like `git commit --amend`). The branch must exist.
 
-The target branch is the branch the container was created from with `dev .` (`main` → `main`, `feature-x` → `feature-x`; `wip/x` graduates to `in-review/x`). Containers created from an issue, a PR or by `dev new` target `in-review/<feature>` (`keycloak-53157` → `in-review/53157`, `keycloak-pr-51877` → `in-review/pr-51877`); a `dev <pr-url>` container of your own PR has the PR's `in-review/*` head branch as its label and targets that. The target is printed before anything happens.
+The target branch is the branch the container was created from with `dev .` (`main` → `main`, `feature-x` → `feature-x`). Containers created from an issue, a PR or by `dev new` target `in-review/<feature>` (`keycloak-53157` → `in-review/53157`, `keycloak-pr-51877` → `in-review/pr-51877`); a `dev <pr-url>` container of your own PR has the PR's `in-review/*` head branch as its label and targets that. The target is printed before anything happens.
 
 The target branch is the base the container's commits are added to, and it is expected not to change behind the container's back: the container works on top of exactly what is on it (that is what `dev show` pushed), so the result is simply the container's tree. If the base did change on the host since (no commit in the container has its current content), both commands abort without touching anything and print how to continue by hand — `dev show` the current branch into the container and let the agent redo its changes, or cherry-pick the container's commits yourself. If the container has changes that `dev see` did not fetch yet, a warning is printed.
 
@@ -235,8 +235,7 @@ Because the sanitized copy has the same tree, `dev merge` and `dev squash` work 
 
 | Branch | Created by | Pruned by `dev sync` when |
 |--------|-----------|-------------|
-| `in-review/<feature>` (host, your fork) | `dev merge` | no open PR has this head |
-| `wip/<feature>` (host) | you, optionally (`git checkout -b wip/x && dev .`) | `in-review/<feature>` exists, or no commit for 20 days |
+| `in-review/<feature>` (host, your fork) | `dev merge` / `dev squash` | no open PR has this head and no commit for 20 days |
 | `dev-auto/<container>/main` (host, automation fork) | `dev see`, `dev show`, `dev .`, `dev delete` | the container does not exist |
 | `dev-auto/<container>/backup-{see,show}/<ts>` (automation fork) | `dev see`, `dev show` | the container does not exist, or older than 20 days |
 | `dev-auto/<container>/backup` (automation fork) | the container's [auto-backup](#auto-backup) (snapshots on change, checked every 30 s) | the container does not exist |
@@ -244,24 +243,22 @@ Because the sanitized copy has the same tree, `dev merge` and `dev squash` work 
 
 ### How branches map to container names
 
-The `<feature>` in `wip/<feature>` and `in-review/<feature>` is the branch suffix. When creating containers, the feature is sanitized and prefixed with the repo name if needed:
+The `<feature>` in `in-review/<feature>` is the branch suffix. When creating containers, the feature is sanitized and prefixed with the repo name if needed:
 
-- `wip/fix-auth` in keycloak repo → container `keycloak-fix-auth` → `dev-auto/keycloak-fix-auth/main`
-- `in-review/fix-auth` in keycloak repo → same container `keycloak-fix-auth`
+- `in-review/fix-auth` in keycloak repo → container `keycloak-fix-auth` → `dev-auto/keycloak-fix-auth/main`
 - `fix-auth` (no prefix) → same container `keycloak-fix-auth`
 
-All three branch forms map to the same container and the same `dev-auto` working branch. The `dev-original-branch` label records the host branch a container was created from (`dev .`), the PR's head branch (`dev <pr-url>`), or `in-review/<feature>` for containers created from an issue or by `dev new`; `dev merge` / `dev squash` derive their target from it (see above).
+Both branch forms map to the same container and the same `dev-auto` working branch. The `dev-original-branch` label records the host branch a container was created from (`dev .`), the PR's head branch (`dev <pr-url>`), or `in-review/<feature>` for containers created from an issue or by `dev new`; `dev merge` / `dev squash` derive their target from it (see above).
 
 ### `dev sync`
 
 Superset of `dev pull`. Pulls images and sources, then prunes dead branches across all template projects, and old files of [study containers](#study-projects):
 
 1. **`dev-auto/<x>/*`** on the host — deleted when no container `<x>` exists
-2. **`wip/<x>`** — deleted when `in-review/<x>` exists or the branch had no commit for 20 days
-3. **`in-review/<x>`** — deleted when no open PR is associated (checked via `gh pr list`)
-4. **`backup/*/<timestamp>`** on your fork — deleted when timestamp is older than 20 days
-5. **`dev-auto/<x>/*`** on the automation fork — deleted when no container `<x>` exists; `dev-auto/<x>/backup-{see,show}/<timestamp>` of existing containers deleted after 20 days, anything below `dev-auto/<x>/backup/` (their old name, which blocks the auto-backup) at once
-6. **Study files** — saved workspaces (`dev delete`, `dev recreate`) and the files of yours `dev merge` replaced, in `~/.local/share/dev-sandbox-saved/`, deleted after 20 days; a review copy in `~/.cache/dev-sandbox-see/<x>/` (`dev see`) deleted when no container `<x>` exists or no `dev see` refreshed it for 20 days
+2. **`in-review/<x>`** — deleted when no open PR is associated (checked via `gh pr list`) and the branch had no commit for 20 days; a fresh branch with no PR yet is kept as active work
+3. **`backup/*/<timestamp>`** on your fork — deleted when timestamp is older than 20 days
+4. **`dev-auto/<x>/*`** on the automation fork — deleted when no container `<x>` exists; `dev-auto/<x>/backup-{see,show}/<timestamp>` of existing containers deleted after 20 days, anything below `dev-auto/<x>/backup/` (their old name, which blocks the auto-backup) at once
+5. **Study files** — saved workspaces (`dev delete`, `dev recreate`) and the files of yours `dev merge` replaced, in `~/.local/share/dev-sandbox-saved/`, deleted after 20 days; a review copy in `~/.cache/dev-sandbox-see/<x>/` (`dev see`) deleted when no container `<x>` exists or no `dev see` refreshed it for 20 days
 
 Before any host branch deletion, the branch is backed up to `backup/<feature>/<type>/<timestamp>` on the `DEV_GHCR_USER` remote (your GitHub fork).
 
@@ -269,7 +266,7 @@ Runs automatically on login via a systemd user service. Run manually with `dev s
 
 ### `dev delete` behavior
 
-`dev delete` first saves the container's workspace to the host branch `dev-auto/<container>/main` (same as `dev see`, without checking it out), then removes the container, its disks, its branches on the automation fork and its local `dev-auto/<container>/*` branches — each local branch is backed up to your fork as `backup/<feature>/dev-auto/<timestamp>` first, so the container's last state stays recoverable for 20 days. `wip/<feature>` is backed up and deleted only when `in-review/<feature>` exists; `in-review/*` branches are never touched. `--dont-sync` skips saving the workspace.
+`dev delete` first saves the container's workspace to the host branch `dev-auto/<container>/main` (same as `dev see`, without checking it out), then removes the container, its disks, its branches on the automation fork and its local `dev-auto/<container>/*` branches — each local branch is backed up to your fork as `backup/<feature>/dev-auto/<timestamp>` first, so the container's last state stays recoverable for 20 days. `in-review/*` branches are never touched. `--dont-sync` skips saving the workspace.
 
 ```bash
 dev delete fix-auth              # save workspace, then delete
@@ -296,7 +293,7 @@ Google OAuth tokens live in plaintext inside the container — the agent can rea
 
 ```bash
 # 1. Start — push your branch to an agent container
-cd ~/sources/keycloak && git checkout -b wip/my-feature
+cd ~/sources/keycloak && git checkout -b in-review/my-feature
 dev .
 # → creates container keycloak-my-feature, you're inside it
 # → uncommitted changes included (temporary WIP commit, reset after push)
@@ -308,7 +305,7 @@ claude
 dev see                    # checks out dev-auto/keycloak-my-feature/main
 
 # 4. Edit locally, then push back to the container
-dev show                   # pushes host edits into the container (works from wip/*, in-review/*, dev-auto/*)
+dev show                   # pushes host edits into the container (works from in-review/*, dev-auto/*)
 dev .                      # alternative: re-syncs and re-enters
 
 # Repeat steps 2–4 as needed
@@ -316,7 +313,7 @@ dev .                      # alternative: re-syncs and re-enters
 # If upstream main has advanced:
 dev rebase                 # rebase the container's workspace on upstream main, then dev see
 
-# 5. Finish — your commit on in-review/my-feature (starts at wip/my-feature), then push it yourself
+# 5. Finish — your commit on in-review/my-feature, then push it yourself
 dev merge                  # asks for the message; checks out in-review/my-feature
 git push -u michalvavrik in-review/my-feature
 ```
@@ -381,7 +378,7 @@ dev review https://github.com/keycloak/keycloak/pull/50801
 
 # Review local work: push the current project's branch into its container
 # (created if needed, uncommitted changes included — like `dev .`), then review it
-cd ~/sources/keycloak && git checkout wip/spiffe
+cd ~/sources/keycloak && git checkout in-review/spiffe
 dev review . --loop=all      # or: dev . --loop=all
 
 # Review in an existing container
