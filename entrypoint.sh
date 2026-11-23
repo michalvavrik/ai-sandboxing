@@ -84,6 +84,11 @@ export CLAUDE_DANGEROUSLY_SKIP_PERMISSIONS=true
 # variable targets are still checked — there is no switch for those.
 export CLAUDE_CODE_DISABLE_INLINE_SHELL_RM_PROMPT=1
 export CLAUDE_CODE_DISABLE_SUBSTITUTION_RM_PROMPT=1
+# Force the classic (scrolling) renderer so the terminal keeps its native
+# scrollback. Fullscreen/alt-screen rendering is on by default for these sessions
+# and leaves shift+PageUp with nothing to scroll. This env var overrides even a
+# saved tui setting (see Claude Code's renderer-decision table).
+export CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1
 if ! infocmp "\${TERM:-dumb}" &>/dev/null 2>&1; then export TERM=xterm-256color; fi
 DEVENV
 

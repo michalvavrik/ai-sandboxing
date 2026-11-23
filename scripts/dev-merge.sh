@@ -11,27 +11,30 @@ source "$(dirname "$(readlink -f "$0")")/dev-common.sh"
 _devmerge_usage() {
     cat <<'USAGE'
 Usage: dev merge [-m <message>] [-p] [name]
-       dev squash [-p] [name]
+       dev squash [-m <message>] [-p] [name]
 
 Takes the agent's changes as fetched by the last `dev see` (host branch
-dev-auto/<container>/main) and records them on in-review/<feature> as a commit
+dev-auto/<container>/main) and records them on in-review/<feature> as commits
 of your host git identity. in-review/<feature> is checked out when done;
 nothing is pushed unless you pass -p.
 
-  dev merge   One new commit (message from -m or your editor, Signed-off-by
-              added). in-review/<feature> is created when it does not exist
-              yet; then the commit starts where the container's work started.
-  dev squash  The changes are folded into the current HEAD commit of
-              in-review/<feature> (message and author date kept — like
-              git commit --amend). If the branch does not exist yet, it is
-              created with the first commit, like dev merge.
+  dev merge   in-review/<feature> is rebuilt as the base plus your work commits,
+              re-authored under your host identity with their messages kept and
+              a Signed-off-by added; the sandbox's WIP-sync noise is folded away
+              so the content matches the container exactly.
+  dev squash  in-review/<feature> is rebuilt as the base plus a single commit
+              with the whole change (message from -m or your editor). Run it
+              again and it re-squashes, offering the previous message as default.
   -p          Then force-push in-review/<feature> to your fork (the
-              DEV_GHCR_USER remote), also when there was nothing new to add.
+              DEV_GHCR_USER remote), also when there was nothing to rebuild.
 
-The target branch is the base the container's commits are added to; it is
-expected not to change behind the container's back. If it did (no commit in
-the container has its current content), both abort without changing anything
-and tell you how to continue by hand.
+The base is the commit the container's work sits on: the base recorded in the
+container (/workspace/.base) or, when that is stale, where the work diverges
+from origin, whichever is closer to the work. Both commands rebuild the target
+from that base every time, so it always matches the container's current work
+(like deleting and recreating the branch, but authored by you with the sandbox
+noise removed). Anything previously on the target that is not part of this work
+is dropped; its old tip stays in the reflog.
 
 The target branch is the branch the container was created from with `dev .`
 (main -> main, feature-x -> feature-x). Containers
@@ -237,172 +240,202 @@ if _dev_container_running "$_devmerge_name" && _dev_update_ssh_config "$_devmerg
     fi
 fi
 
-# Where the container's work starts: the newest commit on the agent branch's
-# first-parent chain that was not made by the sandbox (agent commits, WIP
-# syncs, host syncs). Everything above it is what the container added.
-_devmerge_container_base() {
-    local _sha _email _subject
-    while read -r _sha _email _subject; do
-        [[ -z "$_sha" ]] && continue
-        [[ "$_email" == "$DEV_AUTOMATION_EMAIL" ]] && continue
-        if [[ "$_email" == "$_devmerge_user_email" ]]; then
-            case "$_subject" in
-                WIP|"sync from host"|"WIP sync"|backup) continue ;;
-            esac
-        fi
-        echo "$_sha"
-        return 0
-    done < <(_dg log --first-parent --format='%H %ae %s' "$_devmerge_agent_sha")
-    return 1
-}
-
-# dev squash on a branch that does not exist yet creates the first commit the same
-# as dev merge, since there is nothing to amend. Later squashes amend as usual.
-if [[ "$_devmerge_mode" == "squash" ]] && ! _dg rev-parse -q --verify "refs/heads/${_devmerge_target}" >/dev/null; then
-    echo "${_devmerge_target} does not exist yet; creating it like 'dev merge'."
-    _devmerge_mode="merge"
+# ── Base: the upstream commit the container's work is built on ────────────────
+# Both commands rebuild <target> from this base, so everything above it on the
+# agent branch counts as the work. Two candidates: the container's recorded
+# .base (valid only when it is a real commit the work still sits on) and where
+# the work diverges from origin's default branch. Use whichever is closer to the
+# work, so it stays right when .base is stale (main moved on) and when the work
+# sits on a feature branch (no origin merge base near it).
+_devmerge_recorded=""
+if _dev_container_running "$_devmerge_name" && _dev_update_ssh_config "$_devmerge_name" 2>/dev/null; then
+    _devmerge_recorded=$(ssh -q -o ConnectTimeout=3 -o BatchMode=yes "$_devmerge_name" \
+        'cat /workspace/.base 2>/dev/null' </dev/null 2>/dev/null | tr -d '[:space:]') || _devmerge_recorded=""
 fi
-if [[ "$_devmerge_mode" == "squash" && -n "$_devmerge_message" ]]; then
-    echo "dev squash: -m is not supported when amending (the amended commit's message is kept)" >&2
+if [[ ! "$_devmerge_recorded" =~ ^[0-9a-f]{40}$ ]] \
+    || ! _dg cat-file -e "${_devmerge_recorded}^{commit}" 2>/dev/null \
+    || ! _dg merge-base --is-ancestor "$_devmerge_recorded" "$_devmerge_agent_sha" 2>/dev/null; then
+    _devmerge_recorded=""
+fi
+_devmerge_up=$(_dg rev-parse --verify -q 'refs/remotes/origin/HEAD^{commit}' 2>/dev/null) \
+    || _devmerge_up=$(_dg rev-parse --verify -q 'refs/remotes/origin/main^{commit}' 2>/dev/null) \
+    || _devmerge_up=$(_dg rev-parse --verify -q 'refs/remotes/origin/master^{commit}' 2>/dev/null) \
+    || _devmerge_up=""
+_devmerge_diverge=""
+if [[ -n "$_devmerge_up" ]]; then
+    _devmerge_diverge=$(_dg merge-base "$_devmerge_up" "$_devmerge_agent_sha" 2>/dev/null) || _devmerge_diverge=""
+fi
+if [[ -n "$_devmerge_recorded" && -n "$_devmerge_diverge" ]]; then
+    # The newer of the two is the one that descends from the other; when they are
+    # unrelated (feature branch), .base is the one that tracks the work.
+    if _dg merge-base --is-ancestor "$_devmerge_recorded" "$_devmerge_diverge" 2>/dev/null; then
+        _devmerge_base="$_devmerge_diverge"
+    else
+        _devmerge_base="$_devmerge_recorded"
+    fi
+elif [[ -n "$_devmerge_recorded" ]]; then
+    _devmerge_base="$_devmerge_recorded"
+else
+    _devmerge_base="$_devmerge_diverge"
+fi
+if [[ -z "$_devmerge_base" ]]; then
+    echo "Error: could not determine the base for ${_devmerge_name} (no readable .base, no origin merge base)." >&2
+    echo "Start the container so its /workspace/.base can be read, then retry." >&2
     exit 1
 fi
+readonly _devmerge_base
+_devmerge_base_tree=$(_dg rev-parse "${_devmerge_base}^{tree}")
+echo "Base:       $(_dg log -1 --format='%h %s' "$_devmerge_base")"
 
-# ── Parent of the new commit ─────────────────────────────────────────────────
-_devmerge_target_exists=false
 if _dg rev-parse -q --verify "refs/heads/${_devmerge_target}" >/dev/null; then
     _devmerge_target_exists=true
-    _devmerge_parent=$(_dg rev-parse "refs/heads/${_devmerge_target}")
 else
-    # First commit on a new branch: start where the container's work started.
-    if ! _devmerge_parent=$(_devmerge_container_base); then
-        echo "Error: could not find where the container's work starts on ${_devmerge_agent}" >&2
-        exit 1
-    fi
-    echo "Base:       $(_dg log -1 --format='%h %s' "$_devmerge_parent") (where the container's work started)"
-fi
-_devmerge_parent_tree=$(_dg rev-parse "${_devmerge_parent}^{tree}")
-
-# ── Tree of the new commit ───────────────────────────────────────────────────
-# The container works on top of exactly what is on the target branch (dev show
-# / dev . push it there — commit messages rewritten, content identical), so
-# some commit on the agent branch has the parent's tree and the result is
-# simply the agent's tree: the container's commits are added on top of the
-# base. If the base changed on the host since (no such commit), it has
-# diverged from what the container worked on: abort, that is yours to sort out.
-_devmerge_tree=""
-if _dg merge-base --is-ancestor "$_devmerge_parent" "$_devmerge_agent_sha"; then
-    _devmerge_tree="$_devmerge_agent_tree"
-else
-    _devmerge_mb=$(_dg merge-base "$_devmerge_parent" "$_devmerge_agent_sha" 2>/dev/null) || _devmerge_mb=""
-    if _dg log --format='%T' ${_devmerge_mb:+"^${_devmerge_mb}"} ${_devmerge_mb:-"-n 500"} "$_devmerge_agent_sha" | grep -qxF "$_devmerge_parent_tree"; then
-        _devmerge_tree="$_devmerge_agent_tree"
-    else
-        _devmerge_cbase=$(_devmerge_container_base) || _devmerge_cbase=""
-        echo "Error: ${_devmerge_target} changed since the container got it — no commit on ${_devmerge_agent} has the content of $(_dg log -1 --format='%h (%s)' "$_devmerge_parent")." >&2
-        echo "Nothing was changed. Continue by hand, either:" >&2
-        echo "  git checkout ${_devmerge_target} && dev show ${_devmerge_name}     # give the container the current branch, let the agent redo its changes, dev see again" >&2
-        if [[ -n "$_devmerge_cbase" ]]; then
-            echo "  git checkout ${_devmerge_target} && git cherry-pick ${_devmerge_cbase:0:12}..${_devmerge_agent}     # apply the container's commits yourself" >&2
-        fi
-        exit 1
-    fi
+    _devmerge_target_exists=false
 fi
 
-if [[ "$_devmerge_tree" == "$_devmerge_parent_tree" ]]; then
-    if [[ "$_devmerge_mode" == "squash" ]]; then
-        echo "Nothing to squash: ${_devmerge_target} already has the container's changes."
-    else
-        echo "Nothing to merge: no changes on top of $(_dg log -1 --format='%h' "$_devmerge_parent")."
-    fi
+# Nothing to do when the work is identical to the base.
+if [[ "$_devmerge_agent_tree" == "$_devmerge_base_tree" ]]; then
+    echo "Nothing to ${_devmerge_mode}: no changes on top of the base."
     if [[ "$_devmerge_push" == true && "$_devmerge_target_exists" == true ]]; then
         _devmerge_push_target
     fi
     exit 0
 fi
 
-echo ""
-_dg diff --stat "$_devmerge_parent" "$_devmerge_tree"
-echo ""
+# Sandbox commits carry uncommitted changes across a sync; folded away, never
+# kept as commits of their own.
+_devmerge_is_sandbox_subject() {
+    case "$1" in WIP|"sync from host"|"WIP sync"|backup|"pre-rebase save") return 0 ;; esac
+    return 1
+}
 
+# Resolve a commit message into _devmerge_resolved_msg: from -m, else the editor
+# pre-filled with $1. It runs the editor itself, so call it as a statement, never
+# in a command substitution (that would capture the editor's terminal output).
+_devmerge_resolved_msg=""
+_devmerge_resolve_message() {
+    local _default="$1" _f _ed
+    if [[ -n "$_devmerge_message" ]]; then
+        _devmerge_resolved_msg="$_devmerge_message"
+        return 0
+    fi
+    if [[ ! -t 0 || ! -t 1 ]]; then
+        echo "Error: no terminal for the editor — pass the message with -m" >&2
+        return 1
+    fi
+    _f=$(mktemp)
+    {
+        printf '%s\n' "$_default"
+        echo ""
+        echo "# Commit message for ${_devmerge_target}."
+        echo "# Lines starting with '#' are ignored; an empty message aborts."
+        echo "# Signed-off-by is added automatically."
+    } > "$_f"
+    _ed=$(_dg var GIT_EDITOR)
+    if ! (cd "$_devmerge_src" && eval "$_ed \"\$_f\""); then
+        rm -f "$_f"; echo "Error: editor exited with an error, aborting" >&2; return 1
+    fi
+    _devmerge_resolved_msg=$(_dg stripspace --strip-comments < "$_f"); rm -f "$_f"
+    if [[ -z "${_devmerge_resolved_msg//[[:space:]]/}" ]]; then
+        echo "Aborting: empty commit message." >&2; return 1
+    fi
+    return 0
+}
+
+# Write <message> plus a Signed-off-by trailer to the shared message file, which
+# each commit below is built from in turn (a commit reads it right away, so one
+# file is reused rather than tracking many across command substitutions).
 _devmerge_msgfile=$(mktemp)
 trap 'rm -f "$_devmerge_msgfile"' EXIT
-
-# ── Create the commit ────────────────────────────────────────────────────────
-if [[ "$_devmerge_mode" == "merge" ]]; then
-    if [[ -n "$_devmerge_message" ]]; then
-        printf '%s\n' "$_devmerge_message" > "$_devmerge_msgfile"
-    else
-        if [[ ! -t 0 || ! -t 1 ]]; then
-            echo "Error: no terminal for the editor — pass the message with -m" >&2
-            exit 1
-        fi
-        {
-            echo ""
-            if [[ "$_devmerge_target_exists" == true ]]; then
-                echo "# Commit message for a new commit on ${_devmerge_target}."
-            else
-                echo "# Commit message for the first commit on ${_devmerge_target} (new branch)."
-            fi
-            echo "# Lines starting with '#' are ignored; an empty message aborts."
-            echo "# Signed-off-by: ${_devmerge_user_name} <${_devmerge_user_email}> is added automatically."
-            echo "#"
-            echo "# Changes:"
-            _dg diff --stat "$_devmerge_parent" "$_devmerge_tree" | sed 's/^/#   /'
-        } > "$_devmerge_msgfile"
-        _devmerge_editor=$(_dg var GIT_EDITOR)
-        (cd "$_devmerge_src" && eval "$_devmerge_editor \"\$_devmerge_msgfile\"") || {
-            echo "Error: editor exited with an error, aborting" >&2
-            exit 1
-        }
-    fi
-    _devmerge_msg=$(_dg stripspace --strip-comments < "$_devmerge_msgfile")
-    if [[ -z "${_devmerge_msg//[[:space:]]/}" ]]; then
-        echo "Aborting: empty commit message." >&2
-        exit 1
-    fi
-    printf '%s\n' "$_devmerge_msg" \
+_devmerge_write_msg() {
+    # Drop any Co-authored-by trailer the agent's commit carried: in-review
+    # commits are yours, authored solely by your host identity. Then add the
+    # Signed-off-by.
+    printf '%s\n' "$1" \
+        | sed -E '/^[[:space:]]*[Cc]o-[Aa]uthored-[Bb]y:/d' \
         | _dg interpret-trailers --if-exists addIfDifferent \
             --trailer "Signed-off-by: ${_devmerge_user_name} <${_devmerge_user_email}>" \
         > "$_devmerge_msgfile"
+}
 
-    _devmerge_new=$(_dev_commit_as_host "$_devmerge_src" "$_devmerge_tree" "$_devmerge_msgfile" "" "$_devmerge_parent")
+echo ""
+_dg diff --stat "$_devmerge_base" "$_devmerge_agent_tree"
+echo ""
+
+# ── Build the new tip on the base ─────────────────────────────────────────────
+if [[ "$_devmerge_mode" == "squash" ]]; then
+    # One commit on the base holding the whole net change.
+    _devmerge_default=""
+    if [[ "$_devmerge_target_exists" == true \
+          && "$(_dg rev-parse -q --verify "${_devmerge_target}^" 2>/dev/null)" == "$_devmerge_base" ]]; then
+        _devmerge_default=$(_dg log -1 --format=%B "$_devmerge_target")   # re-squash keeps the message
+    else
+        while read -r _devmerge_s _devmerge_subj; do
+            [[ -z "$_devmerge_s" ]] && continue
+            if _devmerge_is_sandbox_subject "$_devmerge_subj"; then continue; fi
+            _devmerge_default=$(_dg log -1 --format=%B "$_devmerge_s")
+            break
+        done < <(_dg log --first-parent --format='%H %s' "${_devmerge_base}..${_devmerge_agent_sha}")
+    fi
+    if ! _devmerge_resolve_message "$_devmerge_default"; then exit 1; fi
+    _devmerge_write_msg "$_devmerge_resolved_msg"
+    _devmerge_new=$(_dev_commit_as_host "$_devmerge_src" "$_devmerge_agent_tree" \
+        "$_devmerge_msgfile" "" "$_devmerge_base")
 else
-    _dg log -1 --format=%B "$_devmerge_parent" | _dg stripspace > "$_devmerge_msgfile"
-    _devmerge_parents=()
-    for _devmerge_p in $(_dg rev-list --parents -n1 "$_devmerge_parent" | cut -d' ' -f2-); do
-        _devmerge_parents+=("$_devmerge_p")
-    done
-    _devmerge_author_date=$(_dg log -1 --format=%ad --date=raw "$_devmerge_parent")
-    _devmerge_new=$(_dev_commit_as_host "$_devmerge_src" "$_devmerge_tree" "$_devmerge_msgfile" \
-        "$_devmerge_author_date" ${_devmerge_parents[@]+"${_devmerge_parents[@]}"})
+    # merge: replay the real work commits on the base, each with its own author
+    # date, folding the sandbox and any uncommitted changes into the last one so
+    # the content ends up identical to the container's.
+    _devmerge_reals=()
+    while read -r _devmerge_s _devmerge_subj; do
+        [[ -z "$_devmerge_s" ]] && continue
+        if _devmerge_is_sandbox_subject "$_devmerge_subj"; then continue; fi
+        _devmerge_reals+=("$_devmerge_s")
+    done < <(_dg log --first-parent --reverse --format='%H %s' "${_devmerge_base}..${_devmerge_agent_sha}")
+
+    if (( ${#_devmerge_reals[@]} == 0 )); then
+        # Only sandbox or uncommitted work: one commit, message from -m or editor.
+        if ! _devmerge_resolve_message ""; then exit 1; fi
+        _devmerge_write_msg "$_devmerge_resolved_msg"
+        _devmerge_new=$(_dev_commit_as_host "$_devmerge_src" "$_devmerge_agent_tree" \
+            "$_devmerge_msgfile" "" "$_devmerge_base")
+    else
+        _devmerge_new="$_devmerge_base"
+        _devmerge_last=$(( ${#_devmerge_reals[@]} - 1 ))
+        for _devmerge_i in "${!_devmerge_reals[@]}"; do
+            _devmerge_c="${_devmerge_reals[$_devmerge_i]}"
+            if (( _devmerge_i == _devmerge_last )); then
+                _devmerge_ct="$_devmerge_agent_tree"
+            else
+                _devmerge_ct=$(_dg rev-parse "${_devmerge_c}^{tree}")
+            fi
+            _devmerge_write_msg "$(_dg log -1 --format=%B "$_devmerge_c")"
+            _devmerge_new=$(_dev_commit_as_host "$_devmerge_src" "$_devmerge_ct" "$_devmerge_msgfile" \
+                "$(_dg log -1 --format=%ad --date=raw "$_devmerge_c")" "$_devmerge_new")
+        done
+    fi
 fi
 
-# ── Move the branch and check it out ─────────────────────────────────────────
+# ── Rebuild the target branch at the new tip and check it out ─────────────────
 _devmerge_current=$(_dg branch --show-current 2>/dev/null) || _devmerge_current=""
 if [[ "$_devmerge_current" == "$_devmerge_target" ]]; then
-    # Already on the branch: move it and update the working tree together,
-    # keeping local changes (refuses — and changes nothing — if they conflict).
+    # On the branch already: move it and update the working tree together, keeping
+    # local changes (refuses, and changes nothing, if they would be overwritten).
     if ! _dg reset -q --keep "$_devmerge_new"; then
         echo "Error: ${_devmerge_target} is checked out with local changes in the way; commit or stash them and retry" >&2
         exit 1
     fi
 else
-    if [[ "$_devmerge_target_exists" == true ]]; then
-        _dg update-ref "refs/heads/${_devmerge_target}" "$_devmerge_new" "$_devmerge_parent"
-    else
-        _dg update-ref "refs/heads/${_devmerge_target}" "$_devmerge_new" ""
-    fi
+    _dg update-ref "refs/heads/${_devmerge_target}" "$_devmerge_new"
     if ! _dg checkout -q "$_devmerge_target"; then
         echo "NOTE: ${_devmerge_target} updated but could not be checked out (local changes?); run: git -C ${_devmerge_src} checkout ${_devmerge_target}" >&2
     fi
 fi
 
-if [[ "$_devmerge_mode" == "squash" ]]; then
-    echo "Amended ${_devmerge_target}: $(_dg log -1 --format='%h %s' "$_devmerge_new")"
-elif [[ "$_devmerge_target_exists" == true ]]; then
-    echo "Added to ${_devmerge_target}: $(_dg log -1 --format='%h %s' "$_devmerge_new")"
+_devmerge_count=$(_dg rev-list --count "${_devmerge_base}..${_devmerge_new}")
+if [[ "$_devmerge_target_exists" == true ]]; then
+    echo "Rebuilt ${_devmerge_target} (${_devmerge_count} commit(s) on the base); tip $(_dg log -1 --format='%h %s' "$_devmerge_new")"
 else
-    echo "Created ${_devmerge_target}: $(_dg log -1 --format='%h %s' "$_devmerge_new")"
+    echo "Created ${_devmerge_target} (${_devmerge_count} commit(s) on the base); tip $(_dg log -1 --format='%h %s' "$_devmerge_new")"
 fi
 echo "Author: ${_devmerge_user_name} <${_devmerge_user_email}>"
 
